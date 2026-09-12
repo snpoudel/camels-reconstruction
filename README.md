@@ -1,41 +1,116 @@
 # Attention-LSTM-PUB
 
-An attention-based LSTM architecture for improving **streamflow prediction in ungauged basins (PUB)**.
+Does cross-basin (spatial) attention improve streamflow prediction in ungauged basins (PUB)
+beyond a vanilla LSTM? This repository runs the experiment that answers it.
 
-## Overview
+## The question, split into three
 
-This repository contains a single, self-contained Python script:
+A vanilla LSTM trained on many basins already transfers well to ungauged ones — it is the
+current state of the art for PUB. Adding attention across basins could help for two quite
+different reasons, which previous work here conflated into a single model. They are separated
+into four architectures so each mechanism can be tested on its own:
 
-- **`01space-time-attn-lstm.py`**  
-  Implements an LSTM model with optional **temporal** and **spatial (cross-basin)** attention mechanisms for PUB prediction.
+| Architecture | Attention keys / values | What it isolates |
+|---|---|---|
+| `vanilla` | — | Baseline |
+| `spatial` | 455 gauged basins | **Reference.** Does retrieving from gauged donors help at all? |
+| `spatial_all` | 455 gauged + 76 ungauged | Does letting ungauged basins *participate in training* help? |
+| `donor` | 455 gauged, values carry observed flow | Does donor *discharge* add beyond donor *state*? |
 
-The model is developed using **531 CAMELS-US basins**, split into **7 spatial folds**:
-- 5 folds for training  
-- 1 fold for validation (early stopping)  
-- 1 fold for out-of-sample spatial testing (ungauged basins)
+Three single-variable comparisons: `vanilla`→`spatial`, `spatial`→`spatial_all`,
+`spatial`→`donor`.
 
-## Model Configurations
+`spatial_all` is transductive: it needs the ungauged basins present during training, so it
+reconstructs flow for basins designated in advance rather than generalising to new ones.
 
-A single modular architecture supports four configurations:
-1. LSTM only  
-2. LSTM + Temporal Attention  
-3. LSTM + Spatial Attention  
-4. LSTM + Temporal + Spatial Attention  
+`donor` is a different problem statement, not just a different architecture — it assumes
+gauged neighbours reporting in real time, so it has access to information the other three do
+not. Read `donor` vs `vanilla` as an information comparison, not an architecture one.
 
+## Setup
 
-## Motivation
+**Basins.** 531 CAMELS-US basins, 7 random folds. One fold (76 basins) is held out as
+ungauged; the other six (455) are gauged. No validation fold — training runs a fixed number
+of epochs, so the held-out fold is never used for model selection.
 
-This attention-based LSTM architecture for prediction in ungauged basins (PUB) is motivated by a key idea: while ungauged basins lack streamflow records, they still contain valuable hydrological input features that can be directly leveraged during training to improve streamflow predictions. 
+**Periods.** Train WY1990–2004 (5,479 days), test WY2005–2014 (3,652 days). The training
+window was chosen because **qobs is 100.000% complete for every basin on every day** of it —
+which removes donor-eligibility floors, target masking, and basin exclusions entirely. All
+missingness in the record sits in WY1981–89 and WY2010–14.
 
-The spatial attention mechanism operates across basins at the LSTM's output head/hidden states, allowing ungauged basins to actively participate in model training by attending to similar basins. Through learned attention weights, ungauged basins can capture hydrological relationships from basins with comparable characteristics, enhancing their predictive capabilities even without direct streamflow observations during training.
+**Evaluation** is a 2×2 over the *same* trained models — these are slices, not extra runs:
 
-The temporal attention mechanism addresses a limitation of standard LSTMs, which rely solely on the final hidden state for predictions. By learning to focus on the most relevant time steps within the input sequence, temporal attention enables the model to identify and weight important patterns across the lookback period, potentially improving prediction accuracy.
+|  | Train period | Test period |
+|---|---|---|
+| Gauged basins (455) | fit quality | **gauged ceiling** |
+| Ungauged basins (76) | — | **PUB — the headline** |
 
-Together, the space-time attention mechanism provides the model with additional flexibility to directly learn from both spatially similar basins and temporally relevant inputs. When making a prediction for a given basin at a specific time step, the architecture can attend to all training basins across the entire lookback period (1 year), effectively learning which basin-time combinations are most informative for the prediction task.
+The gauged-ceiling cell is what makes a small PUB improvement interpretable. The two cells
+that carry the comparison are `gauged/test` (out-of-sample in **time**) and `ungauged/test`
+(out-of-sample in **space**).
 
+`src/evaluate.py` writes `runs/metrics.csv` — one row per basin × architecture × seed × cell,
+with NSE, KGE (and its r/α/β components) and RMSE — which is the shape the CDF plots are drawn
+from. Three seeds are paired across architectures, so initialisation and date order match and
+part of the seed noise is common to all of them.
 
-## Related Presentation
+**Hyperparameters** follow Kratzert et al. (2019, HESS 23, 5089) where the paper specifies a
+value and NeuralHydrology code defaults otherwise — hidden 256, dropout 0.4, sequence length
+270, initial forget bias 3, 30 epochs, LR `{0: 1e-3, 10: 5e-4, 20: 1e-4}`, gradient clipping
+at norm 1, Adam. The one deliberate deviation is the loss: basin-normalised NSE (NSE*) rather
+than MSE, which the same paper recommends for multi-basin training. Every value is identical
+across architectures, so none can confound the comparison.
 
-Poster presented at **AGU 2025** outlining more details and results from this work:
+Reference point: Kratzert et al. (2019, WRR 55) report median NSE **0.69** for a k-fold PUB
+LSTM on these same 531 basins, against 0.64 for calibrated SAC-SMA and 0.58 for the National
+Water Model.
 
-![Poster Presentation at AGU 2025](agu2025_poster.png)
+## Running it
+
+```bash
+pip install -r requirements.txt
+python -c "from src.data import build_cache; build_cache()"   # ~10 s, writes data/cache/
+
+python -m src.train --arch spatial --benchmark 200            # measure ms/step first
+CONCURRENCY=4 ./run_screen.sh                                 # 12 runs: 4 archs x 3 seeds
+python -m src.evaluate                                        # 2x2 table + paired tests
+```
+
+`--epochs`, `--seq-len`, `--max-steps` and `--pred-stride` exist for smoke tests and must be
+left at their defaults for real runs.
+
+## Layout
+
+| File | |
+|---|---|
+| `src/config.py` | Hyperparameters and periods. No logic. |
+| `src/data.py` | Cache, folds, and **every leak-sensitive statistic** — feature scaler, loss sigma, donor anomalies, all fit on gauged basins over the training period only. |
+| `src/model.py` | LSTM encoder and cross-basin attention, including the self-attention mask. |
+| `src/train.py` | NSE* loss, training loop, benchmark mode. |
+| `src/evaluate.py` | Per-basin metrics, the results table, and `metrics.csv`. |
+
+## Design notes
+
+**Attention uses low-rank learned projections.** `W_q, W_k: 256 → 64` plus a learnable
+softmax temperature, adding 33k parameters (+9%). An earlier version scored similarity as
+`softmax(context @ context.T)` with no projections, forcing the model to compare basins in the
+exact representation it uses to predict flow. With 531 near-uniform logits that collapses to a
+global mean vector added to every basin — a regulariser, not cross-basin retrieval.
+
+**A basin never attends to itself.** In `donor`, the value carries the donor's standardised
+log-flow anomaly, and inverting that anomaly recovers the basin's own flow at NSE 1.000000 —
+the self-value *is* the target. The diagonal is masked in training *and* evaluation, since two
+of the four 2×2 cells query gauged basins that are themselves in the donor pool.
+
+**Predictions are emitted in mm/day.** No code path scales the output by the query basin's
+own flow statistics; that would inject the single most informative unknown in PUB.
+
+**Basins are reordered as `[gauged..., ungauged...]`** so the encoder window is a contiguous
+GPU slice. Position therefore encodes fold membership by construction, and every output is
+keyed back through gauge ID rather than index.
+
+## Prior version
+
+`agu2025_poster.png` presents an earlier iteration (median NSE 0.685 vanilla → 0.714
+space-time attention). Those numbers came from a setup with no temporal holdout and a single
+seed, and are superseded by this design.

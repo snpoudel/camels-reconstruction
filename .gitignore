@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Large inputs and derived artefacts -- restored from backup / regenerated, not tracked.
+# data/camels531.csv and data/basin_list_with_folds.csv ARE tracked: the fold assignment
+# defines the experiment and must be versioned with the results.
+data/raw/
+data/cache/
+runs/
+logs/
