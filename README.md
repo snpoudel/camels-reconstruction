@@ -63,7 +63,8 @@ across architectures, so none can confound the comparison.
 
 Reference point: Kratzert et al. (2019, WRR 55) report median NSE **0.69** for a k-fold PUB
 LSTM on these same 531 basins, against 0.64 for calibrated SAC-SMA and 0.58 for the National
-Water Model.
+Water Model. `BENCHMARKS.md` records that study in full, including what about it is and
+is not comparable to the runs here.
 
 ## Running it
 
@@ -88,6 +89,9 @@ left at their defaults for real runs.
 | `src/model.py` | LSTM encoder and cross-basin attention, including the self-attention mask. |
 | `src/train.py` | NSE* loss, training loop, benchmark mode. |
 | `src/evaluate.py` | Per-basin metrics, the results table, and `metrics.csv`. |
+| `BENCHMARKS.md` | Published reference points this experiment is read against — what was run, and what is and is not comparable. |
+| `src/description.md` | How the architecture works, end to end, with the real tensor shapes and worked inference cases. |
+| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture) and `make_results_figure.py` (six-panel screen summary). Both run from any directory. |
 
 ## Design notes
 
