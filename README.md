@@ -94,7 +94,7 @@ left at their defaults for real runs.
 | `src/evaluate.py` | Per-basin metrics, the results table, and `metrics.csv`. |
 | `BENCHMARKS.md` | Published reference points this experiment is read against — what was run, and what is and is not comparable. |
 | `src/description.md` | How the architecture works, end to end, with the real tensor shapes and worked inference cases. |
-| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture) and `make_results_figure.py` (six-panel screen summary). Both run from any directory. |
+| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture), `make_results_figure.py` (six-panel screen summary), and `make_cdf_figure.py` (NSE/KGE CDFs, vanilla vs donor). All run from any directory. |
 
 ## Design notes
 
