@@ -145,6 +145,11 @@ def section_retrieval(d, runs_dir=f"{ROOT}/runs", fold=0):
         print(f"  {f'exp(-d/{scale} km)':>34}  {np.median(r2):>+7.3f}  {dist:>11.0f} km")
     for path in sorted(__import__("glob").glob(f"{runs_dir}/*_fold{fold}_seed*/attention.npz")):
         arch = os.path.basename(os.path.dirname(path)).rsplit("_fold", 1)[0]
+        cfg_path = f"{os.path.dirname(path)}/config.json"
+        run_cfg = json.load(open(cfg_path)) if os.path.exists(cfg_path) else {}
+        if run_cfg.get("max_steps") or run_cfg.get("pred_stride", 1) != 1:
+            print(f"  {'(skipped ' + arch + ': smoke run, not a real training run)':>34}")
+            continue
         z = np.load(path)
         A = z["attn"].astype(np.float64)
         if int(z["n_gauged"]) != n or A.shape[2] != n:

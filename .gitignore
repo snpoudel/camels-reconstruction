@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+venv-cpu/
 
 # Large inputs and derived artefacts -- restored from backup / regenerated, not tracked.
 # data/camels531.csv and data/basin_list_with_folds.csv ARE tracked: the fold assignment
