@@ -157,6 +157,30 @@ def donor_features(data: Data, t: int, hist: int, n: int):
     return torch.cat([z * obs, obs], dim=1), obs.any(dim=1)
 
 
+def sample_batch(data: Data, rng: np.random.Generator, n_gauged: int, train_t: np.ndarray,
+                 batch_size: int, seq_len: int):
+    """One literature-standard batch: `batch_size` independent (basin, date-window) samples.
+
+    Unlike the other architectures' shared-date batch, each row here has its own basin *and*
+    its own end date. One gather per call, no Python loop over the batch. Every (basin, date)
+    pair in `train_t` is valid feature- and target-wise (100% qobs-complete training period,
+    all-finite cached features), so no NaN-masking beyond what `nse_loss` already does.
+    """
+    basin_idx = rng.integers(0, n_gauged, batch_size)
+    date_idx = rng.choice(train_t, batch_size)
+    day_idx = date_idx[:, None] - seq_len + 1 + np.arange(seq_len)[None, :]  # [batch, seq_len]
+
+    device = data.X.device
+    b = torch.as_tensor(basin_idx, device=device)
+    days = torch.as_tensor(day_idx, device=device)
+    dates = torch.as_tensor(date_idx, device=device)
+
+    x = data.X[b[:, None], days]  # [batch, seq_len, N_FEAT]
+    obs = data.Q[b, dates]        # [batch]
+    sigma = data.sigma[b]         # [batch]
+    return x, obs, sigma
+
+
 def layout(cfg: Cfg, data: Data, training: bool):
     """(n_encode, n_query, n_donor) for one forward pass.
 

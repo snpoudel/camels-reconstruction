@@ -18,7 +18,7 @@ DROP_COLS = ("root_depth_50", "geol_porostiy")
 # NeuralHydrology default schedule, keyed by epoch.
 LR_SCHEDULE = {0: 1e-3, 10: 5e-4, 20: 1e-4}
 
-ARCHS = ("vanilla", "spatial", "donor")
+ARCHS = ("vanilla", "spatial", "donor", "vanilla_lit")
 
 N_FEAT = 36  # 6 daily forcings + 30 static attributes, after DROP_COLS
 N_DAYS = 12784  # 1980-01-01 to 2014-12-31, no gaps
@@ -51,6 +51,11 @@ class Cfg:
     n_folds: int = 7
     cache_dir: str = "data/cache"
     out_dir: str = "runs"
+
+    # `vanilla_lit` only: None means every other architecture's date-batched training loop
+    # (batch = all gauged basins at one shared date). A number switches to literature-standard
+    # training -- fixed-size batches of independently sampled (basin, date-window) pairs.
+    batch_size: int | None = None
 
     @property
     def spatial(self) -> bool:
