@@ -3,29 +3,32 @@
 Does cross-basin (spatial) attention improve streamflow prediction in ungauged basins (PUB)
 beyond a vanilla LSTM? This repository runs the experiment that answers it.
 
-## The question, split into three
+## The question, split into two
 
 A vanilla LSTM trained on many basins already transfers well to ungauged ones — it is the
 current state of the art for PUB. Adding attention across basins could help for two quite
 different reasons, which previous work here conflated into a single model. They are separated
-into four architectures so each mechanism can be tested on its own:
+into three architectures so each mechanism can be tested on its own:
 
 | Architecture | Attention keys / values | What it isolates |
 |---|---|---|
 | `vanilla` | — | Baseline |
 | `spatial` | 455 gauged basins | **Reference.** Does retrieving from gauged donors help at all? |
-| `spatial_all` | 455 gauged + 76 ungauged | Does letting ungauged basins *participate in training* help? |
 | `donor` | 455 gauged, values carry observed flow | Does donor *discharge* add beyond donor *state*? |
 
-Three single-variable comparisons: `vanilla`→`spatial`, `spatial`→`spatial_all`,
-`spatial`→`donor`.
-
-`spatial_all` is transductive: it needs the ungauged basins present during training, so it
-reconstructs flow for basins designated in advance rather than generalising to new ones.
+Two single-variable comparisons: `vanilla`→`spatial`, `spatial`→`donor`.
 
 `donor` is a different problem statement, not just a different architecture — it assumes
-gauged neighbours reporting in real time, so it has access to information the other three do
+gauged neighbours reporting in real time, so it has access to information the other two do
 not. Read `donor` vs `vanilla` as an information comparison, not an architecture one.
+
+An earlier fourth architecture, `spatial_all` (letting ungauged basins participate in
+training), scored worse on every measure and was dropped. A `donor_gated` variant (a learned
+distance bias on attention plus a reliability gate on the donor injection) was also tried, to
+address `donor`'s benefit being confined to basins within ~40 km of a gauge; it did not
+improve on `donor` and surfaced a deeper training-stability issue rather than a simple bug, so
+it was reverted rather than pursued further. Neither is part of the active codebase; see
+`EXPERIMENTS.md` for the full record.
 
 ## Setup
 
@@ -73,7 +76,7 @@ pip install -r requirements.txt
 python -c "from src.data import build_cache; build_cache()"   # ~10 s, writes data/cache/
 
 python -m src.train --arch spatial --benchmark 200            # measure ms/step first
-CONCURRENCY=4 ./run_screen.sh                                 # 12 runs: 4 archs x 3 seeds
+CONCURRENCY=4 ./run_screen.sh                                 # 9 runs: 3 archs x 3 seeds
 python -m src.evaluate                                        # 2x2 table + paired tests
 ```
 

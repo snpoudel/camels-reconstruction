@@ -18,7 +18,7 @@ DROP_COLS = ("root_depth_50", "geol_porostiy")
 # NeuralHydrology default schedule, keyed by epoch.
 LR_SCHEDULE = {0: 1e-3, 10: 5e-4, 20: 1e-4}
 
-ARCHS = ("vanilla", "spatial", "spatial_all", "donor", "donor_gated")
+ARCHS = ("vanilla", "spatial", "donor")
 
 N_FEAT = 36  # 6 daily forcings + 30 static attributes, after DROP_COLS
 N_DAYS = 12784  # 1980-01-01 to 2014-12-31, no gaps
@@ -45,9 +45,7 @@ class Cfg:
 
     # Spatial attention
     attn_rank: int = 64  # low-rank Q/K subspace, separate from the prediction space
-    donor_hist: int = 7  # days of donor flow anomaly; identical across every donor-carrying
-    # arch on purpose -- donor_gated already differs from donor by two things (distance bias,
-    # reliability gate), and a history-width ablation belongs in its own arch, not bundled here.
+    donor_hist: int = 7  # days of donor flow anomaly
     q_eps_frac: float = 0.01  # log-flow floor = q_eps_frac * p_mean, basin-relative
 
     n_folds: int = 7
@@ -56,26 +54,11 @@ class Cfg:
 
     @property
     def spatial(self) -> bool:
-        return self.arch in ("spatial", "spatial_all", "donor", "donor_gated")
+        return self.arch in ("spatial", "donor")
 
     @property
     def use_donor(self) -> bool:
-        return self.arch in ("donor", "donor_gated")
-
-    @property
-    def donors_include_ungauged(self) -> bool:
-        """Config 3 only: unlabeled basins sit in the key/value pool, so gradients reach them."""
-        return self.arch == "spatial_all"
-
-    @property
-    def gated(self) -> bool:
-        """donor_gated: attention gets a learned distance prior and the donor injection gets a
-        learned reliability gate. See analysis/donor_diagnostics.py for why -- content-only
-        attention never finds geography on its own (`spatial` is spatially indistinguishable
-        from uniform), and the unconditional injection in `donor` costs NSE at basins with no
-        good donor nearby, even though that unreliability is predictable in advance.
-        """
-        return self.arch == "donor_gated"
+        return self.arch == "donor"
 
     @property
     def name(self) -> str:

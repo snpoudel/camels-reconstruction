@@ -47,8 +47,8 @@ def train(cfg: Cfg, data, device, max_steps=0):
             dates = dates[:max_steps]
         total = torch.zeros((), device=device)
         for t in dates:
-            x, dz, valid, dist = step_inputs(cfg, data, int(t), n_enc, n_donor, n_query)
-            pred, _, _ = model(x, n_query, n_donor, dz, valid, dist)
+            x, dz, valid = step_inputs(cfg, data, int(t), n_enc, n_donor)
+            pred, _ = model(x, n_query, n_donor, dz, valid)
             loss = nse_loss(pred, data.Q[:n_query, t], sigma)
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -71,8 +71,8 @@ def benchmark(cfg: Cfg, data, device, n_steps):
         if i == 10:  # discard warm-up
             torch.cuda.synchronize() if device.type == "cuda" else None
             start = time.time()
-        x, dz, valid, dist = step_inputs(cfg, data, int(t), n_enc, n_donor, n_query)
-        pred, _, _ = model(x, n_query, n_donor, dz, valid, dist)
+        x, dz, valid = step_inputs(cfg, data, int(t), n_enc, n_donor)
+        pred, _ = model(x, n_query, n_donor, dz, valid)
         loss = nse_loss(pred, data.Q[:n_query, t], data.sigma[:n_query])
         opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -92,17 +92,14 @@ def save_attention(cfg: Cfg, model, data, device, out_dir, n_dates=20):
     n_enc, n_query, n_donor = layout(cfg, data, training=False)
     dates = data.test_t[:: max(1, len(data.test_t) // n_dates)][:n_dates]
     model.eval()
-    mats, gates = [], []
+    mats = []
     with torch.no_grad():
         for t in dates:
-            x, dz, valid, dist = step_inputs(cfg, data, int(t), n_enc, n_donor, n_query)
-            _, attn, gate = model(x, n_query, n_donor, dz, valid, dist, want_attn=True)
+            x, dz, valid = step_inputs(cfg, data, int(t), n_enc, n_donor)
+            _, attn = model(x, n_query, n_donor, dz, valid, want_attn=True)
             mats.append(attn.half().cpu().numpy())
-            if gate is not None:
-                gates.append(gate.squeeze(-1).half().cpu().numpy())
-    extra = {"gate": np.stack(gates), "dist_w": model.dist_w.detach().item()} if cfg.gated else {}
     np.savez_compressed(f"{out_dir}/attention.npz", attn=np.stack(mats), dates=dates,
-                        n_gauged=data.n_gauged, **extra)
+                        n_gauged=data.n_gauged)
 
 
 def main():

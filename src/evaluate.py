@@ -31,8 +31,8 @@ def predict(cfg: Cfg, model, data, t_idx):
     model.eval()
     out = np.empty((n_query, len(t_idx)), np.float32)
     for k, t in enumerate(t_idx):
-        x, dz, valid, dist = step_inputs(cfg, data, int(t), n_enc, n_donor, n_query)
-        pred, _, _ = model(x, n_query, n_donor, dz, valid, dist)
+        x, dz, valid = step_inputs(cfg, data, int(t), n_enc, n_donor)
+        pred, _ = model(x, n_query, n_donor, dz, valid)
         out[:, k] = pred.cpu().numpy()
     return out
 

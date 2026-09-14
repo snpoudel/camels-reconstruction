@@ -84,14 +84,13 @@ class Data:
     Z: torch.Tensor  # [N, T] standardised log-flow anomaly, 0 where missing
     Zobs: torch.Tensor  # [N, T] 1.0 where flow was observed
     sigma: torch.Tensor  # [N] train-period flow std, denominator of the NSE loss
-    D: torch.Tensor  # [N, N] great-circle distance between basins, in 100s of km
     basins: list
     n_gauged: int
     train_t: np.ndarray  # target date indices
     test_t: np.ndarray
 
 
-def prepare(cfg: Cfg, device, list_csv="data/camels531.csv") -> Data:
+def prepare(cfg: Cfg, device) -> Data:
     """Load the cache, split by fold, and fit every statistic on gauged x train only."""
     X = np.load(f"{cfg.cache_dir}/X.npy")
     Q = np.load(f"{cfg.cache_dir}/Q.npy")
@@ -138,27 +137,10 @@ def prepare(cfg: Cfg, device, list_csv="data/camels531.csv") -> Data:
     X = (X - mean) / std
     assert np.isfinite(X).all()
 
-    # Great-circle distance between every pair of basins, in the reordered [gauged...,
-    # ungauged...] layout, scaled to hundreds of km. `donor_gated` uses this as a physical prior
-    # on attention (analysis/donor_diagnostics.py: content-only attention never finds geography
-    # on its own). Scaled down from raw km (up to ~4500) so a single learned scalar multiplying
-    # it stays in a numerically gentle range -- unscaled, its gradient would dominate the global
-    # grad-clip norm and silently starve every other parameter's update.
-    coords = pd.read_csv(list_csv, dtype={"gauge_id": str}).set_index("gauge_id")
-    assert coords.index.is_unique, "camels531.csv has a duplicate gauge_id"
-    assert set(coords.index) == set(basins), "camels531.csv basin set does not match the cache"
-    # `basins` (not `order`) is the already-reordered list of gauge-ID strings -- `order` itself
-    # is the integer position array used to build it, and coords is indexed by gauge ID.
-    rad = np.radians(coords.loc[basins, ["gauge_lat", "gauge_lon"]].to_numpy())
-    dlat = rad[None, :, 0] - rad[:, None, 0]
-    dlon = rad[None, :, 1] - rad[:, None, 1]
-    hav = np.sin(dlat / 2) ** 2 + np.cos(rad[:, None, 0]) * np.cos(rad[None, :, 0]) * np.sin(dlon / 2) ** 2
-    D = (2 * 6371 * np.arcsin(np.sqrt(hav)) / 100).astype(np.float32)  # 100s of km
-
     t = lambda a: torch.as_tensor(a, device=device)
     return Data(
         X=t(X), Q=t(Q), Z=t(Z.astype(np.float32)), Zobs=t(Zobs), sigma=t(sigma.astype(np.float32)),
-        D=t(D), basins=basins, n_gauged=n_gauged,
+        basins=basins, n_gauged=n_gauged,
         train_t=np.arange(tr0, tr1), test_t=np.arange(te0, te1),
     )
 
@@ -183,18 +165,16 @@ def layout(cfg: Cfg, data: Data, training: bool):
     """
     n_all, n_gauged = len(data.basins), data.n_gauged
     n_query = n_gauged if training else n_all
-    n_donor = 0 if not cfg.spatial else (n_all if cfg.donors_include_ungauged else n_gauged)
+    n_donor = n_gauged if cfg.spatial else 0
     return max(n_query, n_donor), n_query, n_donor
 
 
-def step_inputs(cfg: Cfg, data: Data, t: int, n_enc: int, n_donor: int, n_query: int = None):
+def step_inputs(cfg: Cfg, data: Data, t: int, n_enc: int, n_donor: int):
     """Encoder window and donor tensors for target date `t`."""
-    assert n_query or not cfg.gated, "donor_gated needs n_query to slice the distance matrix"
     x = data.X[:n_enc, t - cfg.seq_len + 1 : t + 1]
     if not cfg.spatial:
-        return x, None, None, None
+        return x, None, None
     # The availability mask is applied for every spatial arch, not just `donor`, so the
     # donor pool is bit-identical across configs and the comparison stays single-variable.
     dz, valid = donor_features(data, t, cfg.donor_hist, n_donor)
-    dist = data.D[:n_query, :n_donor] if (cfg.gated and n_query) else None
-    return x, (dz if cfg.use_donor else None), valid, dist
+    return x, (dz if cfg.use_donor else None), valid
