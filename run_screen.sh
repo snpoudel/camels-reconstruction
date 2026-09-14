@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Phase-1 screen: 3 architectures x 3 paired seeds on fold 0 (9 runs).
+# Phase-1 screen: by default 3 architectures x 3 paired seeds on fold 0 (9 runs).
 # Seeds are paired across architectures, so initialisation and date order match and part of
 # the seed noise is common to all of them.
 #
-#   CONCURRENCY=4 ./run_screen.sh
+#   CONCURRENCY=4 ./run_screen.sh                      # the original three
+#   ARCHS=donor_flow CONCURRENCY=3 ./run_screen.sh     # one new arch, same seeds and fold
+#
+# ARCHS, SEEDS and FOLD override the defaults. A run whose predictions.npz already exists is
+# skipped, never overwritten -- so this is safe to re-run and safe to point at a repo that
+# already holds finished runs.
 #
 # Requires bash 4+ (for `wait -n`). Benchmark first -- see CLAUDE.md.
 #
@@ -14,18 +19,26 @@ CONCURRENCY="${CONCURRENCY:-4}"
 mkdir -p logs
 failed=0
 
-for arch in vanilla spatial donor; do
-  for seed in 0 1 2; do
+planned=0
+for arch in ${ARCHS:-vanilla spatial donor}; do
+  for seed in ${SEEDS:-0 1 2}; do
+    # A finished run is never re-trained. Its directory is hours of A100 time and
+    # src.train would overwrite it in place; re-running a screen must be a no-op.
+    if [[ -f "runs/${arch}_fold${FOLD:-0}_seed${seed}/predictions.npz" ]]; then
+      echo "skipping $arch seed $seed -- already complete"
+      continue
+    fi
+    planned=$((planned + 1))
     while (( $(jobs -rp | wc -l) >= CONCURRENCY )); do wait -n || failed=$((failed + 1)); done
     echo "launching $arch seed $seed"
-    python -m src.train --arch "$arch" --seed "$seed" > "logs/${arch}_seed${seed}.log" 2>&1 &
+    python -m src.train --arch "$arch" --fold "${FOLD:-0}" --seed "$seed" \
+      > "logs/${arch}_fold${FOLD:-0}_seed${seed}.log" 2>&1 &
   done
 done
 while (( $(jobs -rp | wc -l) > 0 )); do wait -n || failed=$((failed + 1)); done
 
-completed=$(ls -d runs/*/predictions.npz 2>/dev/null | wc -l | tr -d ' ')
 echo "-----"
-echo "runs completed: ${completed}/9 | failed: ${failed}"
+echo "runs launched: ${planned} | failed: ${failed}"
 (( failed > 0 )) && echo "check logs/ for the failures before trusting the table below"
 
 python -m src.evaluate

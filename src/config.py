@@ -18,7 +18,7 @@ DROP_COLS = ("root_depth_50", "geol_porostiy")
 # NeuralHydrology default schedule, keyed by epoch.
 LR_SCHEDULE = {0: 1e-3, 10: 5e-4, 20: 1e-4}
 
-ARCHS = ("vanilla", "spatial", "donor", "vanilla_lit")
+ARCHS = ("vanilla", "spatial", "donor", "donor_flow", "vanilla_lit")
 
 N_FEAT = 36  # 6 daily forcings + 30 static attributes, after DROP_COLS
 N_DAYS = 12784  # 1980-01-01 to 2014-12-31, no gaps
@@ -59,11 +59,21 @@ class Cfg:
 
     @property
     def spatial(self) -> bool:
-        return self.arch in ("spatial", "donor")
+        return self.arch in ("spatial", "donor", "donor_flow")
 
     @property
     def use_donor(self) -> bool:
         return self.arch == "donor"
+
+    @property
+    def flow_value(self) -> bool:
+        """`donor_flow`: attention values are the donors' own recent flow anomaly.
+
+        `donor` sums an encoding of that anomaly into the donor hidden state and adds the
+        result back to the query state; here the attended anomaly is concatenated to the
+        query state instead, so the two pathways stay separable at the head.
+        """
+        return self.arch == "donor_flow"
 
     @property
     def name(self) -> str:

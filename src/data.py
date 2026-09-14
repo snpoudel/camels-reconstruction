@@ -145,15 +145,26 @@ def prepare(cfg: Cfg, device) -> Data:
     )
 
 
-def donor_features(data: Data, t: int, hist: int, n: int):
+def donor_features(data: Data, t: int, hist: int, n: int, raw: bool = False):
     """Donor flow anomaly and observation mask over the `hist` days ending at `t`.
 
-    Returns ([n, 2*hist] features, [n] validity). A donor is masked out entirely only if it
-    has no observation at all in the window; individual missing days carry z=0 plus an
-    indicator bit so the model can tell "normal flow" from "no data".
+    Returns ([n, 2*hist] anomaly-plus-indicator features, [n] validity), or with `raw`, the
+    bare ([n, hist] anomaly, [n] validity). A donor is masked out entirely only if it has no
+    observation at all in the window; individual missing days carry z=0 plus an indicator bit
+    so the model can tell "normal flow" from "no data".
+
+    With `raw` (`donor_flow`), the bare [n, hist] anomaly window is returned and validity
+    tightens to "reported on every day". There are no indicator bits to carry, because the
+    anomaly is consumed directly as the attention value rather than through an MLP -- so a
+    missing day would arrive as z=0, which in this space already means "exactly normal",
+    and the only safe response is to drop the donor. It costs almost nothing: measured on
+    fold 0, a mean of 0.10 donors per test day and 17 of 455 on the worst, against the 6.2
+    per day the shared `.any` mask already removes.
     """
     z = data.Z[:n, t - hist + 1 : t + 1]
     obs = data.Zobs[:n, t - hist + 1 : t + 1]
+    if raw:
+        return z * obs, obs.all(dim=1)
     return torch.cat([z * obs, obs], dim=1), obs.any(dim=1)
 
 
@@ -200,5 +211,8 @@ def step_inputs(cfg: Cfg, data: Data, t: int, n_enc: int, n_donor: int):
         return x, None, None
     # The availability mask is applied for every spatial arch, not just `donor`, so the
     # donor pool is bit-identical across configs and the comparison stays single-variable.
-    dz, valid = donor_features(data, t, cfg.donor_hist, n_donor)
-    return x, (dz if cfg.use_donor else None), valid
+    # `donor_flow` is the one deliberate exception -- it cannot represent a missing day, so
+    # it drops those donors instead (see donor_features) and its pool is very slightly
+    # smaller. Gating on the arch keeps `spatial` and `donor` bit-identical to their runs.
+    dz, valid = donor_features(data, t, cfg.donor_hist, n_donor, raw=cfg.flow_value)
+    return x, (dz if cfg.use_donor or cfg.flow_value else None), valid

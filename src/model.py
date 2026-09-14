@@ -26,8 +26,12 @@ class PUBModel(nn.Module):
         self.lstm.bias_hh_l0.data[h : 2 * h] = 0.0
 
         self.dropout = nn.Dropout(cfg.dropout)
+        # `donor_flow` concatenates the attended donor anomaly to the query state, so the
+        # head is that much wider. Two layers either way: recovering flow from a log anomaly
+        # is ~exp(mu + sigma*z), a product a linear head cannot express.
+        head_in = h + cfg.donor_hist if cfg.flow_value else h
         self.head = nn.Sequential(
-            nn.Linear(h, h), nn.ReLU(), nn.Dropout(cfg.dropout), nn.Linear(h, 1)
+            nn.Linear(head_in, h), nn.ReLU(), nn.Dropout(cfg.dropout), nn.Linear(h, 1)
         )
 
         if cfg.spatial:
@@ -37,7 +41,8 @@ class PUBModel(nn.Module):
             self.wq = nn.Linear(h, cfg.attn_rank, bias=False)
             self.wk = nn.Linear(h, cfg.attn_rank, bias=False)
             self.log_temp = nn.Parameter(torch.zeros(()))  # learnable softmax temperature
-            self.norm = nn.LayerNorm(h)
+            if not cfg.flow_value:
+                self.norm = nn.LayerNorm(h)
         if cfg.use_donor:
             self.donor_mlp = nn.Sequential(
                 nn.Linear(2 * cfg.donor_hist, 32), nn.ReLU(), nn.Linear(32, h)
@@ -62,14 +67,38 @@ class PUBModel(nn.Module):
                 mask = mask | ~donor_valid[None, :]
             logits = logits.masked_fill(mask, float("-inf"))
             # A fully masked row softmaxes to NaN; nan_to_num gives it zero attention, so it
-            # contributes only the LayerNorm bias. Near-unreachable: it needs every donor
-            # missing for the whole window.
+            # contributes only the LayerNorm bias (or, under flow_value, a zero context --
+            # see below). Near-unreachable: it needs every donor missing for the whole window.
             attn = torch.nan_to_num(logits.softmax(-1))
-            value = h[:n_donor]
-            if donor_z is not None:
-                value = value + self.donor_mlp(donor_z)
-            ctx = ctx + self.norm(attn @ value)
+            if self.cfg.flow_value:
+                # Load-bearing, not defensive: with no indicator bits, an unmasked donor that
+                # did not report contributes z=0 -- "exactly normal" -- instead of dropping
+                # out. The `.all` rule in donor_features is only enforced through this mask.
+                assert donor_valid is not None, "flow_value requires donor_valid"
+                # The value is the donors' own recent anomaly, so c is the attention-weighted
+                # regional anomaly in z-space, handed to the head beside h_q rather than
+                # summed into it. Three things are deliberate and load-bearing:
+                #   * dropout on h_q only, never on c -- at p=0.4 it would zero ~3 of the 7
+                #     donor-days, and 0 is a real value here ("exactly normal"), so it would
+                #     feed a plausible lie rather than blur c. The head keeps its own dropout.
+                #   * no LayerNorm on c -- normalising a 7-vector subtracts the mean across
+                #     the seven days, and that mean is the signal.
+                #   * no residual add, so the two pathways arrive at the head separately --
+                #     head[0] mixes them at once, so this buys a clean input, not a clean
+                #     attribution. Crediting either pathway still needs an ablation.
+                # A fully masked row contributes c = 0, i.e. "the region is exactly normal".
+                # It needs every donor missing for the whole window, which has never occurred
+                # (the pool bottoms out at 414 of 455), but there is no learned fallback here
+                # the way the LayerNorm bias was one for `donor`.
+                ctx = torch.cat([self.dropout(ctx), attn @ donor_z], dim=-1)
+            else:
+                value = h[:n_donor]
+                if donor_z is not None:
+                    value = value + self.donor_mlp(donor_z)
+                ctx = self.dropout(ctx + self.norm(attn @ value))
             if not want_attn:
                 attn = None
+        else:
+            ctx = self.dropout(ctx)
 
-        return self.head(self.dropout(ctx)).squeeze(-1), attn
+        return self.head(ctx).squeeze(-1), attn
