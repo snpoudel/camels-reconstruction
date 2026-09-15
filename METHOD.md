@@ -267,7 +267,31 @@ the literature value. Two consequences worth stating rather than discovering lat
 3. **Gauge density is a real limit.** The gain falls from about +0.027 NSE where the nearest
    gauge is 10–25 km away to about +0.002 beyond 100 km.
 
-## 10. To settle it
+## 10. Train/test windows
+
+Two are available, selected with `--period` and recorded in every run's `config.json`. Runs
+from different windows are refused rather than pooled — their test axes differ in length, and
+lining up the wrong dates would be invisible.
+
+| | train | test | train qobs complete | test qobs complete |
+|---|---|---|---|---|
+| `complete` (default) | WY1990–2004, 5479 d | WY2005–2014, 3652 d | **100.000%**, all 531 basins | 98.7% |
+| `kratzert` | WY1981–1995, 5478 d | WY1996–2010, 5479 d | 96.7% — 55 basins have gaps, worst 40% | **99.99%**, 530/531 basins |
+
+`kratzert` matches Kratzert et al. (2019, WRR) exactly, which makes the 0.693 benchmark a much
+closer comparison — same basins, same windows, same lengths. What still differs is the forcing
+product (Daymet here, extended NLDAS there), the number of folds (7 vs 12) and the ensemble
+size, so it is a closer comparison, not an identical one.
+
+Its costs are real but small: the training window has 3.3% missing targets, which `nse_loss`
+masks per-sample but which `complete` avoids entirely; and it begins at day index 274 of the
+cache, leaving five days of spare warm-up for a 270-day sequence. `prepare` asserts on that
+rather than silently truncating, so a longer `seq_len` fails loudly.
+
+Its test window is the better of the two — 15 years at 99.99% complete against 10 years at
+98.7% — which matters more for the reported number than the training gaps do.
+
+## 11. To settle it
 
 ```bash
 FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh

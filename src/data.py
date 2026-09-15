@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from .config import DROP_COLS, N_DAYS, N_FEAT, TEST_PERIOD, TRAIN_PERIOD, Cfg
+from .config import DROP_COLS, N_DAYS, N_FEAT, Cfg
 
 
 def build_cache(raw_dir="data/raw", list_csv="data/camels531.csv", cache_dir="data/cache"):
@@ -95,9 +95,13 @@ def prepare(cfg: Cfg, device) -> Data:
         idx = np.flatnonzero((dates >= lo) & (dates <= hi))
         return idx[0], idx[-1] + 1
 
-    tr0, tr1 = bounds(TRAIN_PERIOD)
-    te0, te1 = bounds(TEST_PERIOD)
-    assert tr0 >= cfg.seq_len - 1, "not enough warm-up before the training period"
+    tr0, tr1 = bounds(cfg.train_period)
+    te0, te1 = bounds(cfg.test_period)
+    # The "kratzert" window starts 274 days into the cache, so a 270-day sequence clears this
+    # by 5 days and a longer one would not. Fail loudly rather than silently truncating.
+    assert tr0 >= cfg.seq_len - 1, (
+        f"period {cfg.period!r} starts at day {tr0}, but seq_len {cfg.seq_len} needs "
+        f"{cfg.seq_len - 1} days of warm-up before it")
 
     folds = assign_folds(len(basins), cfg.n_folds)
     gauged = np.flatnonzero(folds != cfg.fold)

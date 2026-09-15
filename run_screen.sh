@@ -2,6 +2,7 @@
 # Train the LSTM over a grid of folds x seeds.
 #
 #   FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh    # one seed, every fold
+#   PERIOD=kratzert FOLDS="0 1 2 3 4 5 6" SEEDS=0 ./run_screen.sh   # ... on Kratzert's windows
 #   FOLDS="0 1 2 3 4 5 6" SEEDS="0 1 2" ./run_screen.sh            # the full grid
 #   FOLD=0 ./run_screen.sh                                          # one fold, 3 seeds
 #
@@ -19,6 +20,7 @@ set -uo pipefail
 CONCURRENCY="${CONCURRENCY:-4}"
 FOLDS="${FOLDS:-${FOLD:-0}}"
 SEEDS="${SEEDS:-0 1 2}"
+PERIOD="${PERIOD:-complete}"
 mkdir -p logs
 failed=0
 planned=0
@@ -32,7 +34,7 @@ for fold in $FOLDS; do
     planned=$((planned + 1))
     while (( $(jobs -rp | wc -l) >= CONCURRENCY )); do wait -n || failed=$((failed + 1)); done
     echo "launching fold $fold seed $seed"
-    python -m src.train --fold "$fold" --seed "$seed" \
+    python -m src.train --fold "$fold" --seed "$seed" --period "$PERIOD" \
       > "logs/vanilla_fold${fold}_seed${seed}.log" 2>&1 &
   done
 done

@@ -86,6 +86,8 @@ def benchmark(cfg: Cfg, data, n_steps):
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--period", choices=("complete", "kratzert"), default="complete",
+                   help="which train/test windows; see src/config.py PERIODS")
     p.add_argument("--fold", type=int, default=0)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--epochs", type=int, help="override for smoke tests only")
@@ -97,11 +99,13 @@ def main():
     a = p.parse_args()
 
     overrides = {k: v for k, v in [("epochs", a.epochs), ("seq_len", a.seq_len)] if v is not None}
-    cfg = Cfg(fold=a.fold, seed=a.seed, **overrides)
+    cfg = Cfg(fold=a.fold, seed=a.seed, period=a.period, **overrides)
     device = torch.device("cuda" if torch.cuda.is_available() else
                           "mps" if torch.backends.mps.is_available() else "cpu")
     data = prepare(cfg, device)
-    print(f"{cfg.name} | {data.n_gauged} gauged, {len(data.basins) - data.n_gauged} ungauged "
+    print(f"{cfg.name} | period {cfg.period}: train {cfg.train_period[0]}..{cfg.train_period[1]}, "
+          f"test {cfg.test_period[0]}..{cfg.test_period[1]}", flush=True)
+    print(f"  {data.n_gauged} gauged, {len(data.basins) - data.n_gauged} ungauged "
           f"| {len(data.train_t)} train dates, {len(data.test_t)} test dates | {device}", flush=True)
 
     if a.benchmark:

@@ -97,12 +97,16 @@ def load_runs(runs_dir="runs", cache_dir="data/cache"):
     """Score every completed run into one long table: basin x seed x cell."""
     Q = np.load(f"{cache_dir}/Q.npy")
     all_basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
-    rows = []
+    rows, periods = [], set()
     for path in sorted(glob.glob(f"{runs_dir}/vanilla_fold*_seed*/predictions.npz")):
         cfg = json.load(open(path.rsplit("/", 1)[0] + "/config.json"))
         if cfg.get("max_steps"):
             print(f"skipping smoke run {path}")
             continue
+        periods.add(cfg.get("period", "complete"))
+        if len(periods) > 1:
+            raise SystemExit(f"{runs_dir}/ mixes train/test periods {sorted(periods)}; "
+                             f"they are not comparable and must not be scored together.")
         p = np.load(path, allow_pickle=True)
         basins, n_gauged = list(p["basins"]), int(p["n_gauged"])
         # Observations are keyed by gauge ID, never by position, so a fold reordering cannot

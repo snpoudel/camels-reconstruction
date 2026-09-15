@@ -103,11 +103,20 @@ def load_fold(fold, runs_dir="runs", cache_dir="data/cache"):
     """
     basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
     idx = {b: i for i, b in enumerate(basins)}
-    mats, gauged, t_idx = [], None, None
+    mats, gauged, t_idx, period = [], None, None, None
     for path in sorted(glob.glob(f"{runs_dir}/vanilla_fold{fold}_seed*/predictions.npz")):
         cfg = json.load(open(path.rsplit("/", 1)[0] + "/config.json"))
         if cfg.get("max_steps"):
             continue
+        # Runs from different train/test windows have different test axes; averaging them
+        # would either crash or, worse, line up the wrong dates. Refuse explicitly.
+        this = cfg.get("period", "complete")
+        if period is None:
+            period = this
+        elif this != period:
+            raise SystemExit(
+                f"{runs_dir}/ mixes periods in fold {fold}: {period!r} and {this!r}. "
+                f"Move one set aside -- they are not comparable and must not be pooled.")
         p = np.load(path, allow_pickle=True)
         rows = np.array([idx[b] for b in list(p["basins"])])
         m = np.full((len(basins), p["test"].shape[1]), np.nan, np.float32)

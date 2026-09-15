@@ -7,10 +7,23 @@ gain comes from the post-processing step in `src/correct.py`.
 """
 from dataclasses import dataclass
 
-# Water-year periods. WY1990-2004 is 100.000% qobs-complete across all 531 basins, which is
-# why it is the training window: no target masking, no basin exclusions.
-TRAIN_PERIOD = ("1989-10-01", "2004-09-30")  # WY1990-2004, 5479 days
-TEST_PERIOD = ("2004-10-01", "2014-09-30")   # WY2005-2014, 3652 days
+# Water-year periods, selected by `Cfg.period`.
+#
+#   "complete"  WY1990-2004 train / WY2005-2014 test. The training window is 100.000%
+#               qobs-complete across all 531 basins -- no target masking, no basin
+#               exclusions -- which is why this project picked it originally.
+#
+#   "kratzert"  WY1981-1995 train / WY1996-2010 test, matching Kratzert et al. (2019, WRR)
+#               exactly, so the 0.693 benchmark becomes a much closer comparison. Two costs:
+#               the training window is 96.7% qobs-complete (55 basins have gaps, worst 40%),
+#               which `nse_loss` masks but which the "complete" window avoids entirely; and
+#               it starts at day index 274, leaving only 5 days of spare warm-up for a
+#               270-day sequence. The test window is the better of the two: 99.99% complete
+#               over 15 years, against 98.7% over 10.
+PERIODS = {
+    "complete": (("1989-10-01", "2004-09-30"), ("2004-10-01", "2014-09-30")),
+    "kratzert": (("1980-10-01", "1995-09-30"), ("1995-10-01", "2010-09-30")),
+}
 
 # Static attributes with missing values (root_depth_50 in 13 basins, geol_porostiy in 3).
 DROP_COLS = ("root_depth_50", "geol_porostiy")
@@ -42,9 +55,21 @@ class Cfg:
     # what this project has used for its literature-faithful runs.
     batch_size: int = 256
 
+    # Which of PERIODS to train and test on. Recorded in every run's config.json, and runs
+    # from different periods must never be pooled -- their test axes are different lengths.
+    period: str = "complete"
+
     n_folds: int = 7
     cache_dir: str = "data/cache"
     out_dir: str = "runs"
+
+    @property
+    def train_period(self):
+        return PERIODS[self.period][0]
+
+    @property
+    def test_period(self):
+        return PERIODS[self.period][1]
 
     @property
     def name(self) -> str:
