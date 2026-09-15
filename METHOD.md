@@ -149,23 +149,32 @@ the chosen (K, lambda) does not move. It doesn't.
 
 ### How much the choice matters at all
 
-`figures/hyperparameters.png`. Each panel sweeps one constant while the thin grey lines hold
-the other at every value on the grid, so the spread between them *is* the sensitivity to the
-constant not on the x-axis.
+`figures/hyperparameters.png` draws the cross-validation surface itself: one line per fold,
+each a profile through that fold's own CV optimum, with a marker on the optimum. Nothing on
+that figure is scored on a held-out basin, and nothing is annotated as "selected" — the point
+is the shape, not a winner. As more folds run, more lines appear.
 
-| surface | box K in [3,20], lambda in [0.3,0.7] | oracle best |
+What it shows, and what a paper would quote: **the optima cluster in a narrow region and the
+curves are flat around them**, so the exact pair matters far less than that it lies in that
+region. On the single fold available now the optimum is K = 6, lambda = 0.65; the useful
+statement is the range across folds, which is what the caption prints automatically once there
+is more than one.
+
+Measured on the held-out basins afterwards — as a check on the method, never as an input to
+it — the flatness carries over:
+
+| surface | box K in [3,20], lambda in [0.3,0.7] | best cell |
 |---|---|---|
 | 531 basins, 7 folds (parent branch, `donor` base) | 0.7312–0.7429, **range 0.012** | 0.7429 |
 | 76 basins, fold 0 only (this branch) | 0.7308–0.7579, **range 0.027** | 0.7579 |
 
 Against a gain of about 0.04–0.05 over uncorrected, a 0.012–0.027 spread across a 5-fold range
 in K and a 2-fold range in lambda is the real message: **the correction works across a wide
-region, and selecting inside it is cheap insurance rather than a load-bearing step.** One fold
-of 76 basins is a much noisier surface than seven folds of 531; neither the flatness nor the
-apparent optimum on it should be over-read.
+region, and cross-validating inside it is cheap insurance rather than a load-bearing step.**
+One fold of 76 basins is a much noisier surface than seven folds of 531; neither the flatness
+nor the apparent optimum on it should be over-read.
 
-The one genuinely bad corner on both surfaces is K = 1 with large lambda: a single
-over-trusted neighbour.
+The one genuinely bad corner is K = 1 with large lambda: a single over-trusted neighbour.
 
 ## 6. What was tried and rejected
 

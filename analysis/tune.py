@@ -34,8 +34,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, ".")
-from src.correct import (K_GRID, LAM_GRID, apply_shrinkage, choose,  # noqa: E402
-                         idw_weights, load_all, neighbour_residual, nse_per_basin, surface)
+from src.correct import (K_GRID, choose, load_all,  # noqa: E402
+                         nse_per_basin, surface)
 
 
 def main():
@@ -49,18 +49,27 @@ def main():
         raise SystemExit(f"no runs found under {a.runs}/")
     print(f"folds present: {[f['fold'] for f in folds]}")
 
-    surfaces, rows = {}, []
+    surfaces, cv_surfaces, rows = {}, {}, []
     for f in folds:
-        surfaces[f["fold"]] = surface(f)
-        base = np.nanmedian(nse_per_basin(f["pred"][f["held"]], f["obs"][f["held"]]))
-        for (k, lam), v in surfaces[f["fold"]].items():
-            rows.append(dict(fold=f["fold"], k=k, lam=lam, median_nse=np.nanmedian(v),
-                             base_nse=base, n_basins=len(f["held"]), n_seeds=f["n_seeds"]))
+        # `cv` is the surface selection is allowed to see: leave-one-group-out inside the
+        # training basins. `heldout` is the test set, computed only to price the rules below
+        # and never to choose. Both are written so the figure and the audit can use either.
+        cv_surfaces[f["fold"]] = surface(f, on="inner")
+        surfaces[f["fold"]] = surface(f, on="held")
+        base_h = np.nanmedian(nse_per_basin(f["pred"][f["held"]], f["obs"][f["held"]]))
+        base_cv = np.nanmedian(cv_surfaces[f["fold"]][(K_GRID[0], 0.0)])
+        for name, surf, base, n in (("cv", cv_surfaces[f["fold"]], base_cv, len(f["pool"])),
+                                    ("heldout", surfaces[f["fold"]], base_h, len(f["held"]))):
+            for (k, lam), v in surf.items():
+                rows.append(dict(fold=f["fold"], set=name, k=k, lam=lam,
+                                 median_nse=np.nanmedian(v), base_nse=base,
+                                 n_basins=n, n_seeds=f["n_seeds"]))
     df = pd.DataFrame(rows)
     df.to_csv(a.out, index=False)
 
     # Pool folds by averaging each fold's median so no fold dominates by basin count.
-    g = df.groupby(["k", "lam"]).agg(nse=("median_nse", "mean"), base=("base_nse", "mean")).reset_index()
+    g = (df.query("set == 'heldout'").groupby(["k", "lam"])
+           .agg(nse=("median_nse", "mean"), base=("base_nse", "mean")).reset_index())
     base, best = g.base.mean(), g.loc[g.nse.idxmax()]
     print(f"\nuncorrected: {base:.4f}")
     print(f"best cell on the held-out surface: K={int(best.k)}, lambda={best.lam:.2f} "
@@ -80,6 +89,15 @@ def main():
                         for f in folds)
         print(f"  {mode:<7} {np.nanmedian(scored):.4f}   {per}")
         print(f"          {note}")
+    print("\ncross-validation optima (what the figure draws, and what a paper would quote):")
+    cv = df.query("set == 'cv'")
+    opt = cv.loc[cv.groupby("fold").median_nse.idxmax()]
+    for _, r in opt.iterrows():
+        print(f"  fold {int(r.fold)}: K = {int(r.k):>2}, lambda = {r.lam:.2f}  "
+              f"(CV median NSE {r.median_nse:.4f})")
+    if len(opt) > 1:
+        print(f"  across folds: K in [{int(opt.k.min())}, {int(opt.k.max())}], "
+              f"lambda in [{opt.lam.min():.2f}, {opt.lam.max():.2f}]")
     print(f"\n-> {a.out}")
 
 
