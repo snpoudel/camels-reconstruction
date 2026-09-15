@@ -1,30 +1,20 @@
-"""NSE and KGE CDFs, vanilla vs donor, on the ungauged (PUB) basins.
+"""NSE distribution, the LSTM alone vs the LSTM plus the neighbour correction.
 
-    python figures/make_cdf_figure.py   # -> figures/cdf_vanilla_donor.png
+    python figures/make_cdf_figure.py    # -> figures/cdf_nse.png
 
-Two panels, same x-axis measure top and bottom: for each basin, the ensemble-mean
-hydrograph's score (see make_results_figure.py, which this reuses `load()` from) is
-one point; the curve is the empirical CDF across the held-out basins, so a curve
-to the right of the other is winning at every quantile it's right of, not just on
-average. `spatial` is left out here -- this figure is specifically the vanilla/donor
-information comparison the project's `README.md` singles out.
+Left: the empirical CDF across held-out (ungauged) basins. Each basin contributes one point --
+the score of its seed-mean hydrograph -- so a curve lying to the right is winning at every
+quantile it is right of, not merely on average.
 
-`load()` pools every fold an architecture has been run on for this cell (see that
-module's docstring) -- vanilla currently has only fold 0 (n=76), donor has folds 0-2
-(n=228). The two curves are therefore not drawn from equal-sized samples; each legend
-label carries its own n so this is never silently read as a matched comparison.
+Right: the same basins paired. The correction is applied to each basin's own hydrograph, so
+raw and corrected are matched and the honest summary is the per-basin change, not the shift
+between two independent distributions. The count above and below zero is printed on the panel
+because a median gain says nothing about how often the method hurts.
 
-Colour: the same vanilla/donor slots as the results-figure palette (slots 1 and 3),
-so identity stays consistent across the paper's figures. Re-validated as a pair on
-its own -- dropping `spatial` changes which checks are load-bearing, since CVD
-separation and the normal-vision floor are pairwise: normal-vision dE 24.0, CVD
-(protan/deutan) dE 23.1/23.2, both far past the pass thresholds (>=15, >=8). Donor's
-teal sits under the 3:1 contrast floor against white (2.7:1) -- a WARN, not a fail,
-mitigated the same way the rest of this project's figures already do it: identity
-never rests on colour alone (every curve is legend- and position-identified) and text
-stays in ink, never in the series colour.
+Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue, #eb6834 orange), validated there --
+normal-vision dE 33.6, protan 24.5, deutan 31.6, all past the >=15 / >=8 thresholds. Identity
+never rests on colour alone: both series are legend-identified and separated in position.
 """
-import argparse
 import os
 import sys
 
@@ -34,83 +24,87 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-from make_results_figure import load  # noqa: E402  (reuses the one true ensemble-scoring path)
-
-ARCHS = ["vanilla", "donor"]
-COLORS = {"vanilla": "#2a78d6", "donor": "#1baf7a"}
-INK, MUTE, GRID = "#16191c", "#5d6a73", "#dfe3e6"
-MEASURES = [("nse", "NSE"), ("kge", "KGE")]
-XLIM = (0.0, 1.0)  # zooms into the region that separates the two curves; a handful of
-                    # basins score below 0 and are clipped off-plot (note this in the caption)
-
-plt.rcParams.update({
-    "font.family": "DejaVu Sans",
-    "mathtext.fontset": "dejavusans",
-    "svg.fonttype": "none",
-})
+sys.path.insert(0, os.path.dirname(HERE))
+from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from src.correct import K, LAMBDA, apply_all  # noqa: E402
+from src.evaluate import metrics  # noqa: E402
 
 
-def ecdf(v):
-    v = np.sort(v[np.isfinite(v)])
-    return v, np.arange(1, len(v) + 1) / len(v)
+def collect(runs_dir="runs"):
+    raw, cor, folds = [], [], []
+    for f in apply_all(runs_dir=runs_dir):
+        raw.append(metrics(f["raw"], f["obs"]).nse.to_numpy())
+        cor.append(metrics(f["corrected"], f["obs"]).nse.to_numpy())
+        folds.append(f["fold"])
+    if not raw:
+        raise SystemExit("no runs found under runs/")
+    return np.concatenate(raw), np.concatenate(cor), folds
 
 
-def build(data, n_basins, width=4.6, height=5.6):
-    fig, axes = plt.subplots(2, 1, figsize=(width, height))
-
-    for ax, (m, mlabel) in zip(axes, MEASURES):
-        # The median (and sample size, since folds pool unevenly -- see module docstring)
-        # goes in the legend label itself rather than as text on the plot -- one fewer
-        # thing competing with the curves and dashed verticals for space, and no ambiguity
-        # about which value, or how many basins, belongs to which arch.
-        for arch in ARCHS:
-            v = data[("ungauged/test", m, arch)]
-            x, y = ecdf(v)
-            med = float(np.median(v))
-            n = n_basins[("ungauged/test", arch)]
-            ax.step(np.clip(x, *XLIM), y, where="post", color=COLORS[arch], lw=1.6,
-                    label=f"{arch}, n={n} (median = {med:.3f})", zorder=3)
-            ax.plot([med, med], [0, 0.5], color=COLORS[arch], lw=0.7, ls=(0, (2, 2)), zorder=2)
-
-        ax.axhline(0.5, color=MUTE, lw=0.6, ls=(0, (3, 2)), zorder=1)
-        ax.set_xlim(*XLIM)
-        ax.set_ylim(0, 1)
-        ax.set_ylabel("fraction of basins ≤ x", fontsize=7.4, color=INK)
-        ax.set_title(f"{mlabel}  (→ better)", fontsize=8.2, color=INK, pad=5)
-        ax.grid(axis="both", color=GRID, lw=0.6, zorder=0)
-        ax.set_axisbelow(True)
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
-        for s in ("left", "bottom"):
-            ax.spines[s].set_color(MUTE)
-            ax.spines[s].set_linewidth(0.7)
-        ax.tick_params(labelsize=6.8, colors=MUTE, length=2.5, width=0.7)
-
-        # Upper-left is empty in every panel (low scores start at fraction 0), so the
-        # legend sits there instead of near the medians around x=0.7-0.8. Each panel
-        # gets its own legend since the median differs by measure.
-        ax.legend(loc="upper left", fontsize=7.2, frameon=False, labelcolor=INK,
-                  handlelength=1.4, handletextpad=0.6)
-
-    axes[1].set_xlabel("score", fontsize=7.4, color=INK)
-
-    fig.suptitle("Out-of-sample (ungauged) basins", fontsize=9, color=INK, y=0.995)
-    fig.subplots_adjust(left=0.135, right=0.97, top=0.91, bottom=0.09, hspace=0.35)
-    return fig
+def style(ax):
+    ax.grid(True, color=GRID, lw=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(MUTE)
+        ax.spines[side].set_linewidth(0.8)
+    ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", default=HERE)
-    a = p.parse_args()
-    os.makedirs(a.out, exist_ok=True)
-    data, n_basins = load(dump=None)  # metrics_ensemble.csv already written by make_results_figure.py
-    fig = build(data, n_basins)
-    png = f"{a.out}/cdf_vanilla_donor.png"
-    fig.savefig(png, dpi=300)
-    w, h = fig.get_size_inches()
-    print(f"{w:.2f} x {h:.2f} in -> {png} ({w*300:.0f}x{h*300:.0f} px)")
+def main(runs_dir="runs", out=None):
+    raw, cor, folds = collect(runs_dir)
+    n = len(raw)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.3))
+
+    # --- CDF -------------------------------------------------------------------
+    for vals, color, label in ((raw, RAW, "LSTM"), (cor, CORRECTED, "LSTM + correction")):
+        v = np.sort(vals[np.isfinite(vals)])
+        ax1.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2,
+                 label=f"{label}   median {np.median(v):.3f}", zorder=3)
+    for vals, color in ((raw, RAW), (cor, CORRECTED)):
+        ax1.plot([np.nanmedian(vals)], [0.5], "o", ms=7, color=color,
+                 markeredgecolor="white", markeredgewidth=1.6, zorder=4)
+    ax1.axhline(0.5, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=1)
+    ax1.set_xlim(-0.2, 1.0)
+    ax1.set_ylim(0, 1)
+    ax1.set_xlabel("NSE", color=INK, fontsize=10)
+    ax1.set_ylabel("fraction of basins below", color=INK, fontsize=10)
+    ax1.set_title("Distribution across held-out basins", color=INK, fontsize=11,
+                  loc="left", pad=8)
+    ax1.legend(frameon=False, loc="upper left", fontsize=9, labelcolor=INK)
+    style(ax1)
+
+    # --- paired change ----------------------------------------------------------
+    d = cor - raw
+    d = d[np.isfinite(d)]
+    order = np.argsort(d)
+    up, down = (d > 0).sum(), (d < 0).sum()
+    ax2.bar(np.arange(len(d)), d[order], width=1.0,
+            color=np.where(d[order] > 0, CORRECTED, RAW), zorder=3)
+    ax2.axhline(0, color=MUTE, lw=0.9, zorder=2)
+    ax2.set_xlim(-1, len(d))
+    lim = np.abs(d).max() * 1.18
+    ax2.set_ylim(-lim, lim)
+    ax2.set_xlabel("basins, ranked by change", color=INK, fontsize=10)
+    ax2.set_ylabel("change in NSE", color=INK, fontsize=10)
+    ax2.set_title("Per-basin change, same basins paired", color=INK, fontsize=11,
+                  loc="left", pad=8)
+    ax2.text(0.97, 0.93, f"improved  {up}/{len(d)}  ({up / len(d):.0%})", transform=ax2.transAxes,
+             ha="right", va="top", fontsize=9.5, color=INK)
+    ax2.text(0.97, 0.05, f"worsened  {down}/{len(d)}", transform=ax2.transAxes,
+             ha="right", va="bottom", fontsize=9.5, color=MUTE)
+    style(ax2)
+
+    fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
+    fig.text(0.008, 0.015,
+             f"{n} held-out basins, {fold_txt}, WY2005-2014.  "
+             f"Correction: K={K} nearest gauges, $\\lambda$={LAMBDA}, no tuning.",
+             fontsize=8.5, color=MUTE)
+    fig.tight_layout(rect=(0, 0.045, 1, 1))
+    out = out or f"{HERE}/cdf_nse.png"
+    fig.savefig(out, dpi=200, facecolor="white")
+    print(f"-> {out}   n={n}, median {np.nanmedian(raw):.4f} -> {np.nanmedian(cor):.4f}")
 
 
 if __name__ == "__main__":

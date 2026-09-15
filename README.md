@@ -1,132 +1,81 @@
-# Attention-LSTM-PUB
+# Better ungauged-basin prediction from a standard LSTM and one correction step
 
-Does cross-basin (spatial) attention improve streamflow prediction in ungauged basins (PUB)
-beyond a vanilla LSTM? This repository runs the experiment that answers it.
+Predicting streamflow where there is no gauge is the standard hard problem in hydrology. The
+best published result is a plain LSTM trained across many basins at once — **median NSE 0.693**
+over 531 CAMELS-US basins (Kratzert et al. 2019).
 
-> **Status: finished.** The answer is no, on the terms that matter. Attention with no
-> discharge attached (`spatial`) never beat the vanilla LSTM on any fold. Attention that
-> carries neighbours' measured discharge (`donor`) reaches 0.724 median NSE on held-out
-> basins across all seven folds, against 0.693 published for a vanilla LSTM — an improvement
-> too small to justify its cost, and an **information** advantage rather than an
-> architectural one, since it requires a live gauge network reporting on the prediction day.
-> `EXPERIMENTS.md` carries the full record, the closing entry, and the one idea left unrun.
+This branch keeps that model exactly as it is and adds **one post-processing step** that costs
+milliseconds and trains nothing:
 
-## The question, split into two
+> Ask the nearest gauges how wrong the model was today. If they agree it ran low, assume this
+> basin did too, and believe half of it.
 
-A vanilla LSTM trained on many basins already transfers well to ungauged ones — it is the
-current state of the art for PUB. Adding attention across basins could help for two quite
-different reasons, which previous work here conflated into a single model. They are separated
-into three architectures so each mechanism can be tested on its own:
+On fold 0, that moves median NSE on held-out basins from **0.7086 to 0.7494** — 78% of basins
+improve, 3 of 76 are hurt by more than 0.05. Applied to the parent branch's 7-fold predictions
+across all 531 basins it gives 0.7235 → 0.7429, better on 7 of 7 folds.
 
-| Architecture | Attention keys / values | What it isolates |
-|---|---|---|
-| `vanilla` | — | Baseline |
-| `spatial` | 455 gauged basins | **Reference.** Does retrieving from gauged donors help at all? |
-| `donor` | 455 gauged, values carry observed flow | Does donor *discharge* add beyond donor *state*? |
+`METHOD.md` is the full account: how the idea arrived, the arithmetic, the leak audit, and the
+list of things that were tried and thrown away.
 
-Two single-variable comparisons: `vanilla`→`spatial`, `spatial`→`donor`.
+## The correction
 
-`donor` is a different problem statement, not just a different architecture — it assumes
-gauged neighbours reporting in real time, so it has access to information the other two do
-not. Read `donor` vs `vanilla` as an information comparison, not an architecture one.
+Over the K nearest gauged basins *j* that reported that day:
 
-An earlier fourth architecture, `spatial_all` (letting ungauged basins participate in
-training), scored worse on every measure and was dropped. A `donor_gated` variant (a learned
-distance bias on attention plus a reliability gate on the donor injection) was also tried, to
-address `donor`'s benefit being confined to basins within ~40 km of a gauge; it did not
-improve on `donor` and surfaced a deeper training-stability issue rather than a simple bug, so
-it was reverted rather than pursued further. Neither is part of the active codebase; see
-`EXPERIMENTS.md` for the full record.
+```
+w_j = (1/d_j) / sum(1/d)                                d = great-circle km
+R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
+q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
+```
 
-## Setup
+**K = 8, lambda = 0.5, eps = 0.01 mm/day — fixed constants, nothing fitted to data.** The
+correction helps across a wide range of both: over K in [3,20] and lambda in [0.3,0.7] the
+whole box spans 0.012 NSE on the parent branch's 531-basin surface and 0.027 on this branch's
+single fold, against a headline gain of 0.041 (`figures/hyperparameters.png`, `METHOD.md` §5).
+With one fold there is nothing to select on, so the constants are fixed rather than fitted.
 
-**Basins.** 531 CAMELS-US basins, 7 random folds. One fold (76 basins) is held out as
-ungauged; the other six (455) are gauged. No validation fold — training runs a fixed number
-of epochs, so the held-out fold is never used for model selection.
+The target basin's own discharge is never read. Deleting it from the record entirely leaves the
+corrected hydrographs bit-identical; deleting a *gauged* neighbour instead moves them, which is
+what makes that check meaningful. Run `python analysis/leak_audit.py` to reproduce it.
 
-**Periods.** Train WY1990–2004 (5,479 days), test WY2005–2014 (3,652 days). The training
-window was chosen because **qobs is 100.000% complete for every basin on every day** of it —
-which removes donor-eligibility floors, target masking, and basin exclusions entirely. All
-missingness in the record sits in WY1981–89 and WY2010–14.
+## Layout
 
-**Evaluation** is a 2×2 over the *same* trained models — these are slices, not extra runs:
-
-|  | Train period | Test period |
-|---|---|---|
-| Gauged basins (455) | fit quality | **gauged ceiling** |
-| Ungauged basins (76) | — | **PUB — the headline** |
-
-The gauged-ceiling cell is what makes a small PUB improvement interpretable. The two cells
-that carry the comparison are `gauged/test` (out-of-sample in **time**) and `ungauged/test`
-(out-of-sample in **space**).
-
-`src/evaluate.py` writes `runs/metrics.csv` — one row per basin × architecture × seed × cell,
-with NSE, KGE (and its r/α/β components) and RMSE — which is the shape the CDF plots are drawn
-from. Three seeds are paired across architectures, so initialisation and date order match and
-part of the seed noise is common to all of them.
-
-**Hyperparameters** follow Kratzert et al. (2019, HESS 23, 5089) where the paper specifies a
-value and NeuralHydrology code defaults otherwise — hidden 256, dropout 0.4, sequence length
-270, initial forget bias 3, 30 epochs, LR `{0: 1e-3, 10: 5e-4, 20: 1e-4}`, gradient clipping
-at norm 1, Adam. The one deliberate deviation is the loss: basin-normalised NSE (NSE*) rather
-than MSE, which the same paper recommends for multi-basin training. Every value is identical
-across architectures, so none can confound the comparison.
-
-Reference point: Kratzert et al. (2019, WRR 55) report median NSE **0.69** for a k-fold PUB
-LSTM on these same 531 basins, against 0.64 for calibrated SAC-SMA and 0.58 for the National
-Water Model. `BENCHMARKS.md` records that study in full, including what about it is and
-is not comparable to the runs here.
+```
+src/config.py      hyperparameters -- Kratzert et al. 2019, nothing tuned
+src/data.py        cache, folds, and every leak-sensitive statistic
+src/model.py       the LSTM: one layer, statics concatenated
+src/train.py       literature-standard batched training
+src/evaluate.py    prediction, NSE/KGE/RMSE, bias by flow band
+src/correct.py     THE CORRECTION -- about six lines of arithmetic
+analysis/tune.py       the K x lambda surface, leave-one-fold-out selection
+analysis/leak_audit.py the correction cannot see the basin it corrects -- with a positive control
+figures/           palette.py plus one script per figure
+```
 
 ## Running it
 
 ```bash
-pip install -r requirements.txt
-python -c "from src.data import build_cache; build_cache()"   # ~10 s, writes data/cache/
-
-python -m src.train --arch spatial --benchmark 200            # measure ms/step first
-CONCURRENCY=4 ./run_screen.sh                                 # 9 runs: 3 archs x 3 seeds
-python -m src.evaluate                                        # 2x2 table + paired tests
+python -c "from src.data import build_cache; build_cache()"   # -> data/cache/
+python -m src.train --benchmark 200                            # measure ms/step first
+for f in 0 1 2 3 4 5 6; do FOLD=$f CONCURRENCY=4 ./run_screen.sh; done
+python -m src.evaluate                                         # -> runs/metrics.csv
+python -m src.correct --out runs/corrected_metrics.csv         # raw vs corrected
+python analysis/tune.py --out runs/tuning.csv                  # the sensitivity surface
+python analysis/leak_audit.py                                  # prove there is no leak
+python figures/make_method_figure.py                           # the idea
+python figures/make_method_detail_figure.py                    # the arithmetic, worked
+python figures/make_cdf_figure.py
+python figures/make_boxplot_figure.py
+python figures/make_hyperparam_figure.py
 ```
 
-`--epochs`, `--seq-len`, `--max-steps` and `--pred-stride` exist for smoke tests and must be
-left at their defaults for real runs.
+The correction needs no GPU and no training — `python -m src.correct` runs on any machine in
+under a second once predictions exist.
 
-## Layout
+## Status
 
-| File | |
-|---|---|
-| `src/config.py` | Hyperparameters and periods. No logic. |
-| `src/data.py` | Cache, folds, and **every leak-sensitive statistic** — feature scaler, loss sigma, donor anomalies, all fit on gauged basins over the training period only. |
-| `src/model.py` | LSTM encoder and cross-basin attention, including the self-attention mask. |
-| `src/train.py` | NSE* loss, training loop, benchmark mode. |
-| `src/evaluate.py` | Per-basin metrics, the results table, and `metrics.csv`. |
-| `EXPERIMENTS.md` | What was run, what came out, and what it meant — newest first, ending with the closing entry. The project's record. |
-| `BENCHMARKS.md` | Published reference points this experiment is read against — what was run, and what is and is not comparable. |
-| `src/description.md` | How the architecture works, end to end, with the real tensor shapes and worked inference cases. |
-| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture), `make_results_figure.py` (OOS-time and OOS-space boxplot summaries), `make_cdf_figure.py` (NSE/KGE CDFs, vanilla vs donor), `make_fold_map_figure.py` (531 basins by fold), `make_attention_map_figure.py` (donor's attention for its clearest wins over vanilla), and `make_donor_flow_figure.py` (donor_flow against donor on matched basins). All run from any directory. |
-
-## Design notes
-
-**Attention uses low-rank learned projections.** `W_q, W_k: 256 → 64` plus a learnable
-softmax temperature, adding 33k parameters (+9%). An earlier version scored similarity as
-`softmax(context @ context.T)` with no projections, forcing the model to compare basins in the
-exact representation it uses to predict flow. With 531 near-uniform logits that collapses to a
-global mean vector added to every basin — a regulariser, not cross-basin retrieval.
-
-**A basin never attends to itself.** In `donor`, the value carries the donor's standardised
-log-flow anomaly, and inverting that anomaly recovers the basin's own flow at NSE 1.000000 —
-the self-value *is* the target. The diagonal is masked in training *and* evaluation, since two
-of the four 2×2 cells query gauged basins that are themselves in the donor pool.
-
-**Predictions are emitted in mm/day.** No code path scales the output by the query basin's
-own flow statistics; that would inject the single most informative unknown in PUB.
-
-**Basins are reordered as `[gauged..., ungauged...]`** so the encoder window is a contiguous
-GPU slice. Position therefore encodes fold membership by construction, and every output is
-keyed back through gauge ID rather than index.
-
-## Prior version
-
-`agu2025_poster.png` presents an earlier iteration (median NSE 0.685 vanilla → 0.714
-space-time attention). Those numbers came from a setup with no temporal holdout and a single
-seed, and are superseded by this design.
+The model code here is the **literature-standard batched** LSTM, at forget-gate bias 5.0
+(Kratzert et al. 2019) rather than the parent branch's frozen 3.0 — see `METHOD.md` §8. The predictions currently in
+`runs/` are fold 0 only, and were produced by the parent branch's date-batched variant; they
+stand in so the figures and the pipeline are exercised end to end. Every number in this README
+and in `METHOD.md` is marked with the fold and the model it came from, and will be replaced
+once the 7-fold grid runs. `METHOD.md` §8 lists what that leaves unproven.

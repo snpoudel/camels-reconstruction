@@ -1,383 +1,197 @@
-"""Method figure for the cross-basin attention LSTM.
+"""What the neighbour-residual correction does, on one real basin and one real day.
 
-    python figures/make_method_figure.py                    # -> architecture.{png,svg}
-    python figures/make_method_figure.py --variant idea1     # -> architecture_simple.{png,svg}
+    python figures/make_method_figure.py    # -> figures/method.png
 
-Both variants share this file so they cannot drift apart in palette, layout or conventions:
-everything above the attention block is identical, and only the value pathway and the head
-differ. `current` is what `src/model.py` implements today; `idea1` is the proposal in
-`IDEAS.md` -- V carries the donor's own recent flow instead of its hidden state, c is
-concatenated to h_q instead of added through a LayerNorm residual, and the per-day flag bits
-are replaced by dropping a donor that did not report on all seven days.
+Three panels, left to right, following the arithmetic in `src/correct.py`:
 
-Journal style: the canvas carries shapes, symbols and tensor shapes only; every sentence
-of explanation lives in the caption block drawn below the diagram, which is meant to be
-cropped off and pasted into the manuscript as the figure caption.
+  (a) pick the K nearest gauged basins to the ungauged target; the weight is 1/distance
+  (b) at each of them, today, compare the model against the gauge -- that is the log-residual;
+      the weighted mean R says how wrong the model is across this neighbourhood right now
+  (c) push the target's own hydrograph by a fraction lambda of that, and nothing else changes
 
-Three conventions do the explaining:
-  * rows are basins, everywhere -- the input tensor and h are drawn the same way;
-  * blue rows are the 455 gauged basins (the donor pool), amber rows the 76 ungauged;
-  * teal is what the `donor` variant switches on, matching its box in the results figure.
+Every number drawn is taken from the actual fold-0 run and the actual CAMELS record; nothing
+is illustrative. The basin and the day are chosen in code (see `pick_example`) rather than
+hardcoded, so the figure cannot drift away from the data behind it.
 
-The diagram is the *inference* pass -- all 531 basins are queries, which is why h is
-[531 x 256]. Training differs only in that the 76 ungauged basins are not encoded at all
-(`layout()` in src/data.py); the caption says so.
-
-Everything hangs off one spine at x = 50, with h fanning out to a left bus (queries) and
-a right bus (donors) at matching heights. Arrows are drawn in a second pass from measured
-box edges, and `report_overlaps` checks every registered pair -- a clean run prints
-"no overlaps".
+Colour: `figures/palette.py` -- slot 0 blue for the uncorrected model, slot 1 orange for the
+correction and for the target basin, ink for observations. Validated in that module
+(normal dE 33.6, protan 24.5, deutan 31.6). Observations are drawn in ink rather than a third
+hue, so the two model series are the only colour pair in play.
 """
-import argparse
-import itertools
+import json
 import os
-import textwrap
+import sys
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch
+import numpy as np
+import pandas as pd
 
-HERE = os.path.dirname(os.path.abspath(__file__))   # so the script runs from anywhere
-
-EDGE = "#3f4a52"      # box border
-LINE = "#5d6a73"      # connectors
-INK = "#16191c"
-MUTE = "#5d6a73"      # secondary text
-ACCENT = "#17855f"    # what `donor` switches on; matches its box in the results figure
-GAUGED = "#bfd8f0"    # the 455 basins of the donor pool
-UNGAUGED = "#f6d29b"  # the 76 held-out basins
-PANEL = "#f6f7f8"
-PANEL_EDGE = "#d3d9dd"
-
-plt.rcParams.update({
-    "font.family": "DejaVu Sans",
-    "mathtext.fontset": "dejavusans",
-    "svg.fonttype": "none",  # keep text as text in the SVG
-})
-
-CAPTION = (
-    "Figure 1.  Cross-basin attention LSTM, drawn as the inference pass. One forward pass "
-    "predicts a single day $t$ for every basin at once, so the batch dimension is the basin "
-    "dimension. A single LSTM, with weights shared across basins, reads the same 270-day window "
-    "of 6 daily forcings and 30 static catchment attributes for each basin and returns its last "
-    "hidden state; stacked, these give h. Rows are basins throughout: blue rows are the 455 "
-    "gauged basins of the fold, which form the fixed donor pool, and amber rows the 76 held-out "
-    "ungauged basins. At inference every basin is a query, so queries supply Q while donors "
-    "supply K and V. The self-diagonal of the logits is set to minus infinity in "
-    "training and in evaluation, so a gauged "
-    "query cannot read its own row; an ungauged query is not in the pool and therefore keeps all "
-    "455 donors. Here tau is a learned softmax temperature. The attended context c "
-    "re-enters through a LayerNorm residual. Dropout at p = 0.4 is applied twice, marked on the "
-    "diagram: once to ctx on the way into the head, and again between the head's two layers. The "
-    "head is a two-layer MLP, 256 to 256 to 1, with ReLU, and emits flow in mm day-1. The "
-    "three variants differ only inside the shaded block: vanilla removes it and predicts from "
-    "h_q alone; spatial keeps it with V = h_d; donor adds the teal term q_d, an encoding of each "
-    "donor's own recent discharge. Its flow over days t-6..t enters as a standardised log-flow "
-    "anomaly, which is dimensionless and so transfers between basins of very different size, "
-    "alongside one 1/0 flag per day recording whether that gauge reported -- 14 values per "
-    "donor, passed through a small MLP to 256 dimensions and added to h_d. A donor with no "
-    "observation anywhere in the window is dropped from the "
-    "softmax altogether; that masking is applied identically in spatial, so the donor pool is "
-    "the same in both. During training only "
-    "the 455 gauged basins are encoded and queried, each masked out of its own row, and the 76 "
-    "ungauged basins are absent altogether. At no stage does a query basin's own discharge, or "
-    "any statistic of it, enter the forward pass."
-)
-
-CAPTION_IDEA1 = (
-    "Figure 2.  The simplified donor pathway, drawn as the inference pass. Everything above the "
-    "attention block is unchanged: one shared LSTM reads the same 270-day window of 6 daily "
-    "forcings and 30 static catchment attributes for all 531 basins and returns its last hidden "
-    "state h. Rows are basins throughout: blue rows are the 455 gauged basins of the fold, which "
-    "form the fixed donor pool, and amber rows the 76 held-out ungauged basins. Queries supply Q "
-    "and donors supply K; the self-diagonal of the logits is set to minus infinity in training "
-    "and in evaluation, so no basin attends to itself. What changes is the value. Instead of the "
-    "donor hidden state plus a learned encoding of its discharge, V is the donor's recent flow "
-    "itself -- seven days of standardised log-flow anomaly, dimensionless and so transferable "
-    "between basins of very different size. There is no encoder MLP and no LayerNorm residual: "
-    "the attended context c is the attention-weighted regional flow anomaly over those same "
-    "seven days, and it is concatenated to h_q rather than added to it, giving the head 263 "
-    "inputs. Dropout is applied to h_q alone and never to c, because a zeroed anomaly reads as "
-    "flow sitting exactly at its long-term normal rather than as missing data; for the same "
-    "reason a donor is dropped from the softmax unless it reported on all seven days, and the "
-    "per-day flag bits of Figure 1 are gone. A two-layer MLP head emits flow in mm day-1. As "
-    "before, at no stage does a query basin's own discharge, or any statistic of it, enter the "
-    "forward pass."
-)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from src.correct import EPS, K, LAMBDA, correct, distances, load_fold  # noqa: E402
 
 
-def box(ax, x, y, s, fs=6.4, fc="white", ec=EDGE, lw=0.7, color=INK, pad=0.34):
-    """Text with a box shrink-wrapped around it. pad is in font-size units."""
-    return ax.text(
-        x, y, s, ha="center", va="center", fontsize=fs, color=color, zorder=4,
-        linespacing=1.45,
-        bbox=dict(boxstyle="round,pad=%.2f" % pad, facecolor=fc, edgecolor=ec, linewidth=lw),
-    )
+def style(ax):
+    ax.grid(True, color=GRID, lw=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    for s in ("left", "bottom"):
+        ax.spines[s].set_color(MUTE); ax.spines[s].set_linewidth(0.8)
+    ax.tick_params(colors=MUTE, labelsize=8.5, length=3)
 
 
-def rect(ax, t):
-    """(x0, y0, x1, y1) of a text's box, in data coordinates."""
-    patch = t.get_bbox_patch()
-    bb = patch.get_window_extent() if patch else t.get_window_extent()
-    inv = ax.transData.inverted()
-    (x0, y0), (x1, y1) = inv.transform((bb.x0, bb.y0)), inv.transform((bb.x1, bb.y1))
-    return x0, y0, x1, y1
+def pick_example(pred, obs, held, pool, D):
+    """A held-out basin whose improvement is *typical*, and the day the correction moves most.
 
+    Chosen in code, not hardcoded. Among basins whose nearest gauge sits at an ordinary
+    distance (the interquartile range), take the one whose NSE gain is closest to the median
+    gain. Picking the best-improved basin instead would put a +0.24 basin in a figure whose
+    fold-wide median gain is +0.04, which is the kind of illustration a reader is right to
+    distrust.
 
-def colour_box(ax, xc, y, parts, fs=6.4, pad=1.5):
-    """One line of text whose segments carry different colours, in a shrink-wrapped box.
-
-    matplotlib has no rich text, so the segments are laid out left to right by measuring
-    each one after a draw, then the box is drawn around their union.
+    Note this selection reads the target basins' observations -- that is legitimate for
+    choosing what to *draw*, and is not part of the method; `src/correct.py` never does it.
+    `analysis/leak_audit.py` tests the method, not this function.
     """
-    fig = ax.figure
-    fig.canvas.draw()
-    ts = [ax.text(0, y, s, ha="left", va="center", fontsize=fs, color=c, zorder=5)
-          for s, c in parts]
-    fig.canvas.draw()
-    inv = ax.transData.inverted()
-    w = []
-    for t in ts:
-        bb = t.get_window_extent()
-        w.append(inv.transform((bb.x1, 0))[0] - inv.transform((bb.x0, 0))[0])
-    h = (inv.transform((0, ts[0].get_window_extent().y1))[1]
-         - inv.transform((0, ts[0].get_window_extent().y0))[1])
-    x = xc - sum(w) / 2
-    for t, wi in zip(ts, w):
-        t.set_x(x)
-        x += wi
-    r = (xc - sum(w) / 2 - pad, y - h / 2 - pad, xc + sum(w) / 2 + pad, y + h / 2 + pad)
-    ax.add_patch(FancyBboxPatch((r[0], r[1]), r[2] - r[0], r[3] - r[1],
-                                boxstyle="round,pad=0,rounding_size=0.8", facecolor="white",
-                                edgecolor=EDGE, lw=0.7, zorder=4))
-    return r
+    corrected = correct(pred[held], pred[pool], obs[pool], D[np.ix_(held, pool)])
+    def nse(s, o):
+        m = np.isfinite(o)
+        return 1 - ((np.clip(s, 0, None)[m] - o[m]) ** 2).sum() / ((o[m] - o[m].mean()) ** 2).sum()
+    gain = np.array([nse(corrected[i], obs[held][i]) - nse(pred[held][i], obs[held][i])
+                     for i in range(len(held))])
+    dnn = D[np.ix_(held, pool)].min(1)
+    ok = (dnn > np.percentile(dnn, 25)) & (dnn < np.percentile(dnn, 75))
+    target = np.median(gain)
+    row = int(np.argmin(np.where(ok, np.abs(gain - target), np.inf)))
+    return row, gain[row]
 
 
-def arrow(ax, p0, p1, color=LINE, lw=0.75):
-    ax.annotate("", xy=p1, xytext=p0, zorder=3, arrowprops=dict(
-        arrowstyle="-|>,head_width=0.14,head_length=0.30", color=color,
-        linewidth=lw, shrinkA=0, shrinkB=0))
+def main(out=None):
+    got = load_fold(0)
+    if got is None:
+        raise SystemExit("needs runs/vanilla_fold0_seed*/")
+    pred, t_idx, gauged, n_seeds = got
+    D, basins = distances()
+    Q = np.load("data/cache/Q.npy")
+    dates = pd.to_datetime(np.load("data/cache/dates.npy")[t_idx])
+    obs = Q[:, t_idx]
+    pool, held = np.flatnonzero(gauged), np.flatnonzero(~gauged)
+    loc = pd.read_csv("data/camels531.csv", dtype={"gauge_id": str}).set_index("gauge_id")
 
+    row, gain = pick_example(pred, obs, held, pool, D)
+    i = held[row]
+    d_i = D[i, pool]
+    nb = np.argsort(d_i)[:K]
+    donors, dist = pool[nb], d_i[nb]
+    w = 1.0 / np.maximum(dist, 1.0); w = w / w.sum()
 
-def elbow(ax, pts, color=LINE, lw=0.75):
-    """Orthogonal polyline; only the final leg carries the head."""
-    for a, b in zip(pts[:-2], pts[1:-1]):
-        ax.plot([a[0], b[0]], [a[1], b[1]], color=color, lw=lw, zorder=3,
-                solid_capstyle="round")
-    arrow(ax, pts[-2], pts[-1], color=color, lw=lw)
+    corrected_i = correct(pred[held], pred[pool], obs[pool], D[np.ix_(held, pool)])[row]
+    res_all = (np.log(np.clip(pred[donors], 0, None) + EPS) - np.log(obs[donors] + EPS))
+    R_all = np.nansum(w[:, None] * np.nan_to_num(res_all), 0) / np.nansum(
+        w[:, None] * np.isfinite(res_all), 0)
 
+    # The window, then the day inside it where the correction actually moves the hydrograph
+    # in mm/day -- picking the largest |R| instead lands on a day when the river is near zero
+    # and the correction, though large in ratio, is invisible.
+    search = slice(900, 1050)
+    effect = np.abs(corrected_i[search] - np.clip(pred[i][search], 0, None))
+    day = 900 + int(np.nanargmax(effect))
+    # Plot a short window centred on that day. A season-long window compresses the gap
+    # between the two model lines into the line width, which is the one thing this panel
+    # has to show.
+    half_win = 32
+    win = slice(day - half_win, day + half_win)
 
-def line(ax, pts, color=LINE, lw=0.75):
-    ax.plot([p[0] for p in pts], [p[1] for p in pts], color=color, lw=lw, zorder=3,
-            solid_capstyle="round")
+    fig = plt.figure(figsize=(13.0, 5.0))
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 1.55], wspace=0.28,
+                          left=0.045, right=0.985, top=0.86, bottom=0.17)
+    axm, axr, axh = (fig.add_subplot(gs[0, j]) for j in range(3))
 
+    # ---- (a) which gauges, and how much each counts ---------------------------
+    axm.scatter(loc.loc[basins, "gauge_lon"], loc.loc[basins, "gauge_lat"], s=4,
+                color=GRID, zorder=2, linewidths=0)
+    tlon, tlat = loc.loc[basins[i], "gauge_lon"], loc.loc[basins[i], "gauge_lat"]
+    for j, wj in zip(donors, w):
+        axm.plot([tlon, loc.loc[basins[j], "gauge_lon"]], [tlat, loc.loc[basins[j], "gauge_lat"]],
+                 color=MUTE, lw=0.6 + 7 * wj, alpha=0.65, zorder=3, solid_capstyle="round")
+    axm.scatter(loc.loc[[basins[j] for j in donors], "gauge_lon"],
+                loc.loc[[basins[j] for j in donors], "gauge_lat"], s=42, color=RAW,
+                edgecolor="white", linewidth=1.2, zorder=4, label=f"{K} nearest gauges")
+    axm.scatter([tlon], [tlat], s=170, marker="*", color=CORRECTED, edgecolor="white",
+                linewidth=1.2, zorder=5, label="ungauged target")
+    dlon = loc.loc[[basins[j] for j in donors], "gauge_lon"].to_numpy()
+    dlat = loc.loc[[basins[j] for j in donors], "gauge_lat"].to_numpy()
+    cx, cy = np.r_[dlon, tlon], np.r_[dlat, tlat]
+    half = max(np.ptp(cx), np.ptp(cy)) * 0.85 + 0.35
+    axm.set_xlim(cx.mean() - half * 1.25, cx.mean() + half * 1.25)
+    axm.set_ylim(cy.mean() - half, cy.mean() + half)
+    axm.set_title("(a)  pick the K nearest gauges", color=INK, fontsize=10.5, loc="left", pad=8)
+    axm.text(0.5, 0.015, "line width $\\propto$ weight $1/d$", transform=axm.transAxes,
+             ha="center", va="bottom", fontsize=8.5, color=MUTE)
+    axm.legend(frameon=False, fontsize=8.5, loc="upper left", labelcolor=INK)
+    axm.set_xticks([]); axm.set_yticks([])
+    for s in axm.spines.values():
+        s.set_color(GRID)
 
-def junction(ax, x, y):
-    ax.plot([x], [y], marker="o", ms=2.1, color=LINE, zorder=4)
+    # ---- (b) today's error at each gauge --------------------------------------
+    r_day = res_all[:, day]
+    order = np.argsort(w)
+    ypos = np.arange(K)
+    axr.barh(ypos, r_day[order], color=np.where(r_day[order] > 0, RAW, CORRECTED),
+             height=0.62, zorder=3)
+    axr.axvline(0, color=MUTE, lw=0.9, zorder=2)
+    axr.axvline(R_all[day], color=INK, lw=1.8, ls=(0, (4, 2)), zorder=4)
+    axr.annotate(f"weighted mean\nR = {R_all[day]:+.2f}", (R_all[day], 0.4),
+                 xytext=(7 if R_all[day] < 0 else -7, 0), textcoords="offset points",
+                 ha="left" if R_all[day] < 0 else "right", va="center", fontsize=9, color=INK,
+                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
+    axr.set_yticks(ypos)
+    axr.set_yticklabels([f"w={w[o]:.2f}" for o in order], fontsize=8)
+    axr.set_xlabel("log(model) $-$ log(gauge), that day", color=INK, fontsize=9.5)
+    axr.set_title("(b)  how wrong the model is there", color=INK, fontsize=10.5,
+                  loc="left", pad=8)
+    axr.text(0.98, 0.985, f"{dates[day]:%-d %b %Y}", transform=axr.transAxes,
+             ha="right", va="top", fontsize=9, color=INK)
+    axr.text(0.98, 0.915, "positive = model ran high", transform=axr.transAxes,
+             ha="right", va="top", fontsize=8.5, color=MUTE)
+    style(axr)
 
+    # ---- (c) apply it to the target -------------------------------------------
+    t = dates[win]
+    axh.fill_between(t, 0, obs[i][win], color=INK, alpha=0.10, zorder=2)
+    axh.plot(t, obs[i][win], color=INK, lw=1.3, zorder=5, label="observed (never used)")
+    axh.plot(t, np.clip(pred[i][win], 0, None), color=RAW, lw=1.5, zorder=4, label="LSTM")
+    axh.plot(t, corrected_i[win], color=CORRECTED, lw=1.8, zorder=6, label="LSTM + correction")
+    axh.axvline(dates[day], color=MUTE, lw=0.9, ls=(0, (3, 3)), zorder=3)
+    axh.set_ylabel("flow  (mm/day)", color=INK, fontsize=9.5)
+    axh.set_title(f"(c)  nudge the target by $\\lambda$R", color=INK, fontsize=10.5,
+                  loc="left", pad=8)
+    axh.text(0.985, 0.985,
+             f"basin {basins[i]}\nNSE {gain:+.3f} -- the median gain for this fold",
+             transform=axh.transAxes, ha="right", va="top", fontsize=8.5, color=MUTE,
+             linespacing=1.5)
+    axh.legend(frameon=False, fontsize=8.5, loc="upper left", labelcolor=INK)
+    axh.annotate(f"{np.exp(-LAMBDA * R_all[day]):.2f}x here",
+                 (dates[day], corrected_i[day]), xytext=(14, 14), textcoords="offset points",
+                 fontsize=8.5, color=INK,
+                 arrowprops=dict(arrowstyle="-", color=MUTE, lw=0.8))
+    style(axh)
+    axh.xaxis.set_major_locator(matplotlib.dates.WeekdayLocator(byweekday=0, interval=2))
+    axh.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%-d %b"))
 
-def basin_block(ax, x0, x1, ybot, ytop, frac=0.75, fs=6.0, cols=0, depth=0, dz=0.8):
-    """A tensor whose rows are basins: gauged band on top, ungauged band below.
-
-    `cols` draws faint column rules, which is how the input tensor shows that each row
-    is itself a 270-day sequence, and `depth` stacks sheets behind it for the third axis.
-    h has neither -- that is the point: the LSTM consumed both, leaving one flat sheet of
-    the same rows. The band labels carry a bbox in the band colour so the rules stop
-    behind the text instead of striking through it.
-    """
-    for i in range(depth, 0, -1):
-        o = dz * i
-        ax.add_patch(plt.Rectangle((x0 + o, ybot + o), x1 - x0, ytop - ybot,
-                                   facecolor="#e9eef2", edgecolor=EDGE, lw=0.55,
-                                   zorder=1.5))
-    ysplit = ybot + (ytop - ybot) * (1 - frac)
-    for y0, y1, fc in [(ysplit, ytop, GAUGED), (ybot, ysplit, UNGAUGED)]:
-        ax.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=fc,
-                                   edgecolor="none", zorder=2))
-    for i in range(1, cols + 1):
-        xr = x0 + (x1 - x0) * i / (cols + 1)
-        ax.plot([xr, xr], [ybot, ytop], color="white", lw=0.45, alpha=0.85, zorder=3)
-    ax.add_patch(plt.Rectangle((x0, ybot), x1 - x0, ytop - ybot, facecolor="none",
-                               edgecolor=EDGE, lw=0.8, zorder=4))
-    ax.plot([x0, x1], [ysplit, ysplit], color=EDGE, lw=0.6, zorder=4)
-    xc = (x0 + x1) / 2
-    for y, s, f, fc in [((ysplit + ytop) / 2, "455 gauged", fs, GAUGED),
-                        ((ybot + ysplit) / 2, "76 ungauged", fs - 0.4, UNGAUGED)]:
-        ax.text(xc, y, s, ha="center", va="center", fontsize=f, color=INK, zorder=5,
-                bbox=dict(boxstyle="square,pad=0.18", facecolor=fc, edgecolor="none"))
-    return ysplit
-
-
-def report_overlaps(named_rects, tol=0.25):
-    """Print any pair of boxes that intersect -- the figure's own acceptance test."""
-    bad = []
-    for (na, a), (nb, b) in itertools.combinations(named_rects, 2):
-        if (a[0] < b[2] - tol and b[0] < a[2] - tol
-                and a[1] < b[3] - tol and b[1] < a[3] - tol):
-            bad.append("%s <-> %s" % (na, nb))
-    print("overlap check:", "no overlaps" if not bad else "COLLISIONS: " + "; ".join(bad))
-    return bad
-
-
-def diagram(fig, pos, variant="current"):
-    ax = fig.add_axes(pos)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(12.0, 101.0)
-    ax.axis("off")
-    R = {}
-
-    # ---- input: one tensor, rows are basins ------------------------------------
-    t_in = ax.text(50, 99.6, "Input   $X$    [531 basins × 270 days × 36 features]",
-                   ha="center", va="center", fontsize=6.6, color=INK)
-    basin_block(ax, 35, 65, 88, 96, frac=0.72, fs=5.7, depth=2)
-    ax.text(67.4, 96.4, "36 features", ha="left", va="center", fontsize=5.2, color=MUTE)
-    for x, lab in [(36.0, "$t\\!-\\!269$"), (64.0, "$t$")]:
-        ax.text(x, 86.9, lab, ha="center", va="center", fontsize=5.4, color=MUTE)
-    ax.text(33.3, 92.2, "531 basins", rotation=90, ha="center", va="center",
-            fontsize=5.6, color=MUTE)
-
-    n_lstm = box(ax, 50, 83.5, "shared LSTM  ·  256 hidden  ·  last hidden state")
-
-    # ---- h: the same rows, now encoded ------------------------------------------
-    t_h = ax.text(52.0, 79.2, "$h$    [531 × 256]", ha="left", va="center",
-                  fontsize=6.6, color=INK)
-    basin_block(ax, 35, 65, 67, 77)
-    ax.text(50, 65.4, "256 hidden units", ha="center", va="center",
-            fontsize=5.4, color=MUTE)
-    ax.text(33.3, 70.0, "531 basins", rotation=90, ha="center", va="center",
-            fontsize=5.4, color=MUTE)
-    t_hq = ax.text(19, 76.9, "$h_q$   all 531 rows", ha="center", va="center",
-                   fontsize=5.9, color=MUTE)
-    t_hd = ax.text(81, 76.9, "$h_d$   455 gauged rows", ha="center", va="center",
-                   fontsize=5.9, color=MUTE)
-
-    # ---- the attention block -----------------------------------------------------
-    ax.add_patch(FancyBboxPatch((8, 42), 85, 22, boxstyle="round,pad=0,rounding_size=1.2",
-                                facecolor=PANEL, edgecolor=PANEL_EDGE, lw=0.8, zorder=1))
-    t_panel = ax.text(50, 61.4, "cross-basin attention   ($d = 64$)", ha="center",
-                      va="center", fontsize=6.2, color=MUTE)
-
-    p_q = box(ax, 21, 55.0, "$Q = W_q h_q$    [531 × 64]")
-    p_k = box(ax, 78, 55.0, "$K = W_k h_d$    [455 × 64]")
-    p_a = box(ax, 50, 55.0, "$A = \\mathrm{softmax}(QK^{\\top}\\!/\\sqrt{d}\\,\\tau)$\n"
-                            "[531 × 455]\n"
-                            "(no basin attends to itself)")
-    named = [("input_lab", t_in), ("lstm", n_lstm), ("h_lab", t_h), ("hq", t_hq),
-             ("hd", t_hd), ("panel_lab", t_panel), ("Q", p_q), ("K", p_k), ("A", p_a)]
-
-    if variant == "current":
-        # V carries the donor hidden state plus a learned encoding of its discharge.
-        r_v = colour_box(ax, 78, 45.5, [("$V = h_d$ ", INK), ("$+\\ q_d$", ACCENT),
-                                        ("    [455 × 256]", INK)])
-        p_c = box(ax, 50, 45.5, "$c = A\\,V$    [531 × 256]")
-        p_f = box(ax, 82, 37.5, "MLP   14 → 32 → 256", fs=6.0, ec=ACCENT, color=ACCENT)
-        t_qd = ax.text(79.5, 40.8, "$q_d$   [455 × 256]", ha="right", va="center",
-                       fontsize=6.0, color=ACCENT)
-        p_zd = box(ax, 82, 28.5, "donor discharge,  days $t\\!-\\!6…t$\n"
-                                 "+ one 1/0 flag per day     [455 × 14]\n"
-                                 "flag 0 = that gauge did not report",
-                   fs=5.4, ec=ACCENT, color=ACCENT)
-        t_donly = ax.text(82, 22.3, "donor variant only", ha="center", va="center",
-                          fontsize=5.7, color=ACCENT)
-        p_ctx = box(ax, 50, 31.5, "$ctx = h_q + \\mathrm{LayerNorm}(c)$    [531 × 256]")
-        t_drop = ax.text(52.2, 27.1, "dropout  $p = 0.4$", ha="left", va="center",
-                         fontsize=5.7, color=MUTE)
-        p_head = box(ax, 50, 22.7, "prediction head :   MLP   256 → 256 → 1\n"
-                                   "ReLU,  dropout $p = 0.4$  between the layers", fs=6.0)
-        p_out = box(ax, 50, 14.8, "$\\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$")
-        named += [("c", p_c), ("f", p_f), ("zd", p_zd), ("donly", t_donly), ("qd", t_qd),
-                  ("ctx", p_ctx), ("drop", t_drop), ("head", p_head), ("out", p_out)]
-        joint, joint_y = "ctx", 31.5
-    else:
-        # V is the donor's own recent flow -- no hidden state, no encoder MLP.
-        r_v = colour_box(ax, 78, 45.5, [("$V = Z_d$", ACCENT), ("    [455 × 7]", INK)])
-        p_c = box(ax, 50, 45.5, "$c = A\\,V$    [531 × 7]", ec=ACCENT)
-        p_zd = box(ax, 82, 36.0, "donor flow,  days $t\\!-\\!6…t$    [455 × 7]\n"
-                                 "standardised log anomaly,  no flags\n"
-                                 "donor dropped unless all 7 days reported",
-                   fs=5.4, ec=ACCENT, color=ACCENT)
-        r_ctx = colour_box(ax, 50, 29.5, [("$\\mathrm{concat}(\\;\\mathrm{dropout}(h_q)\\;,$ ", INK),
-                                          ("$c$", ACCENT),
-                                          ("$\\;)$     [531 × 263]", INK)])
-        p_head = box(ax, 50, 21.8, "prediction head :   MLP   263 → 256 → 1\n"
-                                   "ReLU,  dropout $p = 0.4$  between the layers", fs=6.0)
-        p_out = box(ax, 50, 14.4, "$\\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$")
-        named += [("c", p_c), ("zd", p_zd), ("head", p_head), ("out", p_out)]
-        joint, joint_y = "ctx", 29.5
-
-    fig.canvas.draw()
-    R.update({k: rect(ax, t) for k, t in named})
-    R["V"] = r_v
-    if variant == "idea1":
-        R["ctx"] = r_ctx
-
-    # ---- spine --------------------------------------------------------------------
-    arrow(ax, (50, 88.0), (50, R["lstm"][3]))
-    arrow(ax, (50, R["lstm"][1]), (50, 77.2))
-    arrow(ax, (50, R["A"][1]), (50, R["c"][3]))
-    arrow(ax, (50, R["c"][1]), (50, R[joint][3]))
-    arrow(ax, (50, R[joint][1]), (50, R["head"][3]))
-    arrow(ax, (50, R["head"][1]), (50, R["out"][3]))
-
-    # ---- query bus (left) and donor bus (right), at matching heights ---------------
-    line(ax, [(35, 75), (4, 75), (4, joint_y)])
-    arrow(ax, (4, 55.0), (R["Q"][0], 55.0))
-    arrow(ax, (4, joint_y), (R[joint][0], joint_y))
-    junction(ax, 4, 55.0)
-
-    # h_d feeds K in both variants, and V only when V carries the hidden state.
-    line(ax, [(65, 75), (96, 75), (96, 45.5 if variant == "current" else 55.0)])
-    arrow(ax, (96, 55.0), (R["K"][2], 55.0))
-    junction(ax, 96, 55.0)
-
-    arrow(ax, (R["Q"][2], 55.0), (R["A"][0], 55.0))
-    arrow(ax, (R["K"][0], 55.0), (R["A"][2], 55.0))
-    arrow(ax, (R["V"][0], 45.5), (R["c"][2], 45.5))
-
-    if variant == "current":
-        arrow(ax, (96, 45.5), (R["V"][2], 45.5))
-        arrow(ax, (82, R["zd"][3]), (82, R["f"][1]), color=ACCENT)
-        arrow(ax, (82, R["f"][3]), (82, R["V"][1]), color=ACCENT)
-    else:
-        arrow(ax, (82, R["zd"][3]), (82, R["V"][1]), color=ACCENT)
-
-    fig.canvas.draw()
-    return list(R.items())
-
-
-def build(variant="current", width=6.0, diagram_in=4.45, wrap=137, fs=5.4):
-    # The caption band is sized from the wrapped text, so editing the caption can never
-    # silently clip it.
-    text = textwrap.fill(CAPTION if variant == "current" else CAPTION_IDEA1, wrap)
-    cap_in = len(text.split("\n")) * fs * 1.5 / 72 + 0.17
-    height = diagram_in + cap_in
-    fig = plt.figure(figsize=(width, height))
-    checked = diagram(fig, [0, cap_in / height, 1, 1 - cap_in / height], variant)
-
-    cax = fig.add_axes([0, 0, 1, cap_in / height])
-    cax.axis("off")
-    cax.text(0.025, 0.95, text, ha="left", va="top",
-             fontsize=fs, color=INK, linespacing=1.5, transform=cax.transAxes)
-
-    report_overlaps(checked)
-    return fig
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", default=HERE, help="output directory")
-    p.add_argument("--variant", default="current", choices=("current", "idea1"))
-    p.add_argument("--name", default=None)
-    a = p.parse_args()
-    os.makedirs(a.out, exist_ok=True)
-    name = a.name or ("architecture" if a.variant == "current" else "architecture_simple")
-    fig = build(a.variant)
-    png, svg = "%s/%s.png" % (a.out, name), "%s/%s.svg" % (a.out, name)
-    fig.savefig(png, dpi=300)
-    fig.savefig(svg)
-    w, h = fig.get_size_inches()
-    print("%.2f x %.2f in -> %s (%dx%d px), %s" % (w, h, png, w * 300, h * 300, svg))
+    fig.text(0.008, 0.025,
+             f"$q_{{corr}} = (q_{{sim}} + \\epsilon)\\,e^{{-\\lambda R}} - \\epsilon$   with   "
+             f"K = {K},  $\\lambda$ = {LAMBDA},  $\\epsilon$ = {EPS} mm/day.   "
+             f"The target basin's own discharge is never read; the weights use distance only.   "
+             f"Fold 0, {n_seeds}-seed mean hydrograph.",
+             fontsize=8.5, color=MUTE)
+    out = out or f"{HERE}/method.png"
+    fig.savefig(out, dpi=200, facecolor="white")
+    print(f"-> {out}  (basin {basins[i]}, {dates[day]:%Y-%m-%d}, R={R_all[day]:+.3f}, gain {gain:+.3f})")
 
 
 if __name__ == "__main__":

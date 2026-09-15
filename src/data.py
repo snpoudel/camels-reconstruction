@@ -1,9 +1,8 @@
 """Data cache, fold assignment, and all leak-sensitive normalisation.
 
 Every statistic that could leak information about held-out basins or the test period is
-computed in this module and nowhere else: the feature scaler, the per-basin flow sigma used
-by the loss, and the donor flow anomalies. All three are fit on gauged basins over the
-training period only.
+computed here and nowhere else: the feature scaler and the per-basin flow sigma used by the
+loss, both fit on gauged basins over the training period only.
 """
 import json
 import os
@@ -33,29 +32,21 @@ def build_cache(raw_dir="data/raw", list_csv="data/camels531.csv", cache_dir="da
         df = pd.read_csv(f"{raw_dir}/input_{b}.csv")
         assert len(df) == N_DAYS, f"{b} has {len(df)} rows"
         d = pd.to_datetime(dict(year=df.Year, month=df.Mnth, day=df.Day)).values
-        # Attention pools across basins at a fixed date, so a shifted date axis in one file
-        # would corrupt every basin's context invisibly.
         if dates is None:
             dates = d
         else:
             assert np.array_equal(d, dates), f"{b} has a different date axis"
         X[i] = df[feat_cols].to_numpy(np.float32)
         Q[i] = df["qobs(mm/day)"].to_numpy(np.float32)
-
     assert np.isfinite(X).all(), "NaN in features after dropping DROP_COLS"
 
-    # Written once here rather than from prepare(): it is the versioned definition of the
-    # experiment, and 12 concurrent training processes rewriting it can leave it torn.
-    assign_folds(len(basins), Cfg.n_folds, out_csv="data/basin_list_with_folds.csv",
-                 basins=basins)
-
+    assign_folds(len(basins), Cfg.n_folds, out_csv="data/basin_list_with_folds.csv", basins=basins)
     os.makedirs(cache_dir, exist_ok=True)
     np.save(f"{cache_dir}/X.npy", X)
     np.save(f"{cache_dir}/Q.npy", Q)
     np.save(f"{cache_dir}/dates.npy", dates)
     with open(f"{cache_dir}/meta.json", "w") as f:
-        json.dump({"basins": basins, "feat_cols": feat_cols,
-                   "drop_cols": list(DROP_COLS)}, f, indent=1)
+        json.dump({"basins": basins, "feat_cols": feat_cols, "drop_cols": list(DROP_COLS)}, f, indent=1)
     print(f"cached {X.shape} features, {np.isnan(Q).mean():.4%} of flow values missing")
 
 
@@ -71,18 +62,14 @@ def assign_folds(n_basins, n_folds, seed=42, out_csv=None, basins=None):
 
 @dataclass
 class Data:
-    """Tensors resident on the GPU, with basins reordered as [gauged..., ungauged...].
+    """Tensors on the compute device, basins reordered as [gauged..., ungauged...].
 
-    The reordering is what makes `X[:n_gauged, t0:t1]` a cheap contiguous slice instead of a
-    gather over the full 977 MB tensor. Position therefore encodes fold membership *by
-    construction* — `basins` is the only mapping back to gauge IDs, and every output is keyed
-    through it rather than by index.
+    Position therefore encodes fold membership by construction -- `basins` is the only mapping
+    back to gauge IDs, and every output is keyed through it rather than by index.
     """
 
-    X: torch.Tensor  # [N, T, 36] standardised features
-    Q: torch.Tensor  # [N, T] observed flow, mm/day, NaN where missing
-    Z: torch.Tensor  # [N, T] standardised log-flow anomaly, 0 where missing
-    Zobs: torch.Tensor  # [N, T] 1.0 where flow was observed
+    X: torch.Tensor      # [N, T, 36] standardised features
+    Q: torch.Tensor      # [N, T] observed flow, mm/day, NaN where missing
     sigma: torch.Tensor  # [N] train-period flow std, denominator of the NSE loss
     basins: list
     n_gauged: int
@@ -97,8 +84,8 @@ def prepare(cfg: Cfg, device) -> Data:
     dates = np.load(f"{cfg.cache_dir}/dates.npy")
     meta = json.load(open(f"{cfg.cache_dir}/meta.json"))
     basins, feat_cols = meta["basins"], meta["feat_cols"]
-    # Only data/cache/ is copied to the GPU box, so these must be re-checked here and not
-    # merely in build_cache -- a stale cache of the right width would otherwise pass silently.
+    # Re-checked here and not merely in build_cache: a stale cache of the right width would
+    # otherwise pass silently on a machine that only ever received data/cache/.
     assert "qobs(mm/day)" not in feat_cols, "target leaked into the cached features"
     assert meta.get("drop_cols") == list(DROP_COLS), "cache built with different DROP_COLS"
     assert X.shape == (len(basins), N_DAYS, N_FEAT), f"unexpected cache shape {X.shape}"
@@ -120,15 +107,6 @@ def prepare(cfg: Cfg, device) -> Data:
     basins = [basins[i] for i in order]
     n_gauged = len(gauged)
 
-    # Donor anomaly: dimensionless "how far above my own normal am I", so it transfers across
-    # basins of different size and wetness. Computed from raw features, before scaling.
-    p_mean = X[:, 0, feat_cols.index("p_mean")]  # static, constant in time
-    logq = np.log(Q + (cfg.q_eps_frac * p_mean)[:, None])
-    mu = np.nanmean(logq[:, tr0:tr1], axis=1, keepdims=True)
-    sd = np.nanstd(logq[:, tr0:tr1], axis=1, keepdims=True)
-    Z = np.nan_to_num((logq - mu) / np.maximum(sd, 1e-6))
-    Zobs = np.isfinite(Q).astype(np.float32)
-
     sigma = np.nanstd(Q[:, tr0:tr1], axis=1)
 
     # Feature scaler: gauged basins, training period. Nothing else is in scope.
@@ -138,81 +116,22 @@ def prepare(cfg: Cfg, device) -> Data:
     assert np.isfinite(X).all()
 
     t = lambda a: torch.as_tensor(a, device=device)
-    return Data(
-        X=t(X), Q=t(Q), Z=t(Z.astype(np.float32)), Zobs=t(Zobs), sigma=t(sigma.astype(np.float32)),
-        basins=basins, n_gauged=n_gauged,
-        train_t=np.arange(tr0, tr1), test_t=np.arange(te0, te1),
-    )
+    return Data(X=t(X), Q=t(Q), sigma=t(sigma.astype(np.float32)), basins=basins,
+                n_gauged=n_gauged, train_t=np.arange(tr0, tr1), test_t=np.arange(te0, te1))
 
 
-def donor_features(data: Data, t: int, hist: int, n: int, raw: bool = False):
-    """Donor flow anomaly and observation mask over the `hist` days ending at `t`.
+def sample_batch(data: Data, rng, batch_size, seq_len):
+    """One literature-standard batch: independently sampled (basin, date-window) pairs.
 
-    Returns ([n, 2*hist] anomaly-plus-indicator features, [n] validity), or with `raw`, the
-    bare ([n, hist] anomaly, [n] validity). A donor is masked out entirely only if it has no
-    observation at all in the window; individual missing days carry z=0 plus an indicator bit
-    so the model can tell "normal flow" from "no data".
-
-    With `raw` (`donor_flow`), the bare [n, hist] anomaly window is returned and validity
-    tightens to "reported on every day". There are no indicator bits to carry, because the
-    anomaly is consumed directly as the attention value rather than through an MLP -- so a
-    missing day would arrive as z=0, which in this space already means "exactly normal",
-    and the only safe response is to drop the donor. It costs almost nothing: measured on
-    fold 0, a mean of 0.10 donors per test day and 17 of 455 on the worst, against the 6.2
-    per day the shared `.any` mask already removes.
+    Each row has its own basin *and* its own end date, gathered in one call. Only gauged
+    basins are sampled -- held-out basins have no loss term.
     """
-    z = data.Z[:n, t - hist + 1 : t + 1]
-    obs = data.Zobs[:n, t - hist + 1 : t + 1]
-    if raw:
-        return z * obs, obs.all(dim=1)
-    return torch.cat([z * obs, obs], dim=1), obs.any(dim=1)
+    basin_idx = rng.integers(0, data.n_gauged, batch_size)
+    date_idx = rng.choice(data.train_t, batch_size)
+    day_idx = date_idx[:, None] - seq_len + 1 + np.arange(seq_len)[None, :]
 
-
-def sample_batch(data: Data, rng: np.random.Generator, n_gauged: int, train_t: np.ndarray,
-                 batch_size: int, seq_len: int):
-    """One literature-standard batch: `batch_size` independent (basin, date-window) samples.
-
-    Unlike the other architectures' shared-date batch, each row here has its own basin *and*
-    its own end date. One gather per call, no Python loop over the batch. Every (basin, date)
-    pair in `train_t` is valid feature- and target-wise (100% qobs-complete training period,
-    all-finite cached features), so no NaN-masking beyond what `nse_loss` already does.
-    """
-    basin_idx = rng.integers(0, n_gauged, batch_size)
-    date_idx = rng.choice(train_t, batch_size)
-    day_idx = date_idx[:, None] - seq_len + 1 + np.arange(seq_len)[None, :]  # [batch, seq_len]
-
-    device = data.X.device
-    b = torch.as_tensor(basin_idx, device=device)
-    days = torch.as_tensor(day_idx, device=device)
-    dates = torch.as_tensor(date_idx, device=device)
-
-    x = data.X[b[:, None], days]  # [batch, seq_len, N_FEAT]
-    obs = data.Q[b, dates]        # [batch]
-    sigma = data.sigma[b]         # [batch]
-    return x, obs, sigma
-
-
-def layout(cfg: Cfg, data: Data, training: bool):
-    """(n_encode, n_query, n_donor) for one forward pass.
-
-    Queries and donors are both prefixes of the [gauged..., ungauged...] ordering. During
-    training only gauged basins are queried, because only they have a loss term.
-    """
-    n_all, n_gauged = len(data.basins), data.n_gauged
-    n_query = n_gauged if training else n_all
-    n_donor = n_gauged if cfg.spatial else 0
-    return max(n_query, n_donor), n_query, n_donor
-
-
-def step_inputs(cfg: Cfg, data: Data, t: int, n_enc: int, n_donor: int):
-    """Encoder window and donor tensors for target date `t`."""
-    x = data.X[:n_enc, t - cfg.seq_len + 1 : t + 1]
-    if not cfg.spatial:
-        return x, None, None
-    # The availability mask is applied for every spatial arch, not just `donor`, so the
-    # donor pool is bit-identical across configs and the comparison stays single-variable.
-    # `donor_flow` is the one deliberate exception -- it cannot represent a missing day, so
-    # it drops those donors instead (see donor_features) and its pool is very slightly
-    # smaller. Gating on the arch keeps `spatial` and `donor` bit-identical to their runs.
-    dz, valid = donor_features(data, t, cfg.donor_hist, n_donor, raw=cfg.flow_value)
-    return x, (dz if cfg.use_donor or cfg.flow_value else None), valid
+    dev = data.X.device
+    b = torch.as_tensor(basin_idx, device=dev)
+    days = torch.as_tensor(day_idx, device=dev)
+    dates = torch.as_tensor(date_idx, device=dev)
+    return data.X[b[:, None], days], data.Q[b, dates], data.sigma[b]
