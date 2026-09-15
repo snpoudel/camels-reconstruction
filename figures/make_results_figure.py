@@ -10,11 +10,16 @@ random starts of one run are averaged into one predicted hydrograph, and the met
 computed once from that ensemble mean. Each basin therefore contributes exactly one
 value per measure, and a box is the spread across basins.
 
-Note this reads higher than scoring each start separately and averaging the scores -- the
-gap is the seed-to-seed disagreement that averaging cancels (on unseen basins: +0.029 NSE
-for vanilla, +0.040 spatial, +0.042 donor). Use these numbers to compare against published
-ensemble results; use the per-start numbers in EXPERIMENTS.md to compare architectures,
-since the ensemble gain rewards whichever variant trains least stably.
+This is the project's single scoring convention, for published comparisons and for
+architecture comparisons alike. It reads higher than scoring each start separately and
+averaging the scores -- the gap is the seed-to-seed disagreement that averaging cancels (on
+unseen basins: +0.029 NSE for vanilla, +0.040 spatial, +0.042 donor).
+
+That gap is not neutral between architectures: ensembling rewards whichever variant trains
+least stably, so a variant can gain here partly by being noisy. The fix is not to score
+architectures a second way -- it is to read the per-start spread in EXPERIMENTS.md alongside
+these numbers, since an ensemble is one value per architecture per fold and carries no
+uncertainty of its own.
 
 OOS-time (`gauged/test`, unseen years for trained basins) always uses fold 0 only, even
 for architectures that have since been run on more folds -- this row isn't the one being

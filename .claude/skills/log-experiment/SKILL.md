@@ -12,21 +12,31 @@ Append one entry to `EXPERIMENTS.md` describing a completed run batch.
 ```bash
 ls -d runs/*/ | wc -l                       # how many runs
 cat runs/*/config.json                      # arch, fold, seed, every hyperparameter
-python -m src.evaluate                      # regenerates runs/metrics.csv + prints medians
+python -m src.evaluate                      # runs/metrics.csv — per-start, for the spread only
+python figures/make_results_figure.py       # runs/metrics_ensemble.csv — THE headline numbers
 grep -c . runs/metrics.csv                  # sanity: rows present
 tail -3 logs/*.log                          # wall-clock per run
 ```
 
-Read the medians from `summarise()` in `src/evaluate.py` — do not recompute them by hand.
+**Every score quoted in an entry is the ensemble-mean hydrograph**: average the starts'
+day-by-day predictions per basin first, then compute NSE/KGE once. That is the median printed
+by `make_results_figure.py` and stored per-basin in `runs/metrics_ensemble.csv`. It is the
+project's only headline convention — it matches CLAUDE.md's invariant and matches how the
+reference number is built (Kratzert's 0.693 is a 10-member ensemble mean, see `BENCHMARKS.md`).
+
+`src/evaluate.py`'s `summarise()` prints something different — per-start medians averaged across
+starts, which reads several hundredths lower. **Never quote those as a result.** They exist for
+step 2 only. Do not recompute either set by hand.
 
 Check `git log --oneline -1` and record the commit the runs came from. A result you cannot
 trace back to a commit is a result you cannot reproduce.
 
 ## 2. Check whether the difference is real before you describe it
 
-`summarise()` prints each architecture's median as `mean [min, max]` across seeds. Before
-writing that one variant beat another, compare the gap between them to the width of those
-brackets.
+An ensemble gives one number per architecture per fold, so it carries no uncertainty of its own.
+The spread comes from the per-start numbers: `summarise()` prints each architecture's median as
+`mean [min, max]` across seeds. Before writing that one variant beat another, compare the gap
+between the *ensemble* numbers to the width of those per-start brackets.
 
 **If the gap is smaller than the seed-to-seed spread, say that plainly.** Write "the difference
 between them is smaller than the variation between random starts of the same model, so this

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="432pt" height="454.14pt" viewBox="0 0 432 454.14" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="432pt" height="462.24pt" viewBox="0 0 432 462.24" xmlns="http://www.w3.org/2000/svg" version="1.1">
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-09-13T15:06:54.569910</dc:date>
+    <dc:date>2026-09-14T15:04:32.123280</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -21,8 +21,8 @@
  </defs>
  <g id="figure_1">
   <g id="patch_1">
-   <path d="M 0 454.14 
-L 432 454.14 
+   <path d="M 0 462.24 
+L 432 462.24 
 L 432 0 
 L 0 0 
 z
@@ -40,7 +40,7 @@ Q 34.56 133.2 34.56 137.52
 L 34.56 208.08 
 Q 34.56 212.4 39.744 212.4 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #f6f7f8; stroke: #d3d9dd; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #f6f7f8; stroke: #d3d9dd; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_3">
     <path d="M 158.112 41.04 
@@ -48,7 +48,7 @@ L 287.712 41.04
 L 287.712 12.24 
 L 158.112 12.24 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #e9eef2; stroke: #3f4a52; stroke-width: 0.55; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #e9eef2; stroke: #3f4a52; stroke-width: 0.55; stroke-linejoin: miter"/>
    </g>
    <g id="patch_4">
     <path d="M 154.656 43.92 
@@ -56,7 +56,7 @@ L 284.256 43.92
 L 284.256 15.12 
 L 154.656 15.12 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #e9eef2; stroke: #3f4a52; stroke-width: 0.55; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #e9eef2; stroke: #3f4a52; stroke-width: 0.55; stroke-linejoin: miter"/>
    </g>
    <g id="patch_5">
     <path d="M 151.2 38.736 
@@ -64,7 +64,7 @@ L 280.8 38.736
 L 280.8 18 
 L 151.2 18 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #bfd8f0"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #bfd8f0"/>
    </g>
    <g id="patch_6">
     <path d="M 151.2 46.8 
@@ -72,7 +72,7 @@ L 280.8 46.8
 L 280.8 38.736 
 L 151.2 38.736 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #f6d29b"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #f6d29b"/>
    </g>
    <g id="patch_7">
     <path d="M 151.2 113.4 
@@ -80,7 +80,7 @@ L 280.8 113.4
 L 280.8 86.4 
 L 151.2 86.4 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #bfd8f0"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #bfd8f0"/>
    </g>
    <g id="patch_8">
     <path d="M 151.2 122.4 
@@ -88,7 +88,7 @@ L 280.8 122.4
 L 280.8 113.4 
 L 151.2 113.4 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #f6d29b"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #f6d29b"/>
    </g>
    <g id="text_1">
     <!-- Input   $X$    [531 basins × 270 days × 36 features] -->
@@ -316,6 +316,27 @@ z
    <g id="text_13">
     <text style="font-size: 5.7px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #17855f" x="354.24" y="284.800887" transform="rotate(-0 354.24 284.800887)">donor variant only</text>
    </g>
+   <g id="text_14">
+    <!-- dropout  $p = 0.4$ -->
+    <g style="fill: #5d6a73" transform="translate(225.504 267.521332)">
+     <text>
+      <tspan x="0" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">d</tspan>
+      <tspan x="3.610229" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">r</tspan>
+      <tspan x="5.948547" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">o</tspan>
+      <tspan x="9.428253" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">p</tspan>
+      <tspan x="13.038483" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">o</tspan>
+      <tspan x="16.518188" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">u</tspan>
+      <tspan x="20.122864" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">t</tspan>
+      <tspan x="22.352875" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73"> </tspan>
+      <tspan x="24.160767" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73"> </tspan>
+      <tspan x="30.686951" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">=</tspan>
+      <tspan x="36.560516" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">0</tspan>
+      <tspan x="40.179077" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">.</tspan>
+      <tspan x="41.986969" y="-0.671875" style="font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">4</tspan>
+      <tspan x="25.968658" y="-0.671875" style="font-style: oblique; font-size: 5.7px; font-family: 'DejaVu Sans'; fill: #5d6a73">p</tspan>
+     </text>
+    </g>
+   </g>
    <g id="patch_9">
     <path d="M 216 46.8 
 Q 216 51.492 216 55.297235 
@@ -337,8 +358,8 @@ z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_11">
-    <path d="M 216 177.056 
-Q 216 185.02 216 192.097235 
+    <path d="M 216 181.696 
+Q 216 187.34 216 192.097235 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
     <path d="M 217.4 189.097235 
 L 216 192.097235 
@@ -348,39 +369,39 @@ z
    </g>
    <g id="patch_12">
     <path d="M 216 206.616 
-Q 216 225.9 216 244.297235 
+Q 216 225 216 242.497235 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 217.4 241.297235 
-L 216 244.297235 
-L 214.6 241.297235 
+    <path d="M 217.4 239.497235 
+L 216 242.497235 
+L 214.6 239.497235 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_13">
-    <path d="M 216 258.816 
-Q 216 266.4 216 273.097235 
+    <path d="M 216 257.016 
+Q 216 264.078 216 270.253235 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 217.4 270.097235 
-L 216 273.097235 
-L 214.6 270.097235 
+    <path d="M 217.4 267.253235 
+L 216 270.253235 
+L 214.6 267.253235 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_14">
-    <path d="M 216 287.616 
-Q 216 295.2 216 301.897235 
+    <path d="M 216 292.62 
+Q 216 298.062 216 302.617235 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 217.4 298.897235 
-L 216 301.897235 
-L 214.6 298.897235 
+    <path d="M 217.4 299.617235 
+L 216 302.617235 
+L 214.6 299.617235 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="line2d_1">
     <path d="M 151.2 93.6 
 L 17.28 93.6 
-L 17.28 252 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
+L 17.28 250.2 
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_15">
     <path d="M 17.28 165.6 
@@ -393,12 +414,12 @@ z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_16">
-    <path d="M 17.28 252 
-Q 84.592 252 151.017235 252 
+    <path d="M 17.28 250.2 
+Q 84.592 250.2 151.017235 250.2 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 148.017235 250.6 
-L 151.017235 252 
-L 148.017235 253.4 
+    <path d="M 148.017235 248.8 
+L 151.017235 250.2 
+L 148.017235 251.6 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
@@ -406,7 +427,7 @@ z
     <path d="M 280.8 93.6 
 L 414.72 93.6 
 L 414.72 199.8 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_17">
     <path d="M 414.72 165.6 
@@ -419,42 +440,42 @@ z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_18">
-    <path d="M 414.72 199.8 
-Q 400.86 199.8 387.886765 199.8 
+    <path d="M 129.256 165.6 
+Q 148.32 165.6 166.497235 165.6 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 390.886765 201.2 
-L 387.886765 199.8 
-L 390.886765 198.4 
+    <path d="M 163.497235 164.2 
+L 166.497235 165.6 
+L 163.497235 167 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_19">
-    <path d="M 129.256 165.6 
-Q 152.82 165.6 175.497235 165.6 
+    <path d="M 299.144 165.6 
+Q 281.88 165.6 265.502765 165.6 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 172.497235 164.2 
-L 175.497235 165.6 
-L 172.497235 167 
+    <path d="M 268.502765 167 
+L 265.502765 165.6 
+L 268.502765 164.2 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
    <g id="patch_20">
-    <path d="M 299.144 165.6 
-Q 277.38 165.6 256.502765 165.6 
-" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-    <path d="M 259.502765 167 
-L 256.502765 165.6 
-L 259.502765 164.2 
-z
-" style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
-   </g>
-   <g id="patch_21">
     <path d="M 286.92 199.8 
 Q 269.648 199.8 253.262765 199.8 
 " style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
     <path d="M 256.262765 201.2 
 L 253.262765 199.8 
 L 256.262765 198.4 
+z
+" style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
+   </g>
+   <g id="patch_21">
+    <path d="M 414.72 199.8 
+Q 400.86 199.8 387.886765 199.8 
+" style="fill: none; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
+    <path d="M 390.886765 201.2 
+L 387.886765 199.8 
+L 390.886765 198.4 
 z
 " style="fill: #5d6a73; stroke: #5d6a73; stroke-width: 0.75; stroke-linecap: round"/>
    </g>
@@ -485,14 +506,14 @@ L 280.8 18
 L 151.2 18 
 L 151.2 46.8 
 z
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #3f4a52; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #3f4a52; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="line2d_3">
     <path d="M 151.2 38.736 
 L 280.8 38.736 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #3f4a52; stroke-width: 0.6; stroke-linecap: square"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #3f4a52; stroke-width: 0.6; stroke-linecap: square"/>
    </g>
-   <g id="text_14">
+   <g id="text_15">
     <g id="patch_25">
      <path d="M 140.391 69.816 
 L 291.609 69.816 
@@ -515,14 +536,14 @@ L 280.8 86.4
 L 151.2 86.4 
 L 151.2 122.4 
 z
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #3f4a52; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #3f4a52; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="line2d_4">
     <path d="M 151.2 113.4 
 L 280.8 113.4 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #3f4a52; stroke-width: 0.6; stroke-linecap: square"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #3f4a52; stroke-width: 0.6; stroke-linecap: square"/>
    </g>
-   <g id="text_15">
+   <g id="text_16">
     <g id="patch_27">
      <path d="M 54.592 172.416 
 L 126.848 172.416 
@@ -562,7 +583,7 @@ z
      </text>
     </g>
    </g>
-   <g id="text_16">
+   <g id="text_17">
     <g id="patch_28">
      <path d="M 301.376 172.416 
 L 372.544 172.416 
@@ -602,22 +623,22 @@ z
      </text>
     </g>
    </g>
-   <g id="text_17">
+   <g id="text_18">
     <g id="patch_29">
-     <path d="M 178.88 177.056 
-L 253.12 177.056 
-Q 255.296 177.056 255.296 174.88 
-L 255.296 156.32 
-Q 255.296 154.144 253.12 154.144 
-L 178.88 154.144 
-Q 176.704 154.144 176.704 156.32 
-L 176.704 174.88 
-Q 176.704 177.056 178.88 177.056 
+     <path d="M 173.6995 181.696 
+L 258.3005 181.696 
+Q 260.4765 181.696 260.4765 179.52 
+L 260.4765 151.68 
+Q 260.4765 149.504 258.3005 149.504 
+L 173.6995 149.504 
+Q 171.5235 149.504 171.5235 151.68 
+L 171.5235 179.52 
+Q 171.5235 181.696 173.6995 181.696 
 z
 " style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
     </g>
     <!-- $A = \mathrm{softmax}(QK^{\top}\!/\sqrt{d}\,\tau)$ -->
-    <g style="fill: #16191c" transform="translate(178.88 164.16)">
+    <g style="fill: #16191c" transform="translate(178.88 159.52)">
      <text>
       <tspan x="0" y="-0.756625" style="font-style: oblique; font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c">A</tspan>
       <tspan x="40.627963" y="-0.756625" style="font-style: oblique; font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c">Q</tspan>
@@ -640,7 +661,8 @@ z
      </text>
      <rect x="61.207134" y="-8.6" width="5.656549" height="0.4"/>
     </g>
-    <text style="font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(196.5715 172.2495)">[531 × 455]</text>
+    <text style="font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(196.5715 167.6095)">[531 × 455]</text>
+    <text style="font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(173.6995 176.8895)">(no basin attends to itself)</text>
    </g>
    <g id="patch_30">
     <path d="M 290.376 208.48875 
@@ -653,9 +675,9 @@ Q 286.92 191.11125 286.92 193.99125
 L 286.92 205.60875 
 Q 286.92 208.48875 290.376 208.48875 
 z
-" clip-path="url(#pd234df9cae)" style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
+" clip-path="url(#pf83be35a4d)" style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
    </g>
-   <g id="text_18">
+   <g id="text_19">
     <g id="patch_31">
      <path d="M 181.888 206.616 
 L 250.112 206.616 
@@ -694,7 +716,7 @@ z
      </text>
     </g>
    </g>
-   <g id="text_19">
+   <g id="text_20">
     <g id="patch_32">
      <path d="M 323.107969 234.99 
 L 385.372031 234.99 
@@ -710,7 +732,7 @@ z
     </g>
     <text style="font-size: 6px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #17855f" x="354.24" y="230.783906" transform="rotate(-0 354.24 230.783906)">MLP   14 → 32 → 256</text>
    </g>
-   <g id="text_20">
+   <g id="text_21">
     <g id="patch_33">
      <path d="M 304.830422 274.581 
 L 403.649578 274.581 
@@ -760,22 +782,22 @@ z
     <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #17855f" transform="translate(304.830422 262.490062)">+ one 1/0 flag per day     [455 × 14]</text>
     <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #17855f" transform="translate(308.399484 270.320062)">flag 0 = that gauge did not report</text>
    </g>
-   <g id="text_21">
+   <g id="text_22">
     <g id="patch_34">
-     <path d="M 154.272 258.816 
-L 277.728 258.816 
-Q 279.904 258.816 279.904 256.64 
-L 279.904 247.36 
-Q 279.904 245.184 277.728 245.184 
-L 154.272 245.184 
-Q 152.096 245.184 152.096 247.36 
-L 152.096 256.64 
-Q 152.096 258.816 154.272 258.816 
+     <path d="M 154.272 257.016 
+L 277.728 257.016 
+Q 279.904 257.016 279.904 254.84 
+L 279.904 245.56 
+Q 279.904 243.384 277.728 243.384 
+L 154.272 243.384 
+Q 152.096 243.384 152.096 245.56 
+L 152.096 254.84 
+Q 152.096 257.016 154.272 257.016 
 z
 " style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
     </g>
     <!-- $ctx = h_q + \mathrm{LayerNorm}(c)$    [531 × 256] -->
-    <g style="fill: #16191c" transform="translate(154.272 253.472)">
+    <g style="fill: #16191c" transform="translate(154.272 251.672)">
      <text>
       <tspan x="0" y="-0.140625" style="font-style: oblique; font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c">c</tspan>
       <tspan x="3.513596" y="-0.140625" style="font-style: oblique; font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c">t</tspan>
@@ -814,38 +836,83 @@ z
      </text>
     </g>
    </g>
-   <g id="text_22">
+   <g id="text_23">
     <g id="patch_35">
-     <path d="M 152.585 287.616 
-L 279.415 287.616 
-Q 281.591 287.616 281.591 285.44 
-L 281.591 276.16 
-Q 281.591 273.984 279.415 273.984 
-L 152.585 273.984 
-Q 150.409 273.984 150.409 276.16 
-L 150.409 285.44 
-Q 150.409 287.616 152.585 287.616 
+     <path d="M 151.74 292.62 
+L 280.26 292.62 
+Q 282.3 292.62 282.3 290.58 
+L 282.3 273.18 
+Q 282.3 271.14 280.26 271.14 
+L 151.74 271.14 
+Q 149.7 271.14 149.7 273.18 
+L 149.7 290.58 
+Q 149.7 292.62 151.74 292.62 
 z
 " style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
     </g>
-    <text style="font-size: 6.4px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #16191c" x="216" y="282.566" transform="rotate(-0 216 282.566)">prediction head :   MLP   256 → 256 → 1</text>
+    <text style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(156.548438 279.185625)">prediction head :   MLP   256 → 256 → 1</text>
+    <!-- ReLU,  dropout $p = 0.4$  between the layers -->
+    <g style="fill: #16191c" transform="translate(151.74 287.88)">
+     <text>
+      <tspan x="0" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">R</tspan>
+      <tspan x="4.168945" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="7.860352" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">L</tspan>
+      <tspan x="11.203125" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">U</tspan>
+      <tspan x="15.594727" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">,</tspan>
+      <tspan x="17.501953" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="19.40918" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="21.316406" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">d</tspan>
+      <tspan x="25.125" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">r</tspan>
+      <tspan x="27.591797" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">o</tspan>
+      <tspan x="31.262695" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">p</tspan>
+      <tspan x="35.071289" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">o</tspan>
+      <tspan x="38.742188" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">u</tspan>
+      <tspan x="42.544922" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">t</tspan>
+      <tspan x="44.897461" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="51.782227" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">=</tspan>
+      <tspan x="57.978516" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">0</tspan>
+      <tspan x="61.795898" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">.</tspan>
+      <tspan x="63.703125" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">4</tspan>
+      <tspan x="67.520508" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="69.427734" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="71.334961" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">b</tspan>
+      <tspan x="75.143555" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="78.834961" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">t</tspan>
+      <tspan x="81.1875" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">w</tspan>
+      <tspan x="86.094727" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="89.786133" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="93.477539" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">n</tspan>
+      <tspan x="97.280273" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="99.1875" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">t</tspan>
+      <tspan x="101.540039" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">h</tspan>
+      <tspan x="105.342773" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="109.03418" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
+      <tspan x="110.941406" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">l</tspan>
+      <tspan x="112.608398" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">a</tspan>
+      <tspan x="116.285156" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">y</tspan>
+      <tspan x="119.835938" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">e</tspan>
+      <tspan x="123.527344" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">r</tspan>
+      <tspan x="125.994141" y="-0.4375" style="font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">s</tspan>
+      <tspan x="46.804688" y="-0.4375" style="font-style: oblique; font-size: 6px; font-family: 'DejaVu Sans'; fill: #16191c">p</tspan>
+     </text>
+    </g>
    </g>
-   <g id="text_23">
+   <g id="text_24">
     <g id="patch_36">
-     <path d="M 155.36 316.416 
-L 276.64 316.416 
-Q 278.816 316.416 278.816 314.24 
-L 278.816 304.96 
-Q 278.816 302.784 276.64 302.784 
-L 155.36 302.784 
-Q 153.184 302.784 153.184 304.96 
-L 153.184 314.24 
-Q 153.184 316.416 155.36 316.416 
+     <path d="M 155.36 317.136 
+L 276.64 317.136 
+Q 278.816 317.136 278.816 314.96 
+L 278.816 305.68 
+Q 278.816 303.504 276.64 303.504 
+L 155.36 303.504 
+Q 153.184 303.504 153.184 305.68 
+L 153.184 314.96 
+Q 153.184 317.136 155.36 317.136 
 z
 " style="fill: #ffffff; stroke: #3f4a52; stroke-width: 0.7; stroke-linejoin: miter"/>
     </g>
     <!-- $\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$ -->
-    <g style="fill: #16191c" transform="translate(155.36 312.48)">
+    <g style="fill: #16191c" transform="translate(155.36 313.2)">
      <text>
       <tspan x="4.85128" y="-2.890625" style="font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c">̂</tspan>
       <tspan x="7.020366" y="-0.91875" style="font-size: 6.4px; font-family: 'DejaVu Sans'; fill: #16191c"> </tspan>
@@ -892,9 +959,9 @@ z
    </g>
    <g id="line2d_5">
     <path d="M 17.28 165.6 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #5d6a73; stroke-width: 1.5; stroke-linecap: square"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #5d6a73; stroke-width: 1.5; stroke-linecap: square"/>
     <defs>
-     <path id="m9e83abd012" d="M 0 1.05 
+     <path id="m67e25a97c2" d="M 0 1.05 
 C 0.278463 1.05 0.545559 0.939365 0.742462 0.742462 
 C 0.939365 0.545559 1.05 0.278463 1.05 0 
 C 1.05 -0.278463 0.939365 -0.545559 0.742462 -0.742462 
@@ -906,18 +973,18 @@ C -0.545559 0.939365 -0.278463 1.05 0 1.05
 z
 " style="stroke: #5d6a73"/>
     </defs>
-    <g clip-path="url(#pd234df9cae)">
-     <use xlink:href="#m9e83abd012" x="17.28" y="165.6" style="fill: #5d6a73; stroke: #5d6a73"/>
+    <g clip-path="url(#pf83be35a4d)">
+     <use xlink:href="#m67e25a97c2" x="17.28" y="165.6" style="fill: #5d6a73; stroke: #5d6a73"/>
     </g>
    </g>
    <g id="line2d_6">
     <path d="M 414.72 165.6 
-" clip-path="url(#pd234df9cae)" style="fill: none; stroke: #5d6a73; stroke-width: 1.5; stroke-linecap: square"/>
-    <g clip-path="url(#pd234df9cae)">
-     <use xlink:href="#m9e83abd012" x="414.72" y="165.6" style="fill: #5d6a73; stroke: #5d6a73"/>
+" clip-path="url(#pf83be35a4d)" style="fill: none; stroke: #5d6a73; stroke-width: 1.5; stroke-linecap: square"/>
+    <g clip-path="url(#pf83be35a4d)">
+     <use xlink:href="#m67e25a97c2" x="414.72" y="165.6" style="fill: #5d6a73; stroke: #5d6a73"/>
     </g>
    </g>
-   <g id="text_24">
+   <g id="text_25">
     <g id="patch_37">
      <path d="M 197.894039 32.244223 
 L 234.105961 32.244223 
@@ -928,7 +995,7 @@ z
     </g>
     <text style="font-size: 5.7px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #16191c" x="216" y="29.848887" transform="rotate(-0 216 29.848887)">455 gauged</text>
    </g>
-   <g id="text_25">
+   <g id="text_26">
     <g id="patch_38">
      <path d="M 197.49182 46.372207 
 L 234.50818 46.372207 
@@ -939,7 +1006,7 @@ z
     </g>
     <text style="font-size: 5.3px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #16191c" x="216" y="44.144965" transform="rotate(-0 216 44.144965)">76 ungauged</text>
    </g>
-   <g id="text_26">
+   <g id="text_27">
     <g id="patch_39">
      <path d="M 196.941094 103.980234 
 L 235.058906 103.980234 
@@ -950,7 +1017,7 @@ z
     </g>
     <text style="font-size: 6px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #16191c" x="216" y="101.458828" transform="rotate(-0 216 101.458828)">455 gauged</text>
    </g>
-   <g id="text_27">
+   <g id="text_28">
     <g id="patch_40">
      <path d="M 196.444187 121.708219 
 L 235.555813 121.708219 
@@ -961,7 +1028,7 @@ z
     </g>
     <text style="font-size: 5.6px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #16191c" x="216" y="119.354906" transform="rotate(-0 216 119.354906)">76 ungauged</text>
    </g>
-   <g id="text_28">
+   <g id="text_29">
     <!-- $V = h_d$  -->
     <g style="fill: #16191c" transform="translate(293.4 201.46325)">
      <text>
@@ -973,7 +1040,7 @@ z
      </text>
     </g>
    </g>
-   <g id="text_29">
+   <g id="text_30">
     <!-- $+\ q_d$ -->
     <g style="fill: #17855f" transform="translate(315 201.4625)">
      <text>
@@ -983,14 +1050,14 @@ z
      </text>
     </g>
    </g>
-   <g id="text_30">
+   <g id="text_31">
     <text style="font-size: 6.4px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #16191c" x="330.12" y="201.46275" transform="rotate(-0 330.12 201.46275)">    [455 × 256]</text>
    </g>
   </g>
   <g id="axes_2">
-   <g id="text_31">
+   <g id="text_32">
     <!-- Figure 1.  Cross-basin attention LSTM, drawn as the inference pass. One forward pass predicts a single day $t$ for every basin at once, -->
-    <g style="fill: #16191c" transform="translate(10.8 332.622)">
+    <g style="fill: #16191c" transform="translate(10.8 333.027)">
      <text>
       <tspan x="0" y="-0.90625" style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c">F</tspan>
       <tspan x="3.100662" y="-0.90625" style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c">i</tspan>
@@ -1127,25 +1194,26 @@ z
       <tspan x="291.073181" y="-0.90625" style="font-style: oblique; font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c">t</tspan>
      </text>
     </g>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 340.727062)">so the batch dimension is the basin dimension. A single LSTM, with weights shared across basins, reads the same 270-day window of 6 daily</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 348.827063)">forcings and 30 static catchment attributes for each basin and returns its last hidden state; stacked, these give h. Rows are basins</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 356.927062)">throughout: blue rows are the 455 gauged basins of the fold, which form the fixed donor pool, and amber rows the 76 held-out ungauged</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 365.027062)">basins. At inference every basin is a query, so queries supply Q while donors supply K and V. The self-diagonal of A is masked in</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 373.127063)">training and in evaluation, so a gauged query cannot read its own row; an ungauged query is not in the pool and therefore keeps all 455</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 381.227062)">donors. Here tau is a learned softmax temperature. The attended context c re-enters through a LayerNorm residual, and a two-layer MLP</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 389.327063)">head (256 to 256 to 1, with ReLU and dropout) emits flow in mm day-1. The three variants differ only inside the shaded block: vanilla</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 397.351969)">removes it and predicts from h_q alone; spatial keeps it with V = h_d; donor adds the teal term q_d, an encoding of each donor's own</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 405.527063)">recent discharge. Its flow over days t-6..t enters as a standardised log-flow anomaly, which is dimensionless and so transfers between</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 413.627063)">basins of very different size, alongside one 1/0 flag per day recording whether that gauge reported -- 14 values per donor, passed</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 421.651969)">through a small MLP to 256 dimensions and added to h_d. A donor with no observation anywhere in the window is dropped from the softmax</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 429.827063)">altogether; that masking is applied identically in spatial, so the donor pool is the same in both. During training only the 455 gauged</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 437.927063)">basins are encoded and queried, each masked out of its own row, and the 76 ungauged basins are absent altogether. At no stage does a</text>
-    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 446.027063)">query basin's own discharge, or any statistic of it, enter the forward pass.</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 341.132062)">so the batch dimension is the basin dimension. A single LSTM, with weights shared across basins, reads the same 270-day window of 6 daily</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 349.232062)">forcings and 30 static catchment attributes for each basin and returns its last hidden state; stacked, these give h. Rows are basins</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 357.332063)">throughout: blue rows are the 455 gauged basins of the fold, which form the fixed donor pool, and amber rows the 76 held-out ungauged</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 365.432063)">basins. At inference every basin is a query, so queries supply Q while donors supply K and V. The self-diagonal of the logits is set to</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 373.532062)">minus infinity in training and in evaluation, so a gauged query cannot read its own row; an ungauged query is not in the pool and</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 381.632063)">therefore keeps all 455 donors. Here tau is a learned softmax temperature. The attended context c re-enters through a LayerNorm residual.</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 389.732063)">Dropout at p = 0.4 is applied twice, marked on the diagram: once to ctx on the way into the head, and again between the head's two</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 397.832063)">layers. The head is a two-layer MLP, 256 to 256 to 1, with ReLU, and emits flow in mm day-1. The three variants differ only inside the</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 405.856969)">shaded block: vanilla removes it and predicts from h_q alone; spatial keeps it with V = h_d; donor adds the teal term q_d, an encoding of</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 414.032063)">each donor's own recent discharge. Its flow over days t-6..t enters as a standardised log-flow anomaly, which is dimensionless and so</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 422.132063)">transfers between basins of very different size, alongside one 1/0 flag per day recording whether that gauge reported -- 14 values per</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 430.156969)">donor, passed through a small MLP to 256 dimensions and added to h_d. A donor with no observation anywhere in the window is dropped from</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 438.332063)">the softmax altogether; that masking is applied identically in spatial, so the donor pool is the same in both. During training only the</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 446.432063)">455 gauged basins are encoded and queried, each masked out of its own row, and the 76 ungauged basins are absent altogether. At no stage</text>
+    <text style="font-size: 5.4px; font-family: 'DejaVu Sans'; fill: #16191c" transform="translate(10.8 454.532063)">does a query basin's own discharge, or any statistic of it, enter the forward pass.</text>
    </g>
   </g>
  </g>
  <defs>
-  <clipPath id="pd234df9cae">
+  <clipPath id="pf83be35a4d">
    <rect x="0" y="0" width="432" height="320.4"/>
   </clipPath>
  </defs>

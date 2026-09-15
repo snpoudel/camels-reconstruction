@@ -1,6 +1,14 @@
 """Method figure for the cross-basin attention LSTM.
 
-    python figures/make_method_figure.py    # -> figures/architecture.{png,svg}
+    python figures/make_method_figure.py                    # -> architecture.{png,svg}
+    python figures/make_method_figure.py --variant idea1     # -> architecture_simple.{png,svg}
+
+Both variants share this file so they cannot drift apart in palette, layout or conventions:
+everything above the attention block is identical, and only the value pathway and the head
+differ. `current` is what `src/model.py` implements today; `idea1` is the proposal in
+`IDEAS.md` -- V carries the donor's own recent flow instead of its hidden state, c is
+concatenated to h_q instead of added through a LayerNorm residual, and the per-day flag bits
+are replaced by dropping a donor that did not report on all seven days.
 
 Journal style: the canvas carries shapes, symbols and tensor shapes only; every sentence
 of explanation lives in the caption block drawn below the diagram, which is meant to be
@@ -56,11 +64,13 @@ CAPTION = (
     "hidden state; stacked, these give h. Rows are basins throughout: blue rows are the 455 "
     "gauged basins of the fold, which form the fixed donor pool, and amber rows the 76 held-out "
     "ungauged basins. At inference every basin is a query, so queries supply Q while donors "
-    "supply K and V. The self-diagonal of A is masked in training and in evaluation, so a gauged "
+    "supply K and V. The self-diagonal of the logits is set to minus infinity in "
+    "training and in evaluation, so a gauged "
     "query cannot read its own row; an ungauged query is not in the pool and therefore keeps all "
     "455 donors. Here tau is a learned softmax temperature. The attended context c "
-    "re-enters through a LayerNorm residual, and a two-layer MLP head (256 to 256 to 1, with ReLU "
-    "and dropout) emits flow in mm day-1. The "
+    "re-enters through a LayerNorm residual. Dropout at p = 0.4 is applied twice, marked on the "
+    "diagram: once to ctx on the way into the head, and again between the head's two layers. The "
+    "head is a two-layer MLP, 256 to 256 to 1, with ReLU, and emits flow in mm day-1. The "
     "three variants differ only inside the shaded block: vanilla removes it and predicts from "
     "h_q alone; spatial keeps it with V = h_d; donor adds the teal term q_d, an encoding of each "
     "donor's own recent discharge. Its flow over days t-6..t enters as a standardised log-flow "
@@ -73,6 +83,27 @@ CAPTION = (
     "the 455 gauged basins are encoded and queried, each masked out of its own row, and the 76 "
     "ungauged basins are absent altogether. At no stage does a query basin's own discharge, or "
     "any statistic of it, enter the forward pass."
+)
+
+CAPTION_IDEA1 = (
+    "Figure 2.  The simplified donor pathway, drawn as the inference pass. Everything above the "
+    "attention block is unchanged: one shared LSTM reads the same 270-day window of 6 daily "
+    "forcings and 30 static catchment attributes for all 531 basins and returns its last hidden "
+    "state h. Rows are basins throughout: blue rows are the 455 gauged basins of the fold, which "
+    "form the fixed donor pool, and amber rows the 76 held-out ungauged basins. Queries supply Q "
+    "and donors supply K; the self-diagonal of the logits is set to minus infinity in training "
+    "and in evaluation, so no basin attends to itself. What changes is the value. Instead of the "
+    "donor hidden state plus a learned encoding of its discharge, V is the donor's recent flow "
+    "itself -- seven days of standardised log-flow anomaly, dimensionless and so transferable "
+    "between basins of very different size. There is no encoder MLP and no LayerNorm residual: "
+    "the attended context c is the attention-weighted regional flow anomaly over those same "
+    "seven days, and it is concatenated to h_q rather than added to it, giving the head 263 "
+    "inputs. Dropout is applied to h_q alone and never to c, because a zeroed anomaly reads as "
+    "flow sitting exactly at its long-term normal rather than as missing data; for the same "
+    "reason a donor is dropped from the softmax unless it reported on all seven days, and the "
+    "per-day flag bits of Figure 1 are gone. A two-layer MLP head emits flow in mm day-1. As "
+    "before, at no stage does a query basin's own discharge, or any statistic of it, enter the "
+    "forward pass."
 )
 
 
@@ -189,7 +220,7 @@ def report_overlaps(named_rects, tol=0.25):
     return bad
 
 
-def diagram(fig, pos):
+def diagram(fig, pos, variant="current"):
     ax = fig.add_axes(pos)
     ax.set_xlim(0, 100)
     ax.set_ylim(12.0, 101.0)
@@ -230,73 +261,99 @@ def diagram(fig, pos):
     p_q = box(ax, 21, 55.0, "$Q = W_q h_q$    [531 × 64]")
     p_k = box(ax, 78, 55.0, "$K = W_k h_d$    [455 × 64]")
     p_a = box(ax, 50, 55.0, "$A = \\mathrm{softmax}(QK^{\\top}\\!/\\sqrt{d}\\,\\tau)$\n"
-                            "[531 × 455]")
-    r_v = colour_box(ax, 78, 45.5, [("$V = h_d$ ", INK), ("$+\\ q_d$", ACCENT),
-                                    ("    [455 × 256]", INK)])
+                            "[531 × 455]\n"
+                            "(no basin attends to itself)")
+    named = [("input_lab", t_in), ("lstm", n_lstm), ("h_lab", t_h), ("hq", t_hq),
+             ("hd", t_hd), ("panel_lab", t_panel), ("Q", p_q), ("K", p_k), ("A", p_a)]
 
-    p_c = box(ax, 50, 45.5, "$c = A\\,V$    [531 × 256]")
-    p_f = box(ax, 82, 37.5, "MLP   14 → 32 → 256", fs=6.0, ec=ACCENT, color=ACCENT)
-    t_qd = ax.text(79.5, 40.8, "$q_d$   [455 × 256]", ha="right", va="center",
-                   fontsize=6.0, color=ACCENT)
-    p_zd = box(ax, 82, 28.5, "donor discharge,  days $t\\!-\\!6…t$\n"
-                             "+ one 1/0 flag per day     [455 × 14]\n"
-                             "flag 0 = that gauge did not report",
-               fs=5.4, ec=ACCENT, color=ACCENT)
-    t_donly = ax.text(82, 22.3, "donor variant only", ha="center", va="center",
-                      fontsize=5.7, color=ACCENT)
-
-    # ---- head ---------------------------------------------------------------------
-    p_ctx = box(ax, 50, 31.0, "$ctx = h_q + \\mathrm{LayerNorm}(c)$    [531 × 256]")
-    p_head = box(ax, 50, 23.0, "prediction head :   MLP   256 → 256 → 1")
-    p_out = box(ax, 50, 15.0, "$\\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$")
+    if variant == "current":
+        # V carries the donor hidden state plus a learned encoding of its discharge.
+        r_v = colour_box(ax, 78, 45.5, [("$V = h_d$ ", INK), ("$+\\ q_d$", ACCENT),
+                                        ("    [455 × 256]", INK)])
+        p_c = box(ax, 50, 45.5, "$c = A\\,V$    [531 × 256]")
+        p_f = box(ax, 82, 37.5, "MLP   14 → 32 → 256", fs=6.0, ec=ACCENT, color=ACCENT)
+        t_qd = ax.text(79.5, 40.8, "$q_d$   [455 × 256]", ha="right", va="center",
+                       fontsize=6.0, color=ACCENT)
+        p_zd = box(ax, 82, 28.5, "donor discharge,  days $t\\!-\\!6…t$\n"
+                                 "+ one 1/0 flag per day     [455 × 14]\n"
+                                 "flag 0 = that gauge did not report",
+                   fs=5.4, ec=ACCENT, color=ACCENT)
+        t_donly = ax.text(82, 22.3, "donor variant only", ha="center", va="center",
+                          fontsize=5.7, color=ACCENT)
+        p_ctx = box(ax, 50, 31.5, "$ctx = h_q + \\mathrm{LayerNorm}(c)$    [531 × 256]")
+        t_drop = ax.text(52.2, 27.1, "dropout  $p = 0.4$", ha="left", va="center",
+                         fontsize=5.7, color=MUTE)
+        p_head = box(ax, 50, 22.7, "prediction head :   MLP   256 → 256 → 1\n"
+                                   "ReLU,  dropout $p = 0.4$  between the layers", fs=6.0)
+        p_out = box(ax, 50, 14.8, "$\\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$")
+        named += [("c", p_c), ("f", p_f), ("zd", p_zd), ("donly", t_donly), ("qd", t_qd),
+                  ("ctx", p_ctx), ("drop", t_drop), ("head", p_head), ("out", p_out)]
+        joint, joint_y = "ctx", 31.5
+    else:
+        # V is the donor's own recent flow -- no hidden state, no encoder MLP.
+        r_v = colour_box(ax, 78, 45.5, [("$V = Z_d$", ACCENT), ("    [455 × 7]", INK)])
+        p_c = box(ax, 50, 45.5, "$c = A\\,V$    [531 × 7]", ec=ACCENT)
+        p_zd = box(ax, 82, 36.0, "donor flow,  days $t\\!-\\!6…t$    [455 × 7]\n"
+                                 "standardised log anomaly,  no flags\n"
+                                 "donor dropped unless all 7 days reported",
+                   fs=5.4, ec=ACCENT, color=ACCENT)
+        r_ctx = colour_box(ax, 50, 29.5, [("$\\mathrm{concat}(\\;\\mathrm{dropout}(h_q)\\;,$ ", INK),
+                                          ("$c$", ACCENT),
+                                          ("$\\;)$     [531 × 263]", INK)])
+        p_head = box(ax, 50, 21.8, "prediction head :   MLP   263 → 256 → 1\n"
+                                   "ReLU,  dropout $p = 0.4$  between the layers", fs=6.0)
+        p_out = box(ax, 50, 14.4, "$\\hat{Q}_t$    [531]    flow on day $t$,  mm day$^{-1}$")
+        named += [("c", p_c), ("zd", p_zd), ("head", p_head), ("out", p_out)]
+        joint, joint_y = "ctx", 29.5
 
     fig.canvas.draw()
-    R.update({k: rect(ax, t) for k, t in [
-        ("input_lab", t_in), ("lstm", n_lstm), ("h_lab", t_h),
-        ("hq", t_hq), ("hd", t_hd), ("panel_lab", t_panel), ("Q", p_q), ("K", p_k),
-        ("A", p_a), ("c", p_c), ("f", p_f), ("zd", p_zd), ("donly", t_donly),
-        ("qd", t_qd), ("ctx", p_ctx),
-        ("head", p_head), ("out", p_out)]})
+    R.update({k: rect(ax, t) for k, t in named})
     R["V"] = r_v
+    if variant == "idea1":
+        R["ctx"] = r_ctx
 
     # ---- spine --------------------------------------------------------------------
     arrow(ax, (50, 88.0), (50, R["lstm"][3]))
     arrow(ax, (50, R["lstm"][1]), (50, 77.2))
     arrow(ax, (50, R["A"][1]), (50, R["c"][3]))
-    arrow(ax, (50, R["c"][1]), (50, R["ctx"][3]))
-    arrow(ax, (50, R["ctx"][1]), (50, R["head"][3]))
+    arrow(ax, (50, R["c"][1]), (50, R[joint][3]))
+    arrow(ax, (50, R[joint][1]), (50, R["head"][3]))
     arrow(ax, (50, R["head"][1]), (50, R["out"][3]))
 
     # ---- query bus (left) and donor bus (right), at matching heights ---------------
-    ycy = (R["ctx"][1] + R["ctx"][3]) / 2
-    line(ax, [(35, 75), (4, 75), (4, ycy)])
+    line(ax, [(35, 75), (4, 75), (4, joint_y)])
     arrow(ax, (4, 55.0), (R["Q"][0], 55.0))
-    arrow(ax, (4, ycy), (R["ctx"][0], ycy))
+    arrow(ax, (4, joint_y), (R[joint][0], joint_y))
     junction(ax, 4, 55.0)
 
-    line(ax, [(65, 75), (96, 75), (96, 45.5)])
+    # h_d feeds K in both variants, and V only when V carries the hidden state.
+    line(ax, [(65, 75), (96, 75), (96, 45.5 if variant == "current" else 55.0)])
     arrow(ax, (96, 55.0), (R["K"][2], 55.0))
-    arrow(ax, (96, 45.5), (R["V"][2], 45.5))
     junction(ax, 96, 55.0)
 
     arrow(ax, (R["Q"][2], 55.0), (R["A"][0], 55.0))
     arrow(ax, (R["K"][0], 55.0), (R["A"][2], 55.0))
     arrow(ax, (R["V"][0], 45.5), (R["c"][2], 45.5))
-    arrow(ax, (82, R["zd"][3]), (82, R["f"][1]), color=ACCENT)
-    arrow(ax, (82, R["f"][3]), (82, R["V"][1]), color=ACCENT)
+
+    if variant == "current":
+        arrow(ax, (96, 45.5), (R["V"][2], 45.5))
+        arrow(ax, (82, R["zd"][3]), (82, R["f"][1]), color=ACCENT)
+        arrow(ax, (82, R["f"][3]), (82, R["V"][1]), color=ACCENT)
+    else:
+        arrow(ax, (82, R["zd"][3]), (82, R["V"][1]), color=ACCENT)
 
     fig.canvas.draw()
     return list(R.items())
 
 
-def build(width=6.0, diagram_in=4.45, wrap=137, fs=5.4):
+def build(variant="current", width=6.0, diagram_in=4.45, wrap=137, fs=5.4):
     # The caption band is sized from the wrapped text, so editing the caption can never
     # silently clip it.
-    text = textwrap.fill(CAPTION, wrap)
+    text = textwrap.fill(CAPTION if variant == "current" else CAPTION_IDEA1, wrap)
     cap_in = len(text.split("\n")) * fs * 1.5 / 72 + 0.17
     height = diagram_in + cap_in
     fig = plt.figure(figsize=(width, height))
-    checked = diagram(fig, [0, cap_in / height, 1, 1 - cap_in / height])
+    checked = diagram(fig, [0, cap_in / height, 1, 1 - cap_in / height], variant)
 
     cax = fig.add_axes([0, 0, 1, cap_in / height])
     cax.axis("off")
@@ -310,11 +367,13 @@ def build(width=6.0, diagram_in=4.45, wrap=137, fs=5.4):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default=HERE, help="output directory")
-    p.add_argument("--name", default="architecture")
+    p.add_argument("--variant", default="current", choices=("current", "idea1"))
+    p.add_argument("--name", default=None)
     a = p.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    fig = build()
-    png, svg = "%s/%s.png" % (a.out, a.name), "%s/%s.svg" % (a.out, a.name)
+    name = a.name or ("architecture" if a.variant == "current" else "architecture_simple")
+    fig = build(a.variant)
+    png, svg = "%s/%s.png" % (a.out, name), "%s/%s.svg" % (a.out, name)
     fig.savefig(png, dpi=300)
     fig.savefig(svg)
     w, h = fig.get_size_inches()
