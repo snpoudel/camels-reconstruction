@@ -58,7 +58,7 @@ figures/           palette.py plus one script per figure
 ```bash
 python -c "from src.data import build_cache; build_cache()"   # -> data/cache/
 python -m src.train --benchmark 200                            # measure ms/step first
-for f in 0 1 2 3 4 5 6; do FOLD=$f CONCURRENCY=4 ./run_screen.sh; done
+FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh   # stage 1: one seed, all folds
 python -m src.evaluate                                         # -> runs/metrics.csv
 python -m src.correct --out runs/corrected_metrics.csv         # selects K, lambda; raw vs corrected
 python analysis/tune.py --out runs/tuning.csv                  # the sensitivity surface

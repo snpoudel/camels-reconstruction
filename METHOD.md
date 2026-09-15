@@ -204,8 +204,9 @@ genuinely same-day, not a slow drift.
 ## 7. What it buys
 
 Fold 0, 76 held-out basins, 3-seed mean hydrograph. K and lambda selected inside the training
-basins (K = 6, lambda = 0.65); the fixed-constant column is shown beside it because on this
-single fold it happens to score higher, and hiding that would be dishonest.
+basins (K = 6, lambda = 0.65); the fixed-constant column is shown beside it so the two can be
+compared. They are statistically indistinguishable — see the note below the table, and do not
+read the median column as if the 0.004 were a result.
 
 | | LSTM | + correction (selected) | + correction (fixed K=8, λ=0.5) |
 |---|---|---|---|
@@ -218,6 +219,7 @@ single fold it happens to score higher, and hiding that would be dishonest.
 | bias, bottom 30% | +49.1% | **+25.4%** | +32.4% |
 | basins improved | — | 67% | 78% |
 | basins hurt by >0.05 NSE | — | 6 of 76 | 3 of 76 |
+| paired median change vs the other | — | **+0.0007** | −0.0007 |
 
 Read honestly, that table says three things:
 
@@ -226,10 +228,15 @@ Read honestly, that table says three things:
 - **Overall water balance gets slightly worse** (−2.2% to −3.8%). The correction trades a
   little long-run bias for a large reduction in day-to-day error, which is what NSE, KGE and
   RMSE all reward. Worth stating rather than leaving in the figure.
-- **Selection is not obviously winning yet.** The selected pair beats the fixed one on KGE and
-  on low-flow bias, loses on median NSE by 0.004, and helps fewer basins (67% vs 78%). On one
-  fold of 76 basins that is inside the noise and settles nothing. §5 says why this comparison
-  has to be redone on the 7-fold grid.
+- **Selected and fixed are indistinguishable, and the paired comparison slightly favours
+  selection.** The difference of the two medians (−0.0037) reads as if fixed wins, but that is
+  a difference of medians, not a difference: pairing the basins gives a median per-basin change
+  of **+0.0007 in favour of selection**, 39 of 76 basins prefer it, and a bootstrap 95% interval
+  on the difference of medians is **[−0.021, +0.015]** — straddling zero. The cross-validation
+  surface also ranks settings much as the held-out surface does (Spearman rho +0.78 over all
+  273 cells), so selection is picking sensibly; there is simply nothing to pick between, because
+  the surface is flat here (neighbouring cells span 0.746–0.754). Nothing separates the two on
+  one fold of 76 basins.
 
 See `figures/cdf_nse.png` and `figures/metrics_boxplots.png`.
 
@@ -263,7 +270,7 @@ the literature value. Two consequences worth stating rather than discovering lat
 ## 10. To settle it
 
 ```bash
-for f in 0 1 2 3 4 5 6; do FOLD=$f SEEDS="0 1 2" CONCURRENCY=4 ./run_screen.sh; done
+FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh
 python -m src.evaluate
 python -m src.correct --out runs/corrected_metrics.csv
 python analysis/tune.py --out runs/tuning.csv
