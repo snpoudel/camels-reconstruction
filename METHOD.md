@@ -66,7 +66,7 @@ R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
 q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 ```
 
-**K = 8, lambda = 0.5, eps = 0.01 mm/day.**
+**eps = 0.01 mm/day**; K and lambda are selected per fold (§5), with K = 8, lambda = 0.5 as the no-search fallback.
 
 `figures/method.png` shows the idea in three panels; `figures/method_detail.png` works the arithmetic through on one real basin and one real day, stage by stage, with every intermediate number printed.
 
@@ -100,6 +100,7 @@ coordinates only. Two audits, each with a positive control that proves the test 
 | **Delete every held-out basin's discharge from the entire record** | PASS — corrected hydrographs **bit-identical**, max difference `0.000e+00` |
 | Replace held-out discharge with pure noise | PASS — bit-identical |
 | **Positive control: delete the most-used gauged donor instead** | PASS — output moves by 9.085 mm/day, so the tests above are not inert |
+| **Destroy every held-out observation and re-run selection** | PASS — the chosen (K, λ) does not move, for either search rule |
 | Do the weights read discharge? | PASS — distance only |
 
 Run it yourself: **`python analysis/leak_audit.py`** (exits non-zero on any failure, so it can
@@ -112,38 +113,59 @@ published 0.693 uses no discharge anywhere at prediction time. So this is a meth
 *regions* containing ungauged *sites*, and the fair comparison is against the same LSTM without
 the correction — which is exactly the comparison this branch is built to make.
 
-## 5. How much the two constants matter
+## 5. Choosing K and lambda, without ever touching the test basins
+
+The grid search takes seconds, so there is no reason not to run it. The only question is
+*where* it is allowed to look.
+
+**The rule: no held-out basin of any fold is ever read during selection.** This is stricter
+than it first appears. Searching another fold's held-out basins would leave fold *f*'s own
+test set untouched, and is tempting for that reason — but every basin is some fold's test set,
+so the pooled 531-basin number would end up tuned on itself. That route is closed.
+
+What is left is fold *f*'s own 455 **training** basins, and the model's predictions at them.
+`src/correct.py:choose` offers three rules, all clean:
+
+| rule | where it searches | fold 0: picks | scores |
+|---|---|---|---|
+| **`inner`** (default) | leave-one-group-out inside the training basins: they keep their original fold labels, so each of the six groups is corrected using donors from the other five — a thinned gauge network, like a real ungauged basin faces | K=6, λ=0.65 | **0.7457** |
+| `gauged` | the same basins without the group structure, self masked | K=4, λ=0.70 | 0.7387 |
+| `fixed` | no search | K=8, λ=0.50 | 0.7494 |
+| *oracle* | *the held-out basins themselves — shown only to price the others; not selectable* | *K=10, λ=0.70* | *0.7579* |
+
+Two things to read off that table, both honest and both provisional on a single fold:
+
+- **The group structure matters.** `inner` beats `gauged` by 0.007 because letting a basin
+  borrow from its immediate neighbours — which a held-out *group* could not — makes the
+  neighbourhood look better than it will be at deployment, and a smaller K wins than should.
+- **On this one fold, searching does not currently beat not searching.** `inner` lands 0.004
+  below the fixed pair. With 76 basins and one fold that is inside the noise, and the fixed
+  pair is not really free either — K=8, λ=0.5 were themselves read off a surface, just an
+  earlier one. The comparison has to be redone on the 7-fold grid before anything is claimed.
+
+`analysis/leak_audit.py` check [6] is what makes "no held-out basin was read" a measurement
+rather than a promise: it destroys every held-out observation, re-runs selection, and checks
+the chosen (K, lambda) does not move. It doesn't.
+
+### How much the choice matters at all
 
 `figures/hyperparameters.png`. Each panel sweeps one constant while the thin grey lines hold
 the other at every value on the grid, so the spread between them *is* the sensitivity to the
 constant not on the x-axis.
 
-Two surfaces, and they do not say the same thing:
+| surface | box K in [3,20], lambda in [0.3,0.7] | oracle best |
+|---|---|---|
+| 531 basins, 7 folds (parent branch, `donor` base) | 0.7312–0.7429, **range 0.012** | 0.7429 |
+| 76 basins, fold 0 only (this branch) | 0.7308–0.7579, **range 0.027** | 0.7579 |
 
-| surface | box K in [3,20], lambda in [0.3,0.7] | best cell | K=8, lambda=0.5 |
-|---|---|---|---|
-| 531 basins, 7 folds (parent branch, `donor` base) | 0.7312–0.7429, **range 0.012** | 0.7429 | 0.7429 |
-| 76 basins, fold 0 only (this branch, `vanilla` base) | 0.7308–0.7579, **range 0.027** | 0.7579 | 0.7494 |
-
-On the 531-basin surface the whole box is within about 0.01 NSE and the shipped constants
-land on the best cell. **On the single fold in this branch the box spans 0.027 and the shipped
-constants sit 0.009 below the best cell** — a sixth of the headline gain. One fold of 76 basins
-is a much noisier surface than seven folds of 531, and neither the flatness nor the apparent
-optimum on it should be over-read.
-
-So the defensible claim today is the weaker one: the correction helps across a wide range of
-both constants, and the shipped pair is a reasonable point inside that range rather than a
-fitted optimum. Whether the tighter 531-basin flatness carries over to a `vanilla` base is a
-question the 7-fold grid answers, not this branch.
+Against a gain of about 0.04–0.05 over uncorrected, a 0.012–0.027 spread across a 5-fold range
+in K and a 2-fold range in lambda is the real message: **the correction works across a wide
+region, and selecting inside it is cheap insurance rather than a load-bearing step.** One fold
+of 76 basins is a much noisier surface than seven folds of 531; neither the flatness nor the
+apparent optimum on it should be over-read.
 
 The one genuinely bad corner on both surfaces is K = 1 with large lambda: a single
 over-trusted neighbour.
-
-`analysis/tune.py` reproduces the surface and, once more than one fold exists, selects
-leave-one-fold-out — the values applied to a fold are chosen on the *other* folds, so a fold
-never tunes anything applied to itself. With a single fold it reports the surface and declines
-to select, because a value picked on the only fold being scored is not a measurement. **That
-is the situation now**, which is why the shipped constants are fixed rather than fitted.
 
 ## 6. What was tried and rejected
 
@@ -172,24 +194,35 @@ genuinely same-day, not a slow drift.
 
 ## 7. What it buys
 
-Fold 0, 76 held-out basins, 3-seed mean hydrograph, nothing tuned:
+Fold 0, 76 held-out basins, 3-seed mean hydrograph. K and lambda selected inside the training
+basins (K = 6, lambda = 0.65); the fixed-constant column is shown beside it because on this
+single fold it happens to score higher, and hiding that would be dishonest.
 
-| | LSTM | + correction |
-|---|---|---|
-| **median NSE** | **0.7086** | **0.7494** (+0.0407) |
-| median KGE | 0.704 | 0.710 |
-| median RMSE (mm/day) | 1.207 | 1.138 |
-| median overall bias | −2.2% | **−4.4%** (worse) |
-| bias, top 10% of flows | −11.9% | −10.8% |
-| bias, middle 30–90% | +13.4% | +6.5% |
-| bias, bottom 30% | +49.1% | +32.4% |
+| | LSTM | + correction (selected) | + correction (fixed K=8, λ=0.5) |
+|---|---|---|---|
+| **median NSE** | **0.7086** | **0.7457** (+0.0371) | 0.7494 (+0.0407) |
+| median KGE | 0.704 | **0.723** | 0.710 |
+| median RMSE (mm/day) | 1.207 | 1.141 | 1.138 |
+| median overall bias | −2.2% | −3.8% (worse) | −4.4% (worse) |
+| bias, top 10% of flows | −11.9% | −11.4% | −10.8% |
+| bias, middle 30–90% | +13.4% | +6.6% | +6.5% |
+| bias, bottom 30% | +49.1% | **+25.4%** | +32.4% |
+| basins improved | — | 67% | 78% |
+| basins hurt by >0.05 NSE | — | 6 of 76 | 3 of 76 |
 
-78% of basins improve; 3 of 76 are hurt by more than 0.05 NSE. Note the one row that moves the
-wrong way: **overall water balance gets worse**, −2.2% to −4.4%. The correction trades a little
-long-run bias for a large reduction in day-to-day error, which is what NSE, KGE and RMSE all
-reward — worth stating plainly rather than leaving in the figure. See `figures/cdf_nse.png` and
-`figures/metrics_boxplots.png`. The correction mostly removes bias in the middle and lower
-parts of the flow range, where the LSTM runs high.
+Read honestly, that table says three things:
+
+- **The correction works on every measure that rewards day-to-day accuracy** — NSE, KGE, RMSE,
+  and bias in the middle and lower flow bands, where the LSTM runs high. Low-flow bias halves.
+- **Overall water balance gets slightly worse** (−2.2% to −3.8%). The correction trades a
+  little long-run bias for a large reduction in day-to-day error, which is what NSE, KGE and
+  RMSE all reward. Worth stating rather than leaving in the figure.
+- **Selection is not obviously winning yet.** The selected pair beats the fixed one on KGE and
+  on low-flow bias, loses on median NSE by 0.004, and helps fewer basins (67% vs 78%). On one
+  fold of 76 basins that is inside the noise and settles nothing. §5 says why this comparison
+  has to be redone on the 7-fold grid.
+
+See `figures/cdf_nse.png` and `figures/metrics_boxplots.png`.
 
 **Supporting evidence from the parent branch** (different base model, so not this branch's
 headline): applied to 7-fold `donor` predictions across all 531 basins, the same correction

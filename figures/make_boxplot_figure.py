@@ -29,7 +29,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import K, LAMBDA, apply_all  # noqa: E402
+from src.correct import apply_all  # noqa: E402
 from src.evaluate import metrics  # noqa: E402
 
 PANELS = [
@@ -43,19 +43,23 @@ PANELS = [
 
 
 def collect(runs_dir="runs"):
-    raw, cor, folds = [], [], []
-    for f in apply_all(runs_dir=runs_dir):
-        raw.append(metrics(f["raw"], f["obs"]))
-        cor.append(metrics(f["corrected"], f["obs"]))
-        folds.append(f["fold"])
-    if not raw:
-        raise SystemExit("no runs found under runs/")
+    got, note = apply_all(runs_dir=runs_dir)
+    if not got:
+        raise SystemExit(note)
     import pandas as pd
-    return pd.concat(raw, ignore_index=True), pd.concat(cor, ignore_index=True), folds
+    raw, cor, folds, settings = [], [], [], []
+    for f in got:
+        obs = f["obs"][f["held"]]
+        raw.append(metrics(f["raw"], obs))
+        cor.append(metrics(f["corrected"], obs))
+        folds.append(f["fold"])
+        settings.append((f["k"], f["lam"]))
+    return (pd.concat(raw, ignore_index=True), pd.concat(cor, ignore_index=True),
+            folds, settings)
 
 
 def main(runs_dir="runs", out=None):
-    raw, cor, folds = collect(runs_dir)
+    raw, cor, folds, settings = collect(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
 
     for ax, (col, title, direction, centred) in zip(axes.ravel(), PANELS):
@@ -108,7 +112,10 @@ def main(runs_dir="runs", out=None):
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     fig.text(0.008, 0.012,
              f"{len(raw)} held-out basins, {fold_txt}, WY2005-2014.  Boxes: quartiles and "
-             f"median; whiskers 1.5 IQR, outliers omitted.  K={K}, $\\lambda$={LAMBDA}.",
+             f"median; whiskers 1.5 IQR, outliers omitted.  "
+             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}" for fd, (k, lam) in zip(folds, settings))
+                if len(folds) < 4 else "K and $\\lambda$ selected per fold")
+             + ", chosen inside the training basins only.",
              fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     out = out or f"{HERE}/metrics_boxplots.png"

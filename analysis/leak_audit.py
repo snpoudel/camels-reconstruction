@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, ".")
-from src.correct import K, correct, distances, load_fold  # noqa: E402
+from src.correct import K, choose, correct, distances, load_all, load_fold  # noqa: E402
 
 
 def main(fold=0):
@@ -69,6 +69,23 @@ def main(fold=0):
     print(f"[5] weights are built from coordinates only ................. "
           f"{'PASS' if same else 'FAIL'}   distances() takes no discharge argument")
     results.append(same)
+
+    # Selection is the other place a held-out basin could get in: if the search that picks
+    # (K, lambda) scored the test basins, the reported result would be tuned on itself.
+    print()
+    for mode in ("inner", "gauged"):
+        folds = load_all()
+        clean, _ = choose(folds, mode=mode)
+        for f in folds:
+            f["obs"] = f["obs"].copy()
+            f["obs"][f["held"]] = np.random.default_rng(1).lognormal(0, 2,
+                                                                     size=f["obs"][f["held"]].shape)
+        wrecked, _ = choose(folds, mode=mode)
+        ok = clean == wrecked
+        print(f"[6] selection mode {mode!r}: destroy every held-out observation, "
+              f"re-select .. {'PASS' if ok else 'FAIL'}")
+        print(f"      clean {dict(clean)}  vs  wrecked {dict(wrecked)}")
+        results.append(ok)
 
     ok = all(results)
     print(f"\n{'ALL CHECKS PASS' if ok else 'FAILURES PRESENT'}")

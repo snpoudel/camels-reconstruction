@@ -10,9 +10,10 @@ milliseconds and trains nothing:
 > Ask the nearest gauges how wrong the model was today. If they agree it ran low, assume this
 > basin did too, and believe half of it.
 
-On fold 0, that moves median NSE on held-out basins from **0.7086 to 0.7494** — 78% of basins
-improve, 3 of 76 are hurt by more than 0.05. Applied to the parent branch's 7-fold predictions
-across all 531 basins it gives 0.7235 → 0.7429, better on 7 of 7 folds.
+On fold 0, that moves median NSE on held-out basins from **0.7086 to 0.7457**, KGE from 0.704
+to 0.723, and halves the bias on the lowest 30% of flows. Applied to the parent branch's
+7-fold predictions across all 531 basins the same step gives 0.7235 → 0.7429, better on 7 of
+7 folds.
 
 `METHOD.md` is the full account: how the idea arrived, the arithmetic, the leak audit, and the
 list of things that were tried and thrown away.
@@ -27,11 +28,12 @@ R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
 q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 ```
 
-**K = 8, lambda = 0.5, eps = 0.01 mm/day — fixed constants, nothing fitted to data.** The
-correction helps across a wide range of both: over K in [3,20] and lambda in [0.3,0.7] the
-whole box spans 0.012 NSE on the parent branch's 531-basin surface and 0.027 on this branch's
-single fold, against a headline gain of 0.041 (`figures/hyperparameters.png`, `METHOD.md` §5).
-With one fold there is nothing to select on, so the constants are fixed rather than fitted.
+**eps = 0.01 mm/day.** K and lambda are selected per fold by grid search — it costs seconds —
+searching **only inside that fold's training basins**, never a held-out basin of any fold
+(`METHOD.md` §5; `analysis/leak_audit.py` check [6] verifies it by destroying every held-out
+observation and confirming the selection does not move). The choice barely matters: over
+K in [3,20] and lambda in [0.3,0.7] the whole box spans 0.012 NSE on the parent branch's
+531-basin surface and 0.027 on this branch's single fold, against a gain of ~0.04–0.05.
 
 The target basin's own discharge is never read. Deleting it from the record entirely leaves the
 corrected hydrographs bit-identical; deleting a *gauged* neighbour instead moves them, which is
@@ -58,7 +60,7 @@ python -c "from src.data import build_cache; build_cache()"   # -> data/cache/
 python -m src.train --benchmark 200                            # measure ms/step first
 for f in 0 1 2 3 4 5 6; do FOLD=$f CONCURRENCY=4 ./run_screen.sh; done
 python -m src.evaluate                                         # -> runs/metrics.csv
-python -m src.correct --out runs/corrected_metrics.csv         # raw vs corrected
+python -m src.correct --out runs/corrected_metrics.csv         # selects K, lambda; raw vs corrected
 python analysis/tune.py --out runs/tuning.csv                  # the sensitivity surface
 python analysis/leak_audit.py                                  # prove there is no leak
 python figures/make_method_figure.py                           # the idea

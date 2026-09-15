@@ -25,11 +25,17 @@ import json
 import numpy as np
 import pandas as pd
 
-# Defaults sit in the middle of a broad plateau rather than at a fitted peak: every
-# combination of K in [3, 20] and LAMBDA in [0.3, 0.7] scores within ~0.01 NSE of the best.
-# `analysis/tune.py` reproduces that surface and selects leave-one-fold-out.
+from .data import assign_folds
+
+# Used when selection is switched off, and as the fallback when there are too few folds to
+# select honestly (see `choose`). Both sit inside the flat region of the surface.
 K = 8
 LAMBDA = 0.5
+
+# The search grid. K is sampled geometrically: what matters is the order of magnitude of the
+# neighbourhood, not the exact count.
+K_GRID = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 50)
+LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
 # mm/day. Keeps log() finite on the 2.8% of days that report exactly zero flow, and is small
 # enough to be hydrologically negligible. A far smaller floor (1e-5) makes those days produce
 # log-residuals near -11 and costs ~0.005 NSE.
@@ -77,6 +83,17 @@ def correct(sim_ungauged, sim_gauged, obs_gauged, dist_km, k=K, lam=LAMBDA, eps=
                            lam, eps)
 
 
+def nse_per_basin(sim, obs):
+    """[n] NSE, vectorised over basins -- selection calls this a few hundred times."""
+    sim = np.clip(sim, 0, None)
+    m = np.isfinite(obs)
+    o, s, n = np.where(m, obs, 0.0), np.where(m, sim, 0.0), m.sum(1)
+    mu = o.sum(1) / np.maximum(n, 1)
+    den = ((o - mu[:, None]) ** 2 * m).sum(1)
+    return np.where((n > 1) & (den > 0),
+                    1 - ((s - o) ** 2 * m).sum(1) / np.maximum(den, 1e-12), np.nan)
+
+
 def load_fold(fold, runs_dir="runs", cache_dir="data/cache"):
     """Seed-mean test hydrograph for one fold, in cache-basin order.
 
@@ -112,13 +129,11 @@ def distances(cache_dir="data/cache", loc_csv="data/camels531.csv"):
                            loc.loc[basins, "gauge_lon"].to_numpy()), basins
 
 
-def apply_all(k=K, lam=LAMBDA, eps=EPS, runs_dir="runs", cache_dir="data/cache"):
-    """Raw and corrected hydrographs for every held-out basin of every available fold.
-
-    Yields one dict per fold so callers can score, plot, or pool as they need.
-    """
+def load_all(runs_dir="runs", cache_dir="data/cache"):
+    """Everything the correction and its tuning need, one entry per available fold."""
     D, basins = distances(cache_dir)
     Q = np.load(f"{cache_dir}/Q.npy")
+    out = []
     for fold in range(7):
         got = load_fold(fold, runs_dir, cache_dir)
         if got is None:
@@ -126,42 +141,149 @@ def apply_all(k=K, lam=LAMBDA, eps=EPS, runs_dir="runs", cache_dir="data/cache")
         pred, t_idx, gauged, n_seeds = got
         obs = Q[:, t_idx]
         pool, held = np.flatnonzero(gauged), np.flatnonzero(~gauged)
-        yield dict(fold=fold, n_seeds=n_seeds, t_idx=t_idx,
-                   basins=[basins[i] for i in held],
-                   obs=obs[held], raw=pred[held],
-                   corrected=correct(pred[held], pred[pool], obs[pool],
-                                     D[np.ix_(held, pool)], k, lam, eps))
+        out.append(dict(fold=fold, n_seeds=n_seeds, t_idx=t_idx, pool=pool, held=held,
+                        pred=pred, obs=obs, d_held=D[np.ix_(held, pool)], D=D,
+                        # each training basin keeps its own fold label, giving the six groups
+                        # the inner leave-one-group-out search uses
+                        pool_groups=assign_folds(len(basins), 7)[pool],
+                        basins=[basins[i] for i in held]))
+    return out
+
+
+def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, on="held"):
+    """{(k, lam): per-basin NSE} for one fold, on one of three sets of basins.
+
+    `on="held"`   the fold's held-out basins -- the real objective, and the surface the figure
+                  draws. **Never used to select anything**: it is the test set.
+    `on="inner"`  leave-one-group-out *inside the training basins*. The 455 training basins
+                  carry their original fold labels, giving six groups; each group is corrected
+                  using donors drawn only from the other five, so no basin is ever its own
+                  donor and each group faces a thinned gauge network like a real ungauged one.
+                  This is the selection surface -- it touches no test basin of any fold.
+    `on="gauged"` every training basin corrected from every other, self masked. Simpler than
+                  `inner` but lets a basin borrow from its immediate neighbours, which a truly
+                  ungauged basin in a held-out *group* could not.
+    """
+    if on == "held":
+        target, donor, d = f["held"], f["pool"], f["d_held"]
+        R_of = lambda k: neighbour_residual(f["pred"][donor], f["obs"][donor],
+                                            idw_weights(d, k), eps)
+        out = {}
+        for k in k_grid:
+            R = R_of(k)
+            for lam in lam_grid:
+                out[(int(k), float(lam))] = nse_per_basin(
+                    apply_shrinkage(f["pred"][target], R, lam, eps), f["obs"][target])
+        return out
+
+    D = f["D"]
+    pool = f["pool"]
+    if on == "gauged":
+        d = D[np.ix_(pool, pool)].copy()
+        # Without this a basin's nearest neighbour is itself at zero distance, the correction
+        # collapses to the identity, and the search would return lambda = 0.
+        np.fill_diagonal(d, np.inf)
+        groups = [(np.arange(len(pool)), np.arange(len(pool)))]
+    else:
+        d = D[np.ix_(pool, pool)].copy()
+        np.fill_diagonal(d, np.inf)
+        labels = f["pool_groups"]
+        groups = []
+        for gl in np.unique(labels):
+            tgt = np.flatnonzero(labels == gl)
+            groups.append((tgt, np.flatnonzero(labels != gl)))
+
+    out = {(int(k), float(lam)): np.full(len(pool), np.nan)
+           for k in k_grid for lam in lam_grid}
+    for tgt, don in groups:
+        dd = d[np.ix_(tgt, don)]
+        for k in k_grid:
+            R = neighbour_residual(f["pred"][pool[don]], f["obs"][pool[don]],
+                                   idw_weights(dd, k), eps)
+            for lam in lam_grid:
+                v = nse_per_basin(apply_shrinkage(f["pred"][pool[tgt]], R, lam, eps),
+                                  f["obs"][pool[tgt]])
+                out[(int(k), float(lam))][tgt] = v
+    return out
+
+
+def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, mode="inner"):
+    """(K, lambda) per fold, and a note saying how they were arrived at.
+
+    **No mode ever reads a held-out basin of any fold.** The held-out basins are the test set;
+    letting them into selection -- even another fold's -- would mean the pooled 531-basin
+    result had been tuned on itself, since every basin is some fold's test set.
+
+    `mode="inner"` (default) searches the leave-one-group-out surface inside fold f's own 455
+    training basins (`surface(..., on="inner")`). This is selection done entirely within the
+    training folds.
+
+    `mode="gauged"` searches the same training basins without the group structure.
+
+    `mode="fixed"` skips the search: K = 8, lambda = 0.5.
+
+    All three are clean. They differ in how well they *predict* the held-out optimum, which is
+    a measurement, not an assumption -- `analysis/tune.py` prints it.
+    """
+    if mode == "fixed":
+        return {f["fold"]: (K, LAMBDA) for f in folds}, "fixed constants, no search"
+    picked = {}
+    for f in folds:
+        surf = surface(f, k_grid, lam_grid, eps, on=mode)
+        picked[f["fold"]] = max(surf, key=lambda c: np.nanmedian(surf[c]))
+    where = ("leave-one-group-out within each fold's training basins"
+             if mode == "inner" else "each fold's training basins, self masked")
+    return picked, f"chosen on {where}; no held-out basin was read"
+
+
+def apply_all(runs_dir="runs", cache_dir="data/cache", mode="inner", eps=EPS):
+    """Raw and corrected hydrographs for every held-out basin of every available fold."""
+    folds = load_all(runs_dir, cache_dir)
+    if not folds:
+        return [], "no runs found"
+    picked, note = choose(folds, eps=eps, mode=mode)
+    for f in folds:
+        k, lam = picked[f["fold"]]
+        f["k"], f["lam"] = k, lam
+        f["raw"] = f["pred"][f["held"]]
+        f["corrected"] = correct(f["pred"][f["held"]], f["pred"][f["pool"]],
+                                 f["obs"][f["pool"]], f["d_held"], k, lam, eps)
+    return folds, note
 
 
 def main():
     from .evaluate import metrics
     p = argparse.ArgumentParser()
-    p.add_argument("--k", type=int, default=K)
-    p.add_argument("--lam", type=float, default=LAMBDA)
+    p.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner",
+                   help="how (K, lambda) are chosen; see correct.choose")
     p.add_argument("--runs", default="runs")
     p.add_argument("--out", default="runs/corrected_metrics.csv")
     a = p.parse_args()
 
+    folds, note = apply_all(runs_dir=a.runs, mode=a.mode)
+    if not folds:
+        raise SystemExit(note)
     rows = []
-    for f in apply_all(a.k, a.lam, runs_dir=a.runs):
-        raw, cor = metrics(f["raw"], f["obs"]), metrics(f["corrected"], f["obs"])
+    for f in folds:
+        raw, cor = metrics(f["raw"], f["obs"][f["held"]]), metrics(f["corrected"], f["obs"][f["held"]])
         raw["variant"], cor["variant"] = "vanilla", "vanilla + correction"
         for frame in (raw, cor):
             frame["basin"], frame["fold"], frame["n_seeds"] = f["basins"], f["fold"], f["n_seeds"]
+            frame["k"], frame["lam"] = f["k"], f["lam"]
         rows += [raw, cor]
-        print(f"  fold{f['fold']} ({f['n_seeds']} seeds, {len(f['basins'])} held out): "
+        print(f"  fold{f['fold']} ({f['n_seeds']} seeds, {len(f['basins'])} held out)  "
+              f"K={f['k']:>2} lambda={f['lam']:.2f}   "
               f"{raw.nse.median():.4f} -> {cor.nse.median():.4f} "
               f"({cor.nse.median() - raw.nse.median():+.4f})")
+
     df = pd.concat(rows, ignore_index=True)
     piv = df.pivot_table(index="basin", columns="variant", values="nse")
-    # pivot_table drops a basin whose NSE is undefined (a constant observed series, say).
-    # Say so rather than quietly reporting a median over fewer basins than were held out.
     n_held = df.basin.nunique()
     if len(piv) != n_held:
         print(f"  note: {n_held - len(piv)} of {n_held} basins have no defined NSE and are "
               f"excluded from the medians below")
     gain = piv["vanilla + correction"] - piv["vanilla"]
-    print(f"\nK={a.k}, lambda={a.lam}, eps={EPS} -- nothing fitted to data")
+    print(f"\n(K, lambda) {note};  eps={EPS}")
     print(f"{len(piv)} held-out basins: {piv['vanilla'].median():.4f} -> "
           f"{piv['vanilla + correction'].median():.4f} "
           f"({piv['vanilla + correction'].median() - piv['vanilla'].median():+.4f})")

@@ -26,19 +26,22 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import K, LAMBDA, apply_all  # noqa: E402
+from src.correct import apply_all  # noqa: E402
 from src.evaluate import metrics  # noqa: E402
 
 
 def collect(runs_dir="runs"):
-    raw, cor, folds = [], [], []
-    for f in apply_all(runs_dir=runs_dir):
-        raw.append(metrics(f["raw"], f["obs"]).nse.to_numpy())
-        cor.append(metrics(f["corrected"], f["obs"]).nse.to_numpy())
+    got, note = apply_all(runs_dir=runs_dir)
+    if not got:
+        raise SystemExit(note)
+    raw, cor, folds, settings = [], [], [], []
+    for f in got:
+        obs = f["obs"][f["held"]]
+        raw.append(metrics(f["raw"], obs).nse.to_numpy())
+        cor.append(metrics(f["corrected"], obs).nse.to_numpy())
         folds.append(f["fold"])
-    if not raw:
-        raise SystemExit("no runs found under runs/")
-    return np.concatenate(raw), np.concatenate(cor), folds
+        settings.append((f["k"], f["lam"]))
+    return np.concatenate(raw), np.concatenate(cor), folds, settings
 
 
 def style(ax):
@@ -53,7 +56,7 @@ def style(ax):
 
 
 def main(runs_dir="runs", out=None):
-    raw, cor, folds = collect(runs_dir)
+    raw, cor, folds, settings = collect(runs_dir)
     n = len(raw)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.3))
 
@@ -98,8 +101,10 @@ def main(runs_dir="runs", out=None):
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     fig.text(0.008, 0.015,
-             f"{n} held-out basins, {fold_txt}, WY2005-2014.  "
-             f"Correction: K={K} nearest gauges, $\\lambda$={LAMBDA}, no tuning.",
+             f"{n} held-out basins, {fold_txt}, WY2005-2014.  Correction: "
+             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}" for fd, (k, lam) in zip(folds, settings))
+                if len(folds) < 4 else f"K and $\\lambda$ selected per fold")
+             + ", chosen inside the training basins only.",
              fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 1))
     out = out or f"{HERE}/cdf_nse.png"
