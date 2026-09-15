@@ -1,8 +1,13 @@
-# How the three models work
+# How the models work
 
 A walk through the architecture with the real numbers from this repository. Read it once
-top to bottom and the three variants — `vanilla`, `spatial`, `donor` — should all be clear,
-because they differ in exactly one place.
+top to bottom and the three variants the project is built around — `vanilla`, `spatial`,
+`donor` — should all be clear, because they differ in exactly one place.
+
+Two further variants were added later and are described in §12: `donor_flow`, which changes
+what attention borrows, and `vanilla_lit`, which exists only to match the literature's
+training recipe. `src/config.py` lists all five. The project is finished; `EXPERIMENTS.md`
+records what each one scored and why it stopped.
 
 ---
 
@@ -288,3 +293,55 @@ computed at evaluation at all.
 Everything else — 256 hidden, 270-day window, dropout 0.4, 30 epochs, the learning-rate
 schedule, gradient clipping, the loss — is identical across all three, which is what stops
 those choices from confounding the comparison.
+
+---
+
+## 12. The two later variants
+
+### `donor_flow` — borrow the flow signal *only*
+
+`donor` sums two things into one attended value, `V = h_d + MLP(Z_d)`, and then adds the
+result back through a residual. That makes the two contributions impossible to attribute
+separately. `donor_flow` takes them apart: the attended value becomes the donors' flow
+anomaly itself, and it reaches the head by concatenation rather than a sum.
+
+```
+A   = softmax( Q Kᵀ / (√64 · τ) )        # unchanged
+c   = A · Z[:455, t-6 : t+1]             # [n_query, 7]   the anomaly itself, not a projection
+Q̂  = head( cat[ Dropout(h_q), c ] )      # 263 → 256 → ReLU → Dropout → 1
+```
+
+No `donor_mlp`, no `LayerNorm`, no residual add — so `ctx` in the sense used in §5 does not
+exist here. Four details are deliberate:
+
+- **Dropout is applied to `h_q` only, never to `c`.** At p = 0.4 it would zero about 3 of the
+  7 donor-days, and 0 is a *meaningful* value in anomaly space — it means "exactly normal".
+  Zeroing would not blur the signal, it would feed a plausible falsehood.
+- **No LayerNorm on `c`.** Normalising a 7-vector subtracts the mean across the seven days,
+  and that mean — "the region is running high right now" — is precisely the signal.
+- **A donor is dropped unless it reported on all seven days** (`.all(1)`, where `donor` uses
+  `.any(1)` plus flag bits). Without flag bits a gap would read as "exactly normal". This
+  costs 0 donors on an average test day and 3 of 455 on the worst.
+- **The head stays two layers.** Recovering flow from a log anomaly is roughly
+  `exp(mu + sigma·z)`, a product a single linear layer cannot express.
+
+The known risk, which is why the result was read carefully: attention now receives gradient
+through a 7-dimensional value instead of a 256-dimensional one, and retrieval was already
+the weak part of this model. It scored 0.747 against `donor`'s 0.743 on held-out basins —
+a difference smaller than the spread between random starts. See `EXPERIMENTS.md`.
+
+### `vanilla_lit` — the literature's recipe, not this project's
+
+Every variant above is trained the same way so that none of those choices can explain a
+difference between them (§1). That makes `vanilla` comparable to `spatial` and `donor`, but
+*not* literally the standard recipe. `vanilla_lit` closes that gap and exists for one
+purpose: to check this repository's plain model against published numbers on equal terms.
+
+| | all other variants | `vanilla_lit` |
+|---|---|---|
+| a training step is | one date, all 455 gauged basins at once | 256 independently sampled (basin, window) pairs |
+| forget-gate bias | 3 | 5 |
+
+It is therefore the **deliberate exception** to the frozen-settings rule. It must not be
+used as the baseline in an architecture comparison — `vanilla` is that baseline — and
+`donor_flow` must not be compared against it.

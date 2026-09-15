@@ -3,6 +3,14 @@
 Does cross-basin (spatial) attention improve streamflow prediction in ungauged basins (PUB)
 beyond a vanilla LSTM? This repository runs the experiment that answers it.
 
+> **Status: finished.** The answer is no, on the terms that matter. Attention with no
+> discharge attached (`spatial`) never beat the vanilla LSTM on any fold. Attention that
+> carries neighbours' measured discharge (`donor`) reaches 0.724 median NSE on held-out
+> basins across all seven folds, against 0.693 published for a vanilla LSTM — an improvement
+> too small to justify its cost, and an **information** advantage rather than an
+> architectural one, since it requires a live gauge network reporting on the prediction day.
+> `EXPERIMENTS.md` carries the full record, the closing entry, and the one idea left unrun.
+
 ## The question, split into two
 
 A vanilla LSTM trained on many basins already transfers well to ungauged ones — it is the
@@ -92,9 +100,10 @@ left at their defaults for real runs.
 | `src/model.py` | LSTM encoder and cross-basin attention, including the self-attention mask. |
 | `src/train.py` | NSE* loss, training loop, benchmark mode. |
 | `src/evaluate.py` | Per-basin metrics, the results table, and `metrics.csv`. |
+| `EXPERIMENTS.md` | What was run, what came out, and what it meant — newest first, ending with the closing entry. The project's record. |
 | `BENCHMARKS.md` | Published reference points this experiment is read against — what was run, and what is and is not comparable. |
 | `src/description.md` | How the architecture works, end to end, with the real tensor shapes and worked inference cases. |
-| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture), `make_results_figure.py` (OOS-time and OOS-space boxplot summaries), `make_cdf_figure.py` (NSE/KGE CDFs, vanilla vs donor), `make_fold_map_figure.py` (531 basins by fold), and `make_attention_map_figure.py` (donor's attention for its clearest wins over vanilla). All run from any directory. |
+| `figures/` | The paper figures and the scripts that build them — `make_method_figure.py` (architecture), `make_results_figure.py` (OOS-time and OOS-space boxplot summaries), `make_cdf_figure.py` (NSE/KGE CDFs, vanilla vs donor), `make_fold_map_figure.py` (531 basins by fold), `make_attention_map_figure.py` (donor's attention for its clearest wins over vanilla), and `make_donor_flow_figure.py` (donor_flow against donor on matched basins). All run from any directory. |
 
 ## Design notes
 
