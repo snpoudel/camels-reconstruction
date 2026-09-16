@@ -116,9 +116,16 @@ def main():
     ap.add_argument("--arch", default="vanilla",
                     help="run prefix in runs/; 'donor' reads the parent branch's 7 folds")
     ap.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner")
-    ap.add_argument("--out-geometry", default="runs/donor_geometry.csv")
-    ap.add_argument("--out-range", default="runs/donor_range.csv")
+    ap.add_argument("--out-geometry", default=None,
+                    help="default: runs/donor_geometry_<arch>.csv")
+    ap.add_argument("--out-range", default=None,
+                    help="default: runs/donor_range_<arch>.csv")
     a = ap.parse_args()
+    # Arch-suffixed by default: without it, running --arch donor after --arch vanilla
+    # silently overwrites vanilla's CSVs, and a figure drawn afterwards mixes the two
+    # archs' outputs without any error. Happened once; this is the fix.
+    a.out_geometry = a.out_geometry or f"runs/donor_geometry_{a.arch}.csv"
+    a.out_range = a.out_range or f"runs/donor_range_{a.arch}.csv"
 
     folds = load_all(a.runs, arch=a.arch)
     if not folds:

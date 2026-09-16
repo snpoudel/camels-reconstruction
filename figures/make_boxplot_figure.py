@@ -29,6 +29,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from src.config import PERIODS  # noqa: E402
 from src.correct import apply_all  # noqa: E402
 from src.evaluate import metrics  # noqa: E402
 
@@ -40,6 +41,14 @@ PANELS = [
     ("bias_mid", "bias, middle 30-90%  (%)", "zero is better", True),
     ("bias_low", "bias, bottom 30%  (%)", "zero is better", True),
 ]
+
+
+def test_period_label(runs_dir):
+    import glob, json
+    paths = sorted(glob.glob(f"{runs_dir}/vanilla_fold*_seed*/config.json"))
+    period = json.load(open(paths[0]))["period"] if paths else "complete"
+    (_, _), (t0, t1) = PERIODS[period]
+    return f"{t0[:4]}-{t1[:4]}"
 
 
 def collect(runs_dir="runs"):
@@ -60,6 +69,7 @@ def collect(runs_dir="runs"):
 
 def main(runs_dir="runs", out=None):
     raw, cor, folds, settings = collect(runs_dir)
+    period_label = test_period_label(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
 
     for ax, (col, title, direction, centred) in zip(axes.ravel(), PANELS):
@@ -111,7 +121,7 @@ def main(runs_dir="runs", out=None):
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     fig.text(0.008, 0.012,
-             f"{len(raw)} held-out basins, {fold_txt}, WY2005-2014.  Boxes: quartiles and "
+             f"{len(raw)} held-out basins, {fold_txt}, test period {period_label}.  Boxes: quartiles and "
              f"median; whiskers 1.5 IQR, outliers omitted.  "
              + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
                           for fd, (k, lam, pw) in zip(folds, settings))

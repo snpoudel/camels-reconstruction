@@ -8,15 +8,17 @@ This branch keeps that model exactly as it is and adds **one post-processing ste
 milliseconds and trains nothing:
 
 > Ask the nearest gauges how wrong the model was today. If they agree it ran low, assume this
-> basin did too, and believe half of it.
+> basin did too, and believe most of it.
 
-On fold 0, that moves median NSE on held-out basins from **0.7086 to 0.7457**, KGE from 0.704
-to 0.723, and halves the bias on the lowest 30% of flows. Applied to the parent branch's
-7-fold predictions across all 531 basins the same step gives 0.7235 → 0.7429, better on 7 of
-7 folds.
+Trained end to end on an A100 — real 7-fold grid, literature-standard configuration
+(`seq_len=365`, `batch_size=512`, `forget_bias=5.0`, Kratzert's train/test windows), 1 seed per
+fold. Median NSE on held-out basins: **0.6313 → 0.7095**, positive on **7 of 7 folds**, 81% of
+basins improved. That single-seed number already exceeds the published 0.693 benchmark, before
+any seed-ensembling (which is what the literature's own 0.693 is — a 10-member ensemble mean).
 
-`METHOD.md` is the full account: how the idea arrived, the arithmetic, the leak audit, and the
-list of things that were tried and thrown away.
+`METHOD.md` is the full account: how the idea arrived, the arithmetic, the leak audit, the real
+per-fold results, how far the correction's reach extends before it stops paying, and what a
+wider seed grid would still add.
 
 ## The correction
 
@@ -31,14 +33,16 @@ q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 **eps = 0.01 mm/day.** K, lambda and the distance exponent p are selected per fold by grid
 search — it costs seconds — searching **only inside that fold's training basins**, never a
 held-out basin of any fold (`METHOD.md` §5; `analysis/leak_audit.py` check [6] verifies it by
-destroying every held-out observation and confirming the selection does not move). The choice
-matters little: over K in [3,20] and lambda in [0.3,0.7] the whole box spans 0.022 NSE on the
-parent branch's 531-basin surface and 0.043 on this branch's single fold, against a gain of
-~0.04–0.05. Selection and the fixed fallback (K=8, lambda=0.5, p=1) are statistically
-indistinguishable on both surfaces, with the sign of the difference going one way on each.
+destroying every held-out observation and confirming the selection does not move). Selection
+measurably beats fixed constants on this branch's own data: paired median +0.0062, bootstrap
+95% CI [+0.0049, +0.0079], entirely positive — but on the parent branch's `donor` data the same
+paired comparison is indistinguishable from zero, so both results are reported (`METHOD.md`
+§5) rather than only the one that favours selection. Every fold, on both architectures, selects
+p > 1: the correction leans more on its nearest few donors than plain inverse distance would.
 
 It needs a gauge nearby, not merely a gauged country: the gain decays with donor distance and
-crosses zero at roughly 100 km (`METHOD.md` §9, `figures/donor_range.png`).
+crosses zero at 326 km on this branch's data, 136 km on the parent branch's `donor` data
+(`METHOD.md` §8, `figures/donor_range_vanilla.png` / `donor_range_donor.png`).
 
 The target basin's own discharge is never read. Deleting it from the record entirely leaves the
 corrected hydrographs bit-identical; deleting a *gauged* neighbour instead moves them, which is
@@ -47,15 +51,16 @@ what makes that check meaningful. Run `python analysis/leak_audit.py` to reprodu
 ## Layout
 
 ```
-src/config.py      hyperparameters -- Kratzert et al. 2019, nothing tuned
-src/data.py        cache, folds, and every leak-sensitive statistic
-src/model.py       the LSTM: one layer, statics concatenated
-src/train.py       literature-standard batched training
-src/evaluate.py    prediction, NSE/KGE/RMSE, bias by flow band
-src/correct.py     THE CORRECTION -- about six lines of arithmetic
-analysis/tune.py       the K x lambda surface, leave-one-fold-out selection
-analysis/leak_audit.py the correction cannot see the basin it corrects -- with a positive control
-figures/           palette.py plus one script per figure
+src/config.py           hyperparameters -- Kratzert et al. 2019, nothing tuned
+src/data.py             cache, folds, and every leak-sensitive statistic
+src/model.py            the LSTM: one layer, statics concatenated
+src/train.py             literature-standard batched training
+src/evaluate.py          prediction, NSE/KGE/RMSE, bias by flow band
+src/correct.py           THE CORRECTION -- about six lines of arithmetic
+analysis/tune.py        the K x lambda x p surface, cross-validated selection
+analysis/leak_audit.py  the correction cannot see the basin it corrects -- with a positive control
+analysis/donor_geometry.py  donor distances, and the range at which the correction stops paying
+figures/                palette.py plus one script per figure
 ```
 
 ## Running it
@@ -81,9 +86,10 @@ under a second once predictions exist.
 
 ## Status
 
-The model code here is the **literature-standard batched** LSTM, at forget-gate bias 5.0
-(Kratzert et al. 2019) rather than the parent branch's frozen 3.0 — see `METHOD.md` §8. The predictions currently in
-`runs/` are fold 0 only, and were produced by the parent branch's date-batched variant; they
-stand in so the figures and the pipeline are exercised end to end. Every number in this README
-and in `METHOD.md` is marked with the fold and the model it came from, and will be replaced
-once the 7-fold grid runs. `METHOD.md` §8 lists what that leaves unproven.
+Stage 1 is complete: the literature-standard batched LSTM (`forget_bias=5.0`,
+Kratzert et al. 2019, `METHOD.md` §9), 1 seed per fold, all 7 folds, trained end to end on
+an A100 (≈8.5 h wall-clock, ≈$31). A third free constant (p, the IDW distance exponent) and the
+donor-geometry / break-even analysis were added in a second pass, on a separate checkout, and
+reconciled against these same real predictions rather than left as a placeholder-based draft
+(`METHOD.md` §5, §8). Every number in this README and `METHOD.md` now comes from that real
+grid. `METHOD.md` §10 covers what a wider seed grid (`SEEDS="0 1 2"`) would still settle.

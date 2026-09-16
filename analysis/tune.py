@@ -72,11 +72,17 @@ def main():
     # Pool folds by averaging each fold's median so no fold dominates by basin count.
     g = (df.query("set == 'heldout'").groupby(["k", "lam", "p"])
            .agg(nse=("median_nse", "mean"), base=("base_nse", "mean")).reset_index())
+    # Averaged per fold, then across folds, so no fold's basin count dominates the
+    # search -- this is a different, smaller number than the pooled-531-basins-then-one-
+    # median statistic the rest of the project reports (each fold gets equal say here; a
+    # basin does there). Reported below for full clarity, both this and the pooled figure.
     base, best = g.base.mean(), g.loc[g.nse.idxmax()]
-    print(f"\nuncorrected: {base:.4f}")
-    print(f"best cell on the held-out surface: K={int(best.k)}, lambda={best.lam:.2f}, "
-          f"p={best.p:.2g} -> {best.nse:.4f}   (an oracle -- not selectable without seeing "
-          f"the answer)")
+    pooled_base = np.nanmedian(np.concatenate([nse_per_basin(f["pred"][f["held"]], f["obs"][f["held"]]) for f in folds]))
+    print(f"\nuncorrected: {base:.4f} (mean of per-fold medians)"
+          f"  |  {pooled_base:.4f} (pooled 531 basins, one median -- what the headline uses)")
+    print(f"best cell on the held-out surface (by mean-of-medians): K={int(best.k)}, "
+          f"lambda={best.lam:.2f}, p={best.p:.2g} -> {best.nse:.4f}   (an oracle -- not "
+          f"selectable without seeing the answer; NOT the pooled-median statistic)")
 
     box = g.query("k >= 3 and k <= 20 and lam >= 0.3 and lam <= 0.7")
     print(f"over K in [3,20] and lambda in [0.3,0.7] (all p): {box.nse.min():.4f}-"

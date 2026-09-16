@@ -1,6 +1,6 @@
 """Which donors the correction uses, and the distance at which it stops paying.
 
-    python figures/make_donor_figure.py                  # -> figures/donor_range.png
+    python figures/make_donor_figure.py                  # -> figures/donor_range_vanilla.png
     python figures/make_donor_figure.py --arch donor     # parent branch's 7 folds, 531 basins
 
 Left: the donor network itself, for one fold. Every held-out basin is joined to the K gauged
@@ -18,7 +18,7 @@ The strip above that panel carries the donor-distance distributions on the same 
 the point of putting them there: the reader can see directly how much of the real network sits
 inside the working range and how much of it does not.
 
-Both panels read `runs/donor_geometry.csv` and `runs/donor_range.csv` from
+Both panels read `runs/donor_geometry_<arch>.csv` and `runs/donor_range_<arch>.csv` from
 `analysis/donor_geometry.py`, which is where the arithmetic and the caveats live.
 
 Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue = gauged donors and the uncorrected
@@ -145,7 +145,11 @@ def draw_range(ax, curve):
 
 
 def main(runs_dir="runs", arch="vanilla", out=None,
-         geometry_csv="runs/donor_geometry.csv", range_csv="runs/donor_range.csv"):
+         geometry_csv=None, range_csv=None):
+    # Arch-suffixed by default: a fixed filename here would mean the last `--arch` run of
+    # analysis/donor_geometry.py silently decides what this figure draws, with no error.
+    geometry_csv = geometry_csv or f"runs/donor_geometry_{arch}.csv"
+    range_csv = range_csv or f"runs/donor_range_{arch}.csv"
     for path in (geometry_csv, range_csv):
         if not os.path.exists(path):
             raise SystemExit(f"{path} missing -- run analysis/donor_geometry.py "
@@ -177,7 +181,8 @@ def main(runs_dir="runs", arch="vanilla", out=None,
     # can use its own axes title without colliding with the other's.
     for ax, title in ((ax1, t1), (ax2, t2)):
         fig.text(ax.get_position().x0, 0.945, title, color=INK, fontsize=11, va="bottom")
-    out = out or f"{HERE}/donor_range.png"
+    # Arch-suffixed for the same reason as the CSVs above: two archs must not share one file.
+    out = out or f"{HERE}/donor_range_{arch}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   real network {real:+.4f}, "
           + (f"break-even {be:.0f} km" if be else "never crosses zero"))
