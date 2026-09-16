@@ -1,24 +1,32 @@
-"""What the neighbour-residual correction does, on one real basin and one real day.
+"""The neighbour-residual correction: five steps, each with its equation and a picture.
 
-    python figures/make_method_figure.py    # -> figures/method.png
+    python figures/make_method_figure.py    # -> figures/method.png, figures/method.svg
 
-Three panels, left to right, following the arithmetic in `src/correct.py`:
+Every step box carries the arithmetic on top and a sketch of the same neighbourhood underneath,
+so the notation can be read straight off the picture: step 1 names the basins (q_1, q_2, q_j at
+the gauges, q_i at the ungauged target), step 2 turns distance into weight on those same points,
+step 3 puts today's error at each gauge, step 4 pools them onto the target, step 5 shows the
+shift that comes out. The neighbourhood is identical in all five -- that is the point, the eye
+tracks one target and three donors the whole way across.
 
-  (a) pick the K nearest gauged basins to the ungauged target; the weight is 1/distance
-  (b) at each of them, today, compare the model against the gauge -- that is the log-residual;
-      the weighted mean R says how wrong the model is across this neighbourhood right now
-  (c) push the target's own hydrograph by a fraction lambda of that, and nothing else changes
+Nothing here is measured. It is a method diagram: the sketches are schematic (step 5's
+hydrograph is an analytic curve, not a run), and the only numbers on the page -- eps and the
+search grid -- are imported from `src.correct` so they cannot drift from the code. For the same
+method on real data see `analysis/tune.py` and `runs/corrected_metrics.csv`.
 
-Every number drawn is taken from the actual fold-0 run and the actual CAMELS record; nothing
-is illustrative. The basin and the day are chosen in code (see `pick_example`) rather than
-hardcoded, so the figure cannot drift away from the data behind it.
+Detail deliberately pushed to the footer rather than into the equations: the 1 km distance
+floor, the renormalisation over donors that reported, and how (K, p, lambda) are selected.
+Those belong in a caption -- carrying them inline made the equations unreadable at print size.
 
-Colour: `figures/palette.py` -- slot 0 blue for the uncorrected model, slot 1 orange for the
-correction and for the target basin, ink for observations. Validated in that module
-(normal dE 33.6, protan 24.5, deutan 31.6). Observations are drawn in ink rather than a third
-hue, so the two model series are the only colour pair in play.
+`check_fit` measures every string against the box it sits in and prints a WARN if one spills,
+because the failure mode of this figure is silent: an equation grows, overruns its border, and
+nothing complains. Keep the run clean.
+
+Colour: `figures/palette.py` -- slot-0 blue for the uncorrected LSTM and for gauged basins,
+slot-1 orange for the ungauged target and the corrected prediction, matching what
+`make_cdf_figure.py` and `make_boxplot_figure.py` use for "vanilla" vs "vanilla + correction".
+Two hues only; ink and grey carry everything else.
 """
-import json
 import os
 import sys
 
@@ -26,172 +34,248 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
+
+# Glyphs as outlines, so the .svg renders identically in Illustrator, Inkscape or a LaTeX
+# pipeline that has never heard of DejaVu Sans.
+matplotlib.rcParams["svg.fonttype"] = "path"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import EPS, K, LAMBDA, correct, distances, load_fold  # noqa: E402
+from src.correct import EPS, K_GRID, LAM_GRID, P_GRID  # noqa: E402
+
+FIG_W, FIG_H = 11.0, 5.05
+MARGIN, GAP = 0.32, 0.34
+BOX_H, Y0 = 3.40, 0.60
+BOX_W = (FIG_W - 2 * MARGIN - 4 * GAP) / 5
+
+# One neighbourhood, drawn five times, in unit coordinates inside each sketch panel. Three
+# constraints on these positions: every donor is nearer the target than every other gauge, so
+# "the K nearest" is visible rather than asserted; no two donors are collinear with the target,
+# so the three weight lines in step 2 read as three; and the donor distances differ enough that
+# those lines come out visibly unequal.
+TARGET = (0.44, 0.46)
+DONORS = ((0.22, 0.70), (0.56, 0.62), (0.78, 0.40))
+OTHERS = ((0.06, 0.14), (0.94, 0.84), (0.32, 0.06))
+Q_LAB = (r"$q_1$", r"$q_2$", r"$q_j$")
+W_LAB = (r"$w_{i1}$", r"$w_{i2}$", r"$w_{ij}$")
+R_LAB = (r"$r_1$", r"$r_2$", r"$r_j$")
+# Offset, alignment and (for step 2) where along the line the weight label sits -- fixed per
+# donor so no label jumps between panels or lands on top of its neighbour.
+OFF = (((0.00, 0.10), "center", "bottom", 0.68),
+       ((0.07, 0.05), "left", "bottom", 0.40),
+       ((0.08, 0.00), "left", "center", 0.70))
+LAB_FS = 7.8
+
+STEPS = (
+    dict(title="LSTM prediction", accent=RAW, eq_size=10.5,
+         eq=r"$\mathrm{LSTM}\rightarrow q^{sim}_i,\; q^{sim}_j$",
+         note="one model predicts every\nbasin, gauged or ungauged"),
+    dict(title="Spatial weights", accent=None, eq_size=12,
+         eq=r"$w_{ij}=\dfrac{d_{ij}^{-p}}{\sum_{j'} d_{ij'}^{-p}}$",
+         note="the K nearest gauges,\nweighted by distance"),
+    dict(title="Donor errors today", accent=None, eq_size=11.5,
+         eq=r"$r_j=\log\dfrac{q^{sim}_j+\epsilon}{q^{obs}_j+\epsilon}$",
+         note="how wrong the model is\nat each gauge, in logs"),
+    dict(title="Neighbour error", accent=None, eq_size=12.5,
+         eq=r"$R_i=\sum_j w_{ij}\,r_j$",
+         note="their weighted mean:\nthe error around basin i"),
+    dict(title="Correct the target", accent=CORRECTED, eq_size=10.5,
+         eq=(r"$q^{corr}_i=(q^{sim}_i+\epsilon)$", r"$\times\; e^{-\lambda R_i}-\epsilon$"),
+         note="shift the prediction by\na fraction $\\lambda$ of it"),
+)
+
+_fit = []          # (artist, x_lo, x_hi) -- checked once at the end, see check_fit
 
 
-def style(ax):
-    ax.grid(True, color=GRID, lw=0.7, zorder=0)
-    ax.set_axisbelow(True)
-    for s in ("top", "right"):
-        ax.spines[s].set_visible(False)
-    for s in ("left", "bottom"):
-        ax.spines[s].set_color(MUTE); ax.spines[s].set_linewidth(0.8)
-    ax.tick_params(colors=MUTE, labelsize=8.5, length=3)
+def track(artist, x_lo, x_hi):
+    _fit.append((artist, x_lo, x_hi))
+    return artist
 
 
-def pick_example(pred, obs, held, pool, D):
-    """A held-out basin whose improvement is *typical*, and the day the correction moves most.
+def check_fit(fig, ax):
+    """Print a WARN for any string wider than the box it was drawn in."""
+    fig.canvas.draw()
+    inv, rend, bad = ax.transData.inverted(), fig.canvas.get_renderer(), 0
+    for artist, x_lo, x_hi in _fit:
+        bb = artist.get_window_extent(renderer=rend).transformed(inv)
+        if bb.x0 < x_lo - 1e-3 or bb.x1 > x_hi + 1e-3:
+            over = max(x_lo - bb.x0, bb.x1 - x_hi)
+            print(f"  WARN overflows by {over:.3f} in: {artist.get_text()[:48]!r}")
+            bad += 1
+    return bad
 
-    Chosen in code, not hardcoded. Among basins whose nearest gauge sits at an ordinary
-    distance (the interquartile range), take the one whose NSE gain is closest to the median
-    gain. Picking the best-improved basin instead would put a +0.24 basin in a figure whose
-    fold-wide median gain is +0.04, which is the kind of illustration a reader is right to
-    distrust.
 
-    Note this selection reads the target basins' observations -- that is legitimate for
-    choosing what to *draw*, and is not part of the method; `src/correct.py` never does it.
-    `analysis/leak_audit.py` tests the method, not this function.
-    """
-    corrected = correct(pred[held], pred[pool], obs[pool], D[np.ix_(held, pool)])
-    def nse(s, o):
-        m = np.isfinite(o)
-        return 1 - ((np.clip(s, 0, None)[m] - o[m]) ** 2).sum() / ((o[m] - o[m].mean()) ** 2).sum()
-    gain = np.array([nse(corrected[i], obs[held][i]) - nse(pred[held][i], obs[held][i])
-                     for i in range(len(held))])
-    dnn = D[np.ix_(held, pool)].min(1)
-    ok = (dnn > np.percentile(dnn, 25)) & (dnn < np.percentile(dnn, 75))
-    target = np.median(gain)
-    row = int(np.argmin(np.where(ok, np.abs(gain - target), np.inf)))
-    return row, gain[row]
+def weights():
+    """Step-2 weights for the sketch, from the drawn geometry -- p = 1, normalised."""
+    inv = np.array([1.0 / np.hypot(u - TARGET[0], v - TARGET[1]) for u, v in DONORS])
+    return inv / inv.sum()
+
+
+def pt(rect, u, v):
+    x0, y0, w, h = rect
+    return x0 + u * w, y0 + v * h
+
+
+def basins(ax, rect):
+    """The same map in every panel: three donors, three farther gauges, one ungauged target."""
+    for u, v in OTHERS:
+        ax.scatter(*pt(rect, u, v), s=15, color=RAW, alpha=0.28, linewidths=0, zorder=4)
+    for u, v in DONORS:
+        ax.scatter(*pt(rect, u, v), s=38, color=RAW, edgecolor="white", linewidth=0.7, zorder=5)
+    tx, ty = pt(rect, *TARGET)
+    ax.scatter([tx], [ty], s=140, marker="*", color=CORRECTED, edgecolor="white",
+               linewidth=0.7, zorder=6)
+    return tx, ty
+
+
+def label_donors(ax, rect, labels):
+    for (u, v), lab, (off, ha, va, _) in zip(DONORS, labels, OFF):
+        ax.text(*pt(rect, u + off[0], v + off[1]), lab, fontsize=LAB_FS, color=INK,
+                ha=ha, va=va, zorder=7)
+
+
+def hydrograph(ax, rect):
+    """Schematic, not data: one analytic storm, before and after a downward correction."""
+    x0, y0, w, h = rect
+    px0, px1 = x0 + 0.10 * w, x0 + 0.96 * w
+    py0, py1 = y0 + 0.16 * h, y0 + 0.72 * h
+    t = np.linspace(0, 1, 240)
+    q = (0.18 * np.exp(-2.6 * t) + np.exp(-((t - 0.40) / 0.085) ** 2)
+         + 0.42 * np.exp(-((t - 0.72) / 0.14) ** 2) + 0.10)
+    q /= q.max()
+    x = px0 + t * (px1 - px0)
+    raw, cor = py0 + q * (py1 - py0), py0 + 0.66 * q * (py1 - py0)
+    ax.fill_between(x, cor, raw, color=CORRECTED, alpha=0.14, linewidth=0, zorder=4)
+    ax.plot(x, raw, color=RAW, lw=1.3, zorder=5)
+    ax.plot(x, cor, color=CORRECTED, lw=1.3, zorder=6)
+    ax.plot([px0, px1], [py0, py0], color=MUTE, lw=0.6, alpha=0.6, zorder=3)
+    # Mini legend, top-left, clear of the peak: labelling the curves in place needs leader
+    # lines at this size, and leader lines at this size are clutter.
+    for n, (lab, col) in enumerate(((r"$q^{sim}_i$", RAW), (r"$q^{corr}_i$", CORRECTED))):
+        ly = y0 + (0.94 - 0.13 * n) * h
+        ax.plot([x0 + 0.08 * w, x0 + 0.20 * w], [ly, ly], color=col, lw=1.3, zorder=7)
+        ax.text(x0 + 0.24 * w, ly, lab, fontsize=LAB_FS, color=col, ha="left", va="center",
+                zorder=7)
+    ax.text(px1, py0 - 0.05 * h, "time", fontsize=6.6, color=MUTE, ha="right", va="top",
+            zorder=7)
+
+
+def sketch(ax, rect, i):
+    x0, y0, w, h = rect
+    # Above the step box's own white fill (zorder 2), or it is painted over and vanishes.
+    ax.add_patch(FancyBboxPatch((x0, y0), w, h, boxstyle="round,pad=0,rounding_size=0.06",
+                                linewidth=0, facecolor=GRID, alpha=0.75, zorder=2.5))
+    if i == 4:
+        hydrograph(ax, rect)
+        return
+
+    tx, ty = basins(ax, rect)
+    if i == 0:
+        label_donors(ax, rect, Q_LAB)
+        ax.text(*pt(rect, TARGET[0] - 0.08, TARGET[1] - 0.02), r"$q_i$", fontsize=LAB_FS,
+                color=CORRECTED, ha="right", va="center", zorder=7)
+    elif i == 1:
+        for (u, v), lab, wj, (_, _, _, at) in zip(DONORS, W_LAB, weights(), OFF):
+            px, py = pt(rect, u, v)
+            ax.plot([tx, px], [ty, py], color=MUTE, lw=0.6 + 4.5 * wj, alpha=0.7,
+                    solid_capstyle="round", zorder=3)
+            ax.text(*pt(rect, TARGET[0] + at * (u - TARGET[0]), TARGET[1] + at * (v - TARGET[1])),
+                    lab, fontsize=LAB_FS, color=INK, ha="center", va="center", zorder=7,
+                    bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.92))
+    elif i == 2:
+        label_donors(ax, rect, R_LAB)
+        ax.text(*pt(rect, TARGET[0] - 0.08, TARGET[1] - 0.02), "?", fontsize=LAB_FS + 1.5,
+                color=CORRECTED, fontweight="bold", ha="right", va="center", zorder=7)
+    elif i == 3:
+        for (u, v), wj in zip(DONORS, weights()):
+            ax.add_patch(FancyArrowPatch(pt(rect, u, v), (tx, ty), arrowstyle="-|>",
+                                         mutation_scale=7, linewidth=0.6 + 3.5 * wj,
+                                         color=MUTE, alpha=0.8, shrinkA=3, shrinkB=8, zorder=3))
+        ax.text(*pt(rect, TARGET[0], TARGET[1] - 0.16), r"$R_i$", fontsize=LAB_FS + 0.6,
+                color=CORRECTED, ha="center", va="top", zorder=7)
+
+
+def add_box(ax, x, y, step, n):
+    ax.add_patch(FancyBboxPatch((x, y), BOX_W, BOX_H, boxstyle="round,pad=0,rounding_size=0.07",
+                                linewidth=1.6 if step["accent"] else 1.0,
+                                edgecolor=step["accent"] or MUTE, facecolor="white", zorder=2))
+    cx, lo, hi = x + BOX_W / 2, x + 0.07, x + BOX_W - 0.07
+    track(ax.text(cx, y + BOX_H - 0.22, step["title"], ha="center", va="top", fontsize=10.0,
+                  color=INK, fontweight="bold", zorder=4), lo, hi)
+    eq = step["eq"] if isinstance(step["eq"], tuple) else (step["eq"],)
+    for k, line in enumerate(eq):
+        track(ax.text(cx, y + BOX_H - (0.78 if len(eq) == 1 else 0.66 + 0.30 * k), line,
+                      ha="center", va="center", fontsize=step["eq_size"], color=INK, zorder=4),
+              lo, hi)
+    track(ax.text(cx, y + BOX_H - 1.14, step["note"], ha="center", va="top", fontsize=8.0,
+                  color=MUTE, linespacing=1.5, zorder=4), lo, hi)
+    sketch(ax, (x + 0.09, y + 0.12, BOX_W - 0.18, BOX_H - 1.74), n - 1)
+    ax.add_patch(Circle((x + 0.02, y + BOX_H - 0.02), 0.145, facecolor=step["accent"] or INK,
+                        edgecolor="white", linewidth=1.1, zorder=6))
+    ax.text(x + 0.02, y + BOX_H - 0.02, str(n), ha="center", va="center", fontsize=8.5,
+            color="white", fontweight="bold", zorder=7)
 
 
 def main(out=None):
-    got = load_fold(0)
-    if got is None:
-        raise SystemExit("needs runs/vanilla_fold0_seed*/")
-    pred, t_idx, gauged, n_seeds = got
-    D, basins = distances()
-    Q = np.load("data/cache/Q.npy")
-    dates = pd.to_datetime(np.load("data/cache/dates.npy")[t_idx])
-    obs = Q[:, t_idx]
-    pool, held = np.flatnonzero(gauged), np.flatnonzero(~gauged)
-    loc = pd.read_csv("data/camels531.csv", dtype={"gauge_id": str}).set_index("gauge_id")
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
+    ax.set_xlim(0, FIG_W)
+    ax.set_ylim(0, FIG_H)
+    ax.axis("off")
 
-    row, gain = pick_example(pred, obs, held, pool, D)
-    i = held[row]
-    d_i = D[i, pool]
-    nb = np.argsort(d_i)[:K]
-    donors, dist = pool[nb], d_i[nb]
-    w = 1.0 / np.maximum(dist, 1.0); w = w / w.sum()
+    ax.text(MARGIN, FIG_H - 0.13, "Neighbour-residual correction", fontsize=14, color=INK,
+            fontweight="bold", ha="left", va="top")
 
-    corrected_i = correct(pred[held], pred[pool], obs[pool], D[np.ix_(held, pool)])[row]
-    res_all = (np.log(np.clip(pred[donors], 0, None) + EPS) - np.log(obs[donors] + EPS))
-    R_all = np.nansum(w[:, None] * np.nan_to_num(res_all), 0) / np.nansum(
-        w[:, None] * np.isfinite(res_all), 0)
+    # The one quantity in the method that is fitted rather than computed, kept beside the
+    # sequence so no one reads it as a sixth step. Sized to its text, not guessed at, and
+    # placed before the subtitle so the subtitle can be checked against its left edge.
+    chip = ax.text(0, 0, r"$K$, $p$, $\lambda$: cross-validated on the gauged basins",
+                   fontsize=8.5, color=INK, ha="center", va="center", zorder=4)
+    fig.canvas.draw()
+    bb = chip.get_window_extent(renderer=fig.canvas.get_renderer()).transformed(
+        ax.transData.inverted())
+    cw, ch = bb.width + 0.36, bb.height + 0.30
+    ccx, ccy = FIG_W - MARGIN - cw / 2, FIG_H - 0.14 - ch / 2
+    chip.set_position((ccx, ccy))
+    ax.add_patch(FancyBboxPatch((ccx - cw / 2, ccy - ch / 2), cw, ch,
+                                boxstyle="round,pad=0,rounding_size=0.08", linewidth=1.0,
+                                edgecolor=MUTE, facecolor=GRID, alpha=0.55,
+                                linestyle=(0, (3.5, 2.5)), zorder=3))
 
-    # The window, then the day inside it where the correction actually moves the hydrograph
-    # in mm/day -- picking the largest |R| instead lands on a day when the river is near zero
-    # and the correction, though large in ratio, is invisible.
-    search = slice(900, 1050)
-    effect = np.abs(corrected_i[search] - np.clip(pred[i][search], 0, None))
-    day = 900 + int(np.nanargmax(effect))
-    # Plot a short window centred on that day. A season-long window compresses the gap
-    # between the two model lines into the line width, which is the one thing this panel
-    # has to show.
-    half_win = 32
-    win = slice(day - half_win, day + half_win)
+    track(ax.text(MARGIN, FIG_H - 0.50,
+                  "no gauge at the target basin -- but its neighbours' errors today say "
+                  "something about its error today",
+                  fontsize=8.8, color=MUTE, ha="left", va="top"), MARGIN, ccx - cw / 2 - 0.12)
 
-    fig = plt.figure(figsize=(13.0, 5.0))
-    gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 1.55], wspace=0.28,
-                          left=0.045, right=0.985, top=0.86, bottom=0.17)
-    axm, axr, axh = (fig.add_subplot(gs[0, j]) for j in range(3))
+    xs = [MARGIN + i * (BOX_W + GAP) for i in range(5)]
+    for i, step in enumerate(STEPS):
+        add_box(ax, xs[i], Y0, step, i + 1)
+        if i:
+            ax.add_patch(FancyArrowPatch((xs[i - 1] + BOX_W, Y0 + BOX_H * 0.75),
+                                         (xs[i], Y0 + BOX_H * 0.75), arrowstyle="-|>",
+                                         mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
 
-    # ---- (a) which gauges, and how much each counts ---------------------------
-    axm.scatter(loc.loc[basins, "gauge_lon"], loc.loc[basins, "gauge_lat"], s=4,
-                color=GRID, zorder=2, linewidths=0)
-    tlon, tlat = loc.loc[basins[i], "gauge_lon"], loc.loc[basins[i], "gauge_lat"]
-    for j, wj in zip(donors, w):
-        axm.plot([tlon, loc.loc[basins[j], "gauge_lon"]], [tlat, loc.loc[basins[j], "gauge_lat"]],
-                 color=MUTE, lw=0.6 + 7 * wj, alpha=0.65, zorder=3, solid_capstyle="round")
-    axm.scatter(loc.loc[[basins[j] for j in donors], "gauge_lon"],
-                loc.loc[[basins[j] for j in donors], "gauge_lat"], s=42, color=RAW,
-                edgecolor="white", linewidth=1.2, zorder=4, label=f"{K} nearest gauges")
-    axm.scatter([tlon], [tlat], s=170, marker="*", color=CORRECTED, edgecolor="white",
-                linewidth=1.2, zorder=5, label="ungauged target")
-    dlon = loc.loc[[basins[j] for j in donors], "gauge_lon"].to_numpy()
-    dlat = loc.loc[[basins[j] for j in donors], "gauge_lat"].to_numpy()
-    cx, cy = np.r_[dlon, tlon], np.r_[dlat, tlat]
-    half = max(np.ptp(cx), np.ptp(cy)) * 0.85 + 0.35
-    axm.set_xlim(cx.mean() - half * 1.25, cx.mean() + half * 1.25)
-    axm.set_ylim(cy.mean() - half, cy.mean() + half)
-    axm.set_title("(a)  pick the K nearest gauges", color=INK, fontsize=10.5, loc="left", pad=8)
-    axm.text(0.5, 0.015, "line width $\\propto$ weight $1/d$", transform=axm.transAxes,
-             ha="center", va="bottom", fontsize=8.5, color=MUTE)
-    axm.legend(frameon=False, fontsize=8.5, loc="upper left", labelcolor=INK)
-    axm.set_xticks([]); axm.set_yticks([])
-    for s in axm.spines.values():
-        s.set_color(GRID)
+    track(ax.text(MARGIN, 0.35,
+                  f"Great-circle distances, floored at 1 km;  $\\epsilon$ = {EPS} mm/day keeps "
+                  f"the logs finite at zero flow;  all quantities are for one day $t$;  donors "
+                  f"silent that day are dropped and their weight redistributed.",
+                  fontsize=7.3, color=MUTE, ha="left", va="top"), MARGIN, FIG_W - MARGIN)
+    track(ax.text(MARGIN, 0.16,
+                  f"$K$, $p$, $\\lambda$: leave-one-group-out cross-validation inside the "
+                  f"training (gauged) basins, per fold -- never a held-out basin.  "
+                  f"$K \\in$ [{K_GRID[0]}, {K_GRID[-1]}],  "
+                  f"$p \\in$ {{{', '.join(f'{v:g}' for v in P_GRID)}}},  "
+                  f"$\\lambda \\in$ [{LAM_GRID[0]:g}, {LAM_GRID[-1]:g}] step "
+                  f"{LAM_GRID[1] - LAM_GRID[0]:g}.",
+                  fontsize=7.3, color=MUTE, ha="left", va="top"), MARGIN, FIG_W - MARGIN)
 
-    # ---- (b) today's error at each gauge --------------------------------------
-    r_day = res_all[:, day]
-    order = np.argsort(w)
-    ypos = np.arange(K)
-    axr.barh(ypos, r_day[order], color=np.where(r_day[order] > 0, RAW, CORRECTED),
-             height=0.62, zorder=3)
-    axr.axvline(0, color=MUTE, lw=0.9, zorder=2)
-    axr.axvline(R_all[day], color=INK, lw=1.8, ls=(0, (4, 2)), zorder=4)
-    axr.annotate(f"weighted mean\nR = {R_all[day]:+.2f}", (R_all[day], 0.4),
-                 xytext=(7 if R_all[day] < 0 else -7, 0), textcoords="offset points",
-                 ha="left" if R_all[day] < 0 else "right", va="center", fontsize=9, color=INK,
-                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
-    axr.set_yticks(ypos)
-    axr.set_yticklabels([f"w={w[o]:.2f}" for o in order], fontsize=8)
-    axr.set_xlabel("log(model) $-$ log(gauge), that day", color=INK, fontsize=9.5)
-    axr.set_title("(b)  how wrong the model is there", color=INK, fontsize=10.5,
-                  loc="left", pad=8)
-    axr.text(0.98, 0.985, f"{dates[day]:%-d %b %Y}", transform=axr.transAxes,
-             ha="right", va="top", fontsize=9, color=INK)
-    axr.text(0.98, 0.915, "positive = model ran high", transform=axr.transAxes,
-             ha="right", va="top", fontsize=8.5, color=MUTE)
-    style(axr)
-
-    # ---- (c) apply it to the target -------------------------------------------
-    t = dates[win]
-    axh.fill_between(t, 0, obs[i][win], color=INK, alpha=0.10, zorder=2)
-    axh.plot(t, obs[i][win], color=INK, lw=1.3, zorder=5, label="observed (never used)")
-    axh.plot(t, np.clip(pred[i][win], 0, None), color=RAW, lw=1.5, zorder=4, label="LSTM")
-    axh.plot(t, corrected_i[win], color=CORRECTED, lw=1.8, zorder=6, label="LSTM + correction")
-    axh.axvline(dates[day], color=MUTE, lw=0.9, ls=(0, (3, 3)), zorder=3)
-    axh.set_ylabel("flow  (mm/day)", color=INK, fontsize=9.5)
-    axh.set_title(f"(c)  nudge the target by $\\lambda$R", color=INK, fontsize=10.5,
-                  loc="left", pad=8)
-    axh.text(0.985, 0.985,
-             f"basin {basins[i]}\nNSE {gain:+.3f} -- the median gain for this fold",
-             transform=axh.transAxes, ha="right", va="top", fontsize=8.5, color=MUTE,
-             linespacing=1.5)
-    axh.legend(frameon=False, fontsize=8.5, loc="upper left", labelcolor=INK)
-    axh.annotate(f"{np.exp(-LAMBDA * R_all[day]):.2f}x here",
-                 (dates[day], corrected_i[day]), xytext=(14, 14), textcoords="offset points",
-                 fontsize=8.5, color=INK,
-                 arrowprops=dict(arrowstyle="-", color=MUTE, lw=0.8))
-    style(axh)
-    axh.xaxis.set_major_locator(matplotlib.dates.WeekdayLocator(byweekday=0, interval=2))
-    axh.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%-d %b"))
-
-    fig.text(0.008, 0.025,
-             f"$q_{{corr}} = (q_{{sim}} + \\epsilon)\\,e^{{-\\lambda R}} - \\epsilon$   with   "
-             f"K = {K},  $\\lambda$ = {LAMBDA},  $\\epsilon$ = {EPS} mm/day.   "
-             f"The target basin's own discharge is never read; the weights use distance only.   "
-             f"Fold 0, {n_seeds}-seed mean hydrograph.",
-             fontsize=8.5, color=MUTE)
-    out = out or f"{HERE}/method.png"
-    fig.savefig(out, dpi=200, facecolor="white")
-    print(f"-> {out}  (basin {basins[i]}, {dates[day]:%Y-%m-%d}, R={R_all[day]:+.3f}, gain {gain:+.3f})")
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    bad = check_fit(fig, ax)
+    stem = out or f"{HERE}/method"
+    fig.savefig(f"{stem}.png", dpi=300, facecolor="white")
+    fig.savefig(f"{stem}.svg", facecolor="white")
+    print(f"-> {stem}.png, {stem}.svg" + (f"   ({bad} overflowing)" if bad else "   (fit ok)"))
 
 
 if __name__ == "__main__":

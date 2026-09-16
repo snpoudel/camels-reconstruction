@@ -61,19 +61,29 @@ Your LSTM has predicted flow everywhere. Pick an ungauged basin and a day.
 In symbols, over the K nearest gauged basins *j* that reported that day:
 
 ```
-w_j = (1/d_j) / sum(1/d)                                  d = great-circle km
+w_j = (1/d_j^p) / sum(1/d^p)                              d = great-circle km
 R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
 q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 ```
 
-**eps = 0.01 mm/day**; K and lambda are selected per fold (§5), with K = 8, lambda = 0.5 as the no-search fallback.
+**eps = 0.01 mm/day**; K, lambda and p are selected per fold (§5), with K = 8, lambda = 0.5,
+p = 1 as the no-search fallback.
 
-`figures/method.png` shows the idea in three panels; `figures/method_detail.png` works the arithmetic through on one real basin and one real day, stage by stage, with every intermediate number printed.
+`figures/method.png` (and `.svg`) draws the five steps above in order, each with its exact
+equation and the hyperparameter search alongside it.
 
 ### Why these choices
 
 **Why log space.** Streamflow errors are multiplicative. "The model ran 30% low" transfers
 between a 0.5 mm/day creek and a 50 mm/day river; "the model was off by 2 mm/day" does not.
+
+**Why an exponent p on distance.** p = 1 is plain inverse distance and p = 2 the classic
+Shepard weighting; the grid searches [1, 3]. It matters more than K does. Selection picks
+p >= 1.5 on every fold, and once it does, K stops mattering: across the parent branch's seven
+folds K ranges from 2 to 19 while the effective donor count `1 / sum(w^2)` stays near 2 (§9).
+So K sets the size of the pool the weighting is allowed to draw from, and p decides how much
+of that pool is really used. Reading K on its own overstates how many gauges the correction
+listens to.
 
 **Why lambda < 1.** The neighbours are an imperfect proxy, so believing them fully overshoots.
 Fitting lambda by least squares in log space gives 0.83 (measured over 276,126 basin-days).
@@ -86,8 +96,10 @@ report exactly zero flow. A much smaller floor (1e-5) makes those days produce l
 near −11 and costs about 0.005 NSE. Tying eps to each basin's mean precipitation was tried and
 is not worth the extra machinery.
 
-**Why nothing is fitted.** See §5 — the surface is flat, so fixed constants cost nothing and
-remove a whole class of "how did you tune that?" objections.
+**Why selecting is cheap insurance rather than a load-bearing step.** See §5 — a wide region
+of the surface scores nearly the same, and on the one fold available the fixed constants land
+within noise of the selected ones. Selection is kept because it costs seconds and is clean, not
+because the exact triple is worth chasing.
 
 ## 4. What it is not allowed to see
 
@@ -113,7 +125,7 @@ published 0.693 uses no discharge anywhere at prediction time. So this is a meth
 *regions* containing ungauged *sites*, and the fair comparison is against the same LSTM without
 the correction — which is exactly the comparison this branch is built to make.
 
-## 5. Choosing K and lambda, without ever touching the test basins
+## 5. Choosing K, lambda and p, without ever touching the test basins
 
 The grid search takes seconds, so there is no reason not to run it. The only question is
 *where* it is allowed to look.
@@ -128,24 +140,44 @@ What is left is fold *f*'s own 455 **training** basins, and the model's predicti
 
 | rule | where it searches | fold 0: picks | scores |
 |---|---|---|---|
-| **`inner`** (default) | leave-one-group-out inside the training basins: they keep their original fold labels, so each of the six groups is corrected using donors from the other five — a thinned gauge network, like a real ungauged basin faces | K=6, λ=0.65 | **0.7457** |
-| `gauged` | the same basins without the group structure, self masked | K=4, λ=0.70 | 0.7387 |
-| `fixed` | no search | K=8, λ=0.50 | 0.7494 |
-| *oracle* | *the held-out basins themselves — shown only to price the others; not selectable* | *K=10, λ=0.70* | *0.7579* |
+| **`inner`** (default) | leave-one-group-out inside the training basins: they keep their original fold labels, so each of the six groups is corrected using donors from the other five — a thinned gauge network, like a real ungauged basin faces | K=16, λ=0.70, p=1.5 | **0.7522** |
+| `gauged` | the same basins without the group structure, self masked | K=18, λ=0.70, p=1.5 | 0.7524 |
+| `fixed` | no search | K=8, λ=0.50, p=1 | 0.7494 |
+| *oracle* | *the held-out basins themselves — shown only to price the others; not selectable* | *K=13, λ=0.75, p=1.5* | *0.7593* |
 
-Two things to read off that table, both honest and both provisional on a single fold:
+Four things to read off that table. Only the first has been checked beyond fold 0; the rest
+are provisional on a single fold:
 
-- **The group structure matters.** `inner` beats `gauged` by 0.007 because letting a basin
-  borrow from its immediate neighbours — which a held-out *group* could not — makes the
-  neighbourhood look better than it will be at deployment, and a smaller K wins than should.
-- **On this one fold, searching does not currently beat not searching.** `inner` lands 0.004
-  below the fixed pair. With 76 basins and one fold that is inside the noise, and the fixed
-  pair is not really free either — K=8, λ=0.5 were themselves read off a surface, just an
-  earlier one. The comparison has to be redone on the 7-fold grid before anything is claimed.
+- **Searching and not searching are indistinguishable, and the 7-fold grid now says so.** On
+  fold 0 `inner` edges ahead by 0.0028 — the reverse of what this table said before p entered
+  the grid — but the paired comparison in §7 puts a bootstrap interval of [−0.008, +0.020] on
+  it and only 41 of 76 basins prefer it. Run on the parent branch's seven folds and all 531
+  basins (`python analysis/tune.py --arch donor`), the sign flips back: `inner` scores 0.7385
+  against `fixed`'s 0.7429, a difference of medians of **−0.0044**, yet the paired median
+  per-basin change is **+0.0002** with 275 of 531 basins preferring `inner`, a bootstrap
+  interval of **[−0.008, +0.007]**, and four of seven folds favouring fixed against three
+  favouring `inner`. Two surfaces, opposite signs, both intervals straddling zero: nothing
+  separates the rules, and the fixed triple is not really free either, since K=8, λ=0.5 were
+  themselves read off a surface, just an earlier one.
+- **Where `inner` loses, it loses by over-sharpening.** Its seven picks take p = 2 or 3 on every
+  fold and lambda as low as 0.20, because inside the 455 training basins the neighbourhood is
+  denser than the one a held-out basin actually faces, so steep weighting pays there and does
+  not transfer. Thinning the donor pool by fold group was meant to remove exactly that bias;
+  it evidently does not remove all of it.
+- **The group structure no longer separates the two search rules.** `inner` and `gauged` land
+  0.0002 apart and pick almost the same triple. An earlier version of this section argued that
+  `inner` beat `gauged` by 0.007 because letting a basin borrow from its immediate neighbours
+  flatters the neighbourhood; on the current grid that gap is gone, so the argument is
+  withdrawn rather than restated. `inner` stays the default because it is the rule that matches
+  deployment, not because it now scores better.
+- **Every rule that is allowed to choose p moves it off 1**, the oracle included; `fixed` sits
+  at p = 1 only because it does no searching. That is the most stable thing on the table — K
+  ranges from 8 to 18 across the rules for a 0.003 spread in score, while p does not vary at
+  all. See §3 on why K and p are not independent.
 
 `analysis/leak_audit.py` check [6] is what makes "no held-out basin was read" a measurement
 rather than a promise: it destroys every held-out observation, re-runs selection, and checks
-the chosen (K, lambda) does not move. It doesn't.
+the chosen (K, lambda, p) does not move. It doesn't.
 
 ### How much the choice matters at all
 
@@ -155,24 +187,32 @@ that figure is scored on a held-out basin, and nothing is annotated as "selected
 is the shape, not a winner. As more folds run, more lines appear.
 
 What it shows, and what a paper would quote: **the optima cluster in a narrow region and the
-curves are flat around them**, so the exact pair matters far less than that it lies in that
-region. On the single fold available now the optimum is K = 6, lambda = 0.65; the useful
-statement is the range across folds, which is what the caption prints automatically once there
-is more than one.
+curves are flat around them**, so the exact triple matters far less than that it lies in that
+region. On the single fold available now the optimum is K = 16, lambda = 0.70, p = 1.5 (CV
+median NSE 0.8182); the useful statement is the range across folds, which is what the caption
+prints automatically once there is more than one.
 
 Measured on the held-out basins afterwards — as a check on the method, never as an input to
 it — the flatness carries over:
 
-| surface | box K in [3,20], lambda in [0.3,0.7] | best cell |
-|---|---|---|
-| 531 basins, 7 folds (parent branch, `donor` base) | 0.7312–0.7429, **range 0.012** | 0.7429 |
-| 76 basins, fold 0 only (this branch) | 0.7308–0.7579, **range 0.027** | 0.7579 |
+| surface | box K in [3,20], lambda in [0.3,0.7] | at p = 1 only | best cell |
+|---|---|---|---|
+| 531 basins, 7 folds (parent branch, `donor` base) | 0.7213–0.7435, **range 0.022** | 0.7312–0.7434, range 0.012 | 0.7435 (K=15, λ=0.45, p=1.5) |
+| 76 basins, fold 0 only (this branch) | 0.7150–0.7579, **range 0.043** | — | 0.7579 (in box); 0.7593 at λ=0.75 |
 
-Against a gain of about 0.04–0.05 over uncorrected, a 0.012–0.027 spread across a 5-fold range
-in K and a 2-fold range in lambda is the real message: **the correction works across a wide
-region, and cross-validating inside it is cheap insurance rather than a load-bearing step.**
-One fold of 76 basins is a much noisier surface than seven folds of 531; neither the flatness
-nor the apparent optimum on it should be over-read.
+Against a gain of about 0.04–0.05 over uncorrected, a spread of 0.022–0.043 across a 5-fold
+range in K, a 2-fold range in lambda and a 3-fold range in p still says **the correction works
+across a wide region**. But the third column is the honest caveat, and it is new: adding p to
+the grid roughly doubles the spread, from 0.012 to 0.022 on the 531-basin surface. The
+two-parameter version of this section overstated the flatness, because it was flat in the two
+directions it looked along. Cross-validating is still cheap insurance rather than a load-bearing
+step, but the insurance is worth more than it appeared.
+
+Two further cautions. One fold of 76 basins is a much noisier surface than seven folds of 531 —
+its spread is twice as wide and neither its flatness nor its apparent optimum should be
+over-read. And **p's value is not established on the larger surface**: the best p=1.5 cell beats
+the best p=1 cell by 0.0006 over 531 basins, against 0.0028 on fold 0. Fold 0 is the reason p
+is in the grid; seven folds do not yet confirm it.
 
 The one genuinely bad corner is K = 1 with large lambda: a single over-trusted neighbour.
 
@@ -203,46 +243,50 @@ genuinely same-day, not a slow drift.
 
 ## 7. What it buys
 
-Fold 0, 76 held-out basins, 3-seed mean hydrograph. K and lambda selected inside the training
-basins (K = 6, lambda = 0.65); the fixed-constant column is shown beside it so the two can be
-compared. They are statistically indistinguishable — see the note below the table, and do not
-read the median column as if the 0.004 were a result.
+Fold 0, 76 held-out basins, 3-seed mean hydrograph. K, lambda and p selected inside the
+training basins (K = 16, lambda = 0.70, p = 1.5); the fixed-constant column is shown beside it
+so the two can be compared. They are statistically indistinguishable — see the note below the
+table, and do not read the median column as if the 0.003 were a result.
 
-| | LSTM | + correction (selected) | + correction (fixed K=8, λ=0.5) |
+| | LSTM | + correction (selected) | + correction (fixed K=8, λ=0.5, p=1) |
 |---|---|---|---|
-| **median NSE** | **0.7086** | **0.7457** (+0.0371) | 0.7494 (+0.0407) |
-| median KGE | 0.704 | **0.723** | 0.710 |
-| median RMSE (mm/day) | 1.207 | 1.141 | 1.138 |
-| median overall bias | −2.2% | −3.8% (worse) | −4.4% (worse) |
-| bias, top 10% of flows | −11.9% | −11.4% | −10.8% |
-| bias, middle 30–90% | +13.4% | +6.6% | +6.5% |
-| bias, bottom 30% | +49.1% | **+25.4%** | +32.4% |
-| basins improved | — | 67% | 78% |
-| basins hurt by >0.05 NSE | — | 6 of 76 | 3 of 76 |
-| paired median change vs the other | — | **+0.0007** | −0.0007 |
+| **median NSE** | **0.7086** | **0.7522** (+0.0436) | 0.7494 (+0.0408) |
+| median KGE | 0.704 | **0.719** | 0.710 |
+| median RMSE (mm/day) | 1.207 | 1.145 | 1.138 |
+| median overall bias | −2.2% | −5.2% (worse) | −4.4% (worse) |
+| bias, top 10% of flows | −11.9% | −11.8% | −10.8% |
+| bias, middle 30–90% | +13.4% | **+4.6%** | +6.5% |
+| bias, bottom 30% | +49.1% | **+25.5%** | +32.4% |
+| basins improved | — | 72% | 78% |
+| basins hurt by >0.05 NSE | — | 3 of 76 | 3 of 76 |
+| paired median change vs the other | — | **+0.0017** | −0.0017 |
 
 Read honestly, that table says three things:
 
 - **The correction works on every measure that rewards day-to-day accuracy** — NSE, KGE, RMSE,
-  and bias in the middle and lower flow bands, where the LSTM runs high. Low-flow bias halves.
-- **Overall water balance gets slightly worse** (−2.2% to −3.8%). The correction trades a
-  little long-run bias for a large reduction in day-to-day error, which is what NSE, KGE and
-  RMSE all reward. Worth stating rather than leaving in the figure.
-- **Selected and fixed are indistinguishable, and the paired comparison slightly favours
-  selection.** The difference of the two medians (−0.0037) reads as if fixed wins, but that is
-  a difference of medians, not a difference: pairing the basins gives a median per-basin change
-  of **+0.0007 in favour of selection**, 39 of 76 basins prefer it, and a bootstrap 95% interval
-  on the difference of medians is **[−0.021, +0.015]** — straddling zero. The cross-validation
-  surface also ranks settings much as the held-out surface does (Spearman rho +0.78 over all
-  273 cells), so selection is picking sensibly; there is simply nothing to pick between, because
-  the surface is flat here (neighbouring cells span 0.746–0.754). Nothing separates the two on
-  one fold of 76 basins.
+  and bias in the middle and lower flow bands, where the LSTM runs high. Low-flow bias halves
+  and mid-range bias falls by two thirds.
+- **Overall water balance gets worse** (−2.2% to −5.2%). The correction trades long-run bias for
+  a large reduction in day-to-day error, which is what NSE, KGE and RMSE all reward. The
+  selected setting trades more of it than the fixed one, because it believes the neighbours
+  more (lambda 0.70 against 0.50). Anyone wanting mean annual runoff rather than daily accuracy
+  should read this row first, and §9 before that.
+- **Selected and fixed are indistinguishable.** Selection is ahead on both readings this time —
+  the difference of medians is +0.0029 and the paired median per-basin change is **+0.0017** —
+  but the direction is not the point: 41 of 76 basins prefer selection, barely more than half,
+  and a bootstrap 95% interval on the difference of medians is **[−0.008, +0.020]**, straddling
+  zero. The cross-validation surface ranks settings much as the held-out surface does (Spearman
+  rho +0.76 over all 1,680 cells), so selection is picking sensibly; there is simply nothing to
+  pick between, because the surface is flat here (cells neighbouring the selected one span
+  0.752–0.756). Nothing separates the two on one fold of 76 basins.
 
 See `figures/cdf_nse.png` and `figures/metrics_boxplots.png`.
 
 **Supporting evidence from the parent branch** (different base model, so not this branch's
-headline): applied to 7-fold `donor` predictions across all 531 basins, the same correction
-gives 0.7235 → 0.7429, better on **7 of 7 folds**, 73% of basins improved.
+headline): applied to 7-fold `donor` predictions across all 531 basins, the same correction at
+the **fixed** constants gives 0.7235 → 0.7429, better on **7 of 7 folds**, 73% of basins
+improved. Per-fold selection scores 0.7385 on that surface — lower, though not separably so;
+§5 works through why.
 
 ## 8. One deliberate change from the parent branch
 
@@ -264,8 +308,38 @@ the literature value. Two consequences worth stating rather than discovering lat
    batched model at bias 5.0 that `src/` now trains (§8). The headline is a placeholder.
 2. **No uncertainty bars.** The correction is deterministic given a hydrograph, but the
    underlying predictions carry seed noise that has not been propagated.
-3. **Gauge density is a real limit.** The gain falls from about +0.027 NSE where the nearest
-   gauge is 10–25 km away to about +0.002 beyond 100 km.
+3. **Gauge density is a real limit, and the range is now measured.** `analysis/donor_geometry.py`
+   quantifies it; `figures/donor_range.png` draws it. Numbers below are the parent branch's
+   7-fold `donor` predictions across all 531 basins — the same supporting-evidence basis as the
+   last paragraph of §7, not this branch's headline.
+
+   The donors in play are local: median nearest gauge 37 km, weighted-mean donor 51 km, K-th
+   and farthest 171 km. Only 41 of 531 basins have no gauge within 100 km. The weighting is
+   sharper than §3's plain 1/d suggests, because selection picks p = 2 or 3 in every fold —
+   median weight on the nearest donor **0.59**, and an effective donor count of **2.2**, however
+   large K is. That K ranges from 2 to 19 across folds while the effective count barely moves is
+   the clearest statement of what the search is really choosing.
+
+   Binning the gain by observed donor distance gives +0.0247 NSE at 10–25 km, +0.0141 at
+   25–50 km, +0.0090 at 50–100 km and −0.0019 at 100–200 km. Read that as a trend and no more:
+   the distant-donor basins are also the arid and mountainous ones the LSTM does worst on (raw
+   NSE 0.40 against 0.80 for the near ones), so basin difficulty and donor distance are
+   confounded, and the >200 km bin holds four basins.
+
+   The unconfounded version deletes every donor nearer than a floor and re-runs, making each
+   basin its own control. The median gain then decays monotonically — +0.0138 on the real
+   network, +0.0079 at a 25 km floor, +0.0014 at 75 km, −0.0012 at 200 km, −0.0071 at 1600 km —
+   and crosses zero at a **break-even of about 136 km**. Past that the correction is adding
+   noise rather than information, and fewer than half of basins improve. Under the fixed
+   constants of §3 instead (K = 8, λ = 0.5, p = 1) the same sweep breaks even at **68 km**: the
+   flat-surface argument of §5 is about the score at deployment, and does not carry over to how
+   gracefully a setting degrades when the gauge network thins.
+
+   Two consequences. The scope limit in §4 is better stated per-day and per-distance than
+   per-region — the method needs a gauge within roughly 100 km, not merely a gauged country.
+   And a deployment rule suggests itself: revert to the raw LSTM when the K-th donor is beyond
+   the break-even, which the `R = 0` fallback in `neighbour_residual` already supports.
+   Neither is tested here.
 
 ## 10. Train/test windows
 
@@ -302,6 +376,7 @@ python -m src.correct --out runs/corrected_metrics.csv
 python analysis/tune.py --out runs/tuning.csv
 python figures/make_cdf_figure.py && python figures/make_boxplot_figure.py
 python figures/make_hyperparam_figure.py && python figures/make_method_figure.py
+python analysis/donor_geometry.py && python figures/make_donor_figure.py
 ```
 
 21 runs. That produces the 7-fold `vanilla` baseline this project has never had, and the

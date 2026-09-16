@@ -23,17 +23,22 @@ list of things that were tried and thrown away.
 Over the K nearest gauged basins *j* that reported that day:
 
 ```
-w_j = (1/d_j) / sum(1/d)                                d = great-circle km
+w_j = (1/d_j^p) / sum(1/d^p)                            d = great-circle km
 R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
 q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 ```
 
-**eps = 0.01 mm/day.** K and lambda are selected per fold by grid search — it costs seconds —
-searching **only inside that fold's training basins**, never a held-out basin of any fold
-(`METHOD.md` §5; `analysis/leak_audit.py` check [6] verifies it by destroying every held-out
-observation and confirming the selection does not move). The choice barely matters: over
-K in [3,20] and lambda in [0.3,0.7] the whole box spans 0.012 NSE on the parent branch's
-531-basin surface and 0.027 on this branch's single fold, against a gain of ~0.04–0.05.
+**eps = 0.01 mm/day.** K, lambda and the distance exponent p are selected per fold by grid
+search — it costs seconds — searching **only inside that fold's training basins**, never a
+held-out basin of any fold (`METHOD.md` §5; `analysis/leak_audit.py` check [6] verifies it by
+destroying every held-out observation and confirming the selection does not move). The choice
+matters little: over K in [3,20] and lambda in [0.3,0.7] the whole box spans 0.022 NSE on the
+parent branch's 531-basin surface and 0.043 on this branch's single fold, against a gain of
+~0.04–0.05. Selection and the fixed fallback (K=8, lambda=0.5, p=1) are statistically
+indistinguishable on both surfaces, with the sign of the difference going one way on each.
+
+It needs a gauge nearby, not merely a gauged country: the gain decays with donor distance and
+crosses zero at roughly 100 km (`METHOD.md` §9, `figures/donor_range.png`).
 
 The target basin's own discharge is never read. Deleting it from the record entirely leaves the
 corrected hydrographs bit-identical; deleting a *gauged* neighbour instead moves them, which is
@@ -60,14 +65,15 @@ python -c "from src.data import build_cache; build_cache()"   # -> data/cache/
 python -m src.train --benchmark 200                            # measure ms/step first
 FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh   # stage 1: one seed, all folds
 python -m src.evaluate                                         # -> runs/metrics.csv
-python -m src.correct --out runs/corrected_metrics.csv         # selects K, lambda; raw vs corrected
+python -m src.correct --out runs/corrected_metrics.csv         # selects K, lambda, p; raw vs corrected
 python analysis/tune.py --out runs/tuning.csv                  # the sensitivity surface
 python analysis/leak_audit.py                                  # prove there is no leak
-python figures/make_method_figure.py                           # the idea
-python figures/make_method_detail_figure.py                    # the arithmetic, worked
+python analysis/donor_geometry.py                              # donor distances, and the range limit
+python figures/make_method_figure.py                           # method diagram, steps + equations
 python figures/make_cdf_figure.py
 python figures/make_boxplot_figure.py
 python figures/make_hyperparam_figure.py
+python figures/make_donor_figure.py                            # donor network + break-even distance
 ```
 
 The correction needs no GPU and no training — `python -m src.correct` runs on any machine in

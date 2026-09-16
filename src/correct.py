@@ -7,12 +7,13 @@ An ungauged basin has no discharge of its own, but its nearest gauges do, and th
 *today* are informative about its error today. For ungauged basin i on day t, over the K
 nearest gauged basins j that reported that day:
 
-    w_ij = (1/d_ij) / sum_j (1/d_ij)                       d = great-circle km
+    w_ij = (1/d_ij^P) / sum_j (1/d_ij^P)                   d = great-circle km
     R_i  = sum_j w_ij * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
     q_i  = (q_sim_i + eps) * exp(-LAMBDA * R_i) - eps
 
-In words: ask the K nearest gauges how wrong the model was today; if they agree it ran low,
-assume this basin did too, and believe a fraction LAMBDA of it.
+In words: ask the K nearest gauges how wrong the model was today, weighting closer gauges
+more steeply the higher P is set; if they agree it ran low, assume this basin did too, and
+believe a fraction LAMBDA of it.
 
 Nothing here is trained and nothing is fitted to the basins being corrected. The weights come
 from coordinates alone; the target basin's own discharge is never read. See METHOD.md for the
@@ -28,14 +29,20 @@ import pandas as pd
 from .data import assign_folds
 
 # Used when selection is switched off, and as the fallback when there are too few folds to
-# select honestly (see `choose`). Both sit inside the flat region of the surface.
+# select honestly (see `choose`). All three sit inside the flat region of the surface.
 K = 8
 LAMBDA = 0.5
+P = 1.0
 
-# The search grid. K is sampled geometrically: what matters is the order of magnitude of the
-# neighbourhood, not the exact count.
-K_GRID = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 50)
+# The search grid. Every K from 1 to 20 -- dense enough not to jump over the optimum -- and no
+# higher: 30/50 scored worse on every fold and widening the grid past a basin's real donor
+# density buys nothing.
+K_GRID = tuple(range(1, 21))
 LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
+# The IDW exponent: 1 is plain inverse distance, 2 the classic Shepard weighting. Searched
+# only over [1, 3] -- below 1 flattens toward a simple average over the K donors and scored
+# worse; above 3 sharpens toward the nearest donor with no further gain.
+P_GRID = (1.0, 1.5, 2.0, 3.0)
 # mm/day. Keeps log() finite on the 2.8% of days that report exactly zero flow, and is small
 # enough to be hydrologically negligible. A far smaller floor (1e-5) makes those days produce
 # log-residuals near -11 and costs ~0.005 NSE.
@@ -49,10 +56,10 @@ def great_circle_km(lat, lon):
     return 2 * 6371.0 * np.arcsin(np.sqrt(np.clip(h, 0, 1)))
 
 
-def idw_weights(dist_km, k=K):
-    """[n_ungauged, n_gauged] inverse-distance weights over the k nearest, rows summing to 1."""
+def idw_weights(dist_km, k=K, p=P):
+    """[n_ungauged, n_gauged] inverse-distance^p weights over the k nearest, rows summing to 1."""
     keep = np.argsort(dist_km, axis=1)[:, :k]
-    w = 1.0 / np.maximum(np.take_along_axis(dist_km, keep, 1), 1.0)
+    w = np.maximum(np.take_along_axis(dist_km, keep, 1), 1.0) ** -p
     W = np.zeros_like(dist_km)
     np.put_along_axis(W, keep, w / w.sum(1, keepdims=True), 1)
     return W
@@ -76,9 +83,9 @@ def apply_shrinkage(sim_ungauged, R, lam=LAMBDA, eps=EPS):
     return np.clip(np.exp(np.log(np.clip(sim_ungauged, 0, None) + eps) - lam * R) - eps, 0, None)
 
 
-def correct(sim_ungauged, sim_gauged, obs_gauged, dist_km, k=K, lam=LAMBDA, eps=EPS):
+def correct(sim_ungauged, sim_gauged, obs_gauged, dist_km, k=K, lam=LAMBDA, p=P, eps=EPS):
     """The whole correction. `dist_km` is [n_ungauged, n_gauged]."""
-    W = idw_weights(dist_km, k)
+    W = idw_weights(dist_km, k, p)
     return apply_shrinkage(sim_ungauged, neighbour_residual(sim_gauged, obs_gauged, W, eps),
                            lam, eps)
 
@@ -94,7 +101,7 @@ def nse_per_basin(sim, obs):
                     1 - ((s - o) ** 2 * m).sum(1) / np.maximum(den, 1e-12), np.nan)
 
 
-def load_fold(fold, runs_dir="runs", cache_dir="data/cache"):
+def load_fold(fold, runs_dir="runs", cache_dir="data/cache", arch="vanilla"):
     """Seed-mean test hydrograph for one fold, in cache-basin order.
 
     Averaging the seeds' hydrographs and scoring once is the convention the literature
@@ -104,7 +111,7 @@ def load_fold(fold, runs_dir="runs", cache_dir="data/cache"):
     basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
     idx = {b: i for i, b in enumerate(basins)}
     mats, gauged, t_idx, period = [], None, None, None
-    for path in sorted(glob.glob(f"{runs_dir}/vanilla_fold{fold}_seed*/predictions.npz")):
+    for path in sorted(glob.glob(f"{runs_dir}/{arch}_fold{fold}_seed*/predictions.npz")):
         cfg = json.load(open(path.rsplit("/", 1)[0] + "/config.json"))
         if cfg.get("max_steps"):
             continue
@@ -138,13 +145,13 @@ def distances(cache_dir="data/cache", loc_csv="data/camels531.csv"):
                            loc.loc[basins, "gauge_lon"].to_numpy()), basins
 
 
-def load_all(runs_dir="runs", cache_dir="data/cache"):
+def load_all(runs_dir="runs", cache_dir="data/cache", arch="vanilla"):
     """Everything the correction and its tuning need, one entry per available fold."""
     D, basins = distances(cache_dir)
     Q = np.load(f"{cache_dir}/Q.npy")
     out = []
     for fold in range(7):
-        got = load_fold(fold, runs_dir, cache_dir)
+        got = load_fold(fold, runs_dir, cache_dir, arch)
         if got is None:
             continue
         pred, t_idx, gauged, n_seeds = got
@@ -159,8 +166,8 @@ def load_all(runs_dir="runs", cache_dir="data/cache"):
     return out
 
 
-def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, on="held"):
-    """{(k, lam): per-basin NSE} for one fold, on one of three sets of basins.
+def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="held"):
+    """{(k, lam, p): per-basin NSE} for one fold, on one of three sets of basins.
 
     `on="held"`   the fold's held-out basins -- the real objective, and the surface the figure
                   draws. **Never used to select anything**: it is the test set.
@@ -175,14 +182,14 @@ def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, on="held"):
     """
     if on == "held":
         target, donor, d = f["held"], f["pool"], f["d_held"]
-        R_of = lambda k: neighbour_residual(f["pred"][donor], f["obs"][donor],
-                                            idw_weights(d, k), eps)
         out = {}
         for k in k_grid:
-            R = R_of(k)
-            for lam in lam_grid:
-                out[(int(k), float(lam))] = nse_per_basin(
-                    apply_shrinkage(f["pred"][target], R, lam, eps), f["obs"][target])
+            for p in p_grid:
+                R = neighbour_residual(f["pred"][donor], f["obs"][donor],
+                                       idw_weights(d, k, p), eps)
+                for lam in lam_grid:
+                    out[(int(k), float(lam), float(p))] = nse_per_basin(
+                        apply_shrinkage(f["pred"][target], R, lam, eps), f["obs"][target])
         return out
 
     D = f["D"]
@@ -202,22 +209,23 @@ def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, on="held"):
             tgt = np.flatnonzero(labels == gl)
             groups.append((tgt, np.flatnonzero(labels != gl)))
 
-    out = {(int(k), float(lam)): np.full(len(pool), np.nan)
-           for k in k_grid for lam in lam_grid}
+    out = {(int(k), float(lam), float(p)): np.full(len(pool), np.nan)
+           for k in k_grid for lam in lam_grid for p in p_grid}
     for tgt, don in groups:
         dd = d[np.ix_(tgt, don)]
         for k in k_grid:
-            R = neighbour_residual(f["pred"][pool[don]], f["obs"][pool[don]],
-                                   idw_weights(dd, k), eps)
-            for lam in lam_grid:
-                v = nse_per_basin(apply_shrinkage(f["pred"][pool[tgt]], R, lam, eps),
-                                  f["obs"][pool[tgt]])
-                out[(int(k), float(lam))][tgt] = v
+            for p in p_grid:
+                R = neighbour_residual(f["pred"][pool[don]], f["obs"][pool[don]],
+                                       idw_weights(dd, k, p), eps)
+                for lam in lam_grid:
+                    v = nse_per_basin(apply_shrinkage(f["pred"][pool[tgt]], R, lam, eps),
+                                      f["obs"][pool[tgt]])
+                    out[(int(k), float(lam), float(p))][tgt] = v
     return out
 
 
-def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, mode="inner"):
-    """(K, lambda) per fold, and a note saying how they were arrived at.
+def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode="inner"):
+    """(K, lambda, p) per fold, and a note saying how they were arrived at.
 
     **No mode ever reads a held-out basin of any fold.** The held-out basins are the test set;
     letting them into selection -- even another fold's -- would mean the pooled 531-basin
@@ -229,16 +237,16 @@ def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, eps=EPS, mode="inner"):
 
     `mode="gauged"` searches the same training basins without the group structure.
 
-    `mode="fixed"` skips the search: K = 8, lambda = 0.5.
+    `mode="fixed"` skips the search: K = 8, lambda = 0.5, p = 1.0.
 
     All three are clean. They differ in how well they *predict* the held-out optimum, which is
     a measurement, not an assumption -- `analysis/tune.py` prints it.
     """
     if mode == "fixed":
-        return {f["fold"]: (K, LAMBDA) for f in folds}, "fixed constants, no search"
+        return {f["fold"]: (K, LAMBDA, P) for f in folds}, "fixed constants, no search"
     picked = {}
     for f in folds:
-        surf = surface(f, k_grid, lam_grid, eps, on=mode)
+        surf = surface(f, k_grid, lam_grid, p_grid, eps, on=mode)
         picked[f["fold"]] = max(surf, key=lambda c: np.nanmedian(surf[c]))
     where = ("leave-one-group-out within each fold's training basins"
              if mode == "inner" else "each fold's training basins, self masked")
@@ -252,11 +260,11 @@ def apply_all(runs_dir="runs", cache_dir="data/cache", mode="inner", eps=EPS):
         return [], "no runs found"
     picked, note = choose(folds, eps=eps, mode=mode)
     for f in folds:
-        k, lam = picked[f["fold"]]
-        f["k"], f["lam"] = k, lam
+        k, lam, p = picked[f["fold"]]
+        f["k"], f["lam"], f["p"] = k, lam, p
         f["raw"] = f["pred"][f["held"]]
         f["corrected"] = correct(f["pred"][f["held"]], f["pred"][f["pool"]],
-                                 f["obs"][f["pool"]], f["d_held"], k, lam, eps)
+                                 f["obs"][f["pool"]], f["d_held"], k, lam, p, eps)
     return folds, note
 
 
@@ -264,7 +272,7 @@ def main():
     from .evaluate import metrics
     p = argparse.ArgumentParser()
     p.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner",
-                   help="how (K, lambda) are chosen; see correct.choose")
+                   help="how (K, lambda, p) are chosen; see correct.choose")
     p.add_argument("--runs", default="runs")
     p.add_argument("--out", default="runs/corrected_metrics.csv")
     a = p.parse_args()
@@ -278,10 +286,10 @@ def main():
         raw["variant"], cor["variant"] = "vanilla", "vanilla + correction"
         for frame in (raw, cor):
             frame["basin"], frame["fold"], frame["n_seeds"] = f["basins"], f["fold"], f["n_seeds"]
-            frame["k"], frame["lam"] = f["k"], f["lam"]
+            frame["k"], frame["lam"], frame["p"] = f["k"], f["lam"], f["p"]
         rows += [raw, cor]
         print(f"  fold{f['fold']} ({f['n_seeds']} seeds, {len(f['basins'])} held out)  "
-              f"K={f['k']:>2} lambda={f['lam']:.2f}   "
+              f"K={f['k']:>2} lambda={f['lam']:.2f} p={f['p']:.2g}   "
               f"{raw.nse.median():.4f} -> {cor.nse.median():.4f} "
               f"({cor.nse.median() - raw.nse.median():+.4f})")
 
@@ -292,7 +300,7 @@ def main():
         print(f"  note: {n_held - len(piv)} of {n_held} basins have no defined NSE and are "
               f"excluded from the medians below")
     gain = piv["vanilla + correction"] - piv["vanilla"]
-    print(f"\n(K, lambda) {note};  eps={EPS}")
+    print(f"\n(K, lambda, p) {note};  eps={EPS}")
     print(f"{len(piv)} held-out basins: {piv['vanilla'].median():.4f} -> "
           f"{piv['vanilla + correction'].median():.4f} "
           f"({piv['vanilla + correction'].median() - piv['vanilla'].median():+.4f})")
