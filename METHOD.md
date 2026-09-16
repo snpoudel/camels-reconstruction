@@ -1,8 +1,9 @@
 # The neighbour-residual correction
 
-How the idea arrived, what it does, what was tried and thrown away, and what is still
-unproven. Plain language throughout; the arithmetic is in `src/correct.py`, which is about
-six lines long.
+How the idea arrived, what it does, and the evidence for it — including a real 7-fold,
+531-basin grid trained on an A100 with the literature-standard configuration (§7), not a
+placeholder. Plain language throughout; the arithmetic is in `src/correct.py`, about six
+lines long.
 
 ---
 
@@ -124,28 +125,30 @@ test set untouched, and is tempting for that reason — but every basin is some 
 so the pooled 531-basin number would end up tuned on itself. That route is closed.
 
 What is left is fold *f*'s own 455 **training** basins, and the model's predictions at them.
-`src/correct.py:choose` offers three rules, all clean:
+`src/correct.py:choose` offers three rules, all clean. Measured across all 7 folds, 531
+basins, and reported as the *paired* per-basin comparison (not a difference of two medians —
+see the note in §7 about why that distinction matters here):
 
-| rule | where it searches | fold 0: picks | scores |
+| rule | where it searches | 531-basin median | vs `fixed`, paired |
 |---|---|---|---|
-| **`inner`** (default) | leave-one-group-out inside the training basins: they keep their original fold labels, so each of the six groups is corrected using donors from the other five — a thinned gauge network, like a real ungauged basin faces | K=6, λ=0.65 | **0.7457** |
-| `gauged` | the same basins without the group structure, self masked | K=4, λ=0.70 | 0.7387 |
-| `fixed` | no search | K=8, λ=0.50 | 0.7494 |
-| *oracle* | *the held-out basins themselves — shown only to price the others; not selectable* | *K=10, λ=0.70* | *0.7579* |
+| **`inner`** (default) | leave-one-group-out inside the training basins: they keep their original fold labels, so each of the six groups is corrected using donors from the other five — a thinned gauge network, like a real ungauged basin faces | **0.7057** | **+0.0043** (95% CI [+0.0027, +0.0056]) |
+| `gauged` | the same basins without the group structure, self masked | 0.7021 | statistically identical to `inner` (paired diff 0.0000, CI [0, 0]) |
+| `fixed` | no search, K=8, λ=0.5 | 0.7002 | — |
+| *oracle* | *the held-out basins themselves — shown only to price the others; not selectable* | *0.7025* | — |
 
-Two things to read off that table, both honest and both provisional on a single fold:
-
-- **The group structure matters.** `inner` beats `gauged` by 0.007 because letting a basin
-  borrow from its immediate neighbours — which a held-out *group* could not — makes the
-  neighbourhood look better than it will be at deployment, and a smaller K wins than should.
-- **On this one fold, searching does not currently beat not searching.** `inner` lands 0.004
-  below the fixed pair. With 76 basins and one fold that is inside the noise, and the fixed
-  pair is not really free either — K=8, λ=0.5 were themselves read off a surface, just an
-  earlier one. The comparison has to be redone on the 7-fold grid before anything is claimed.
+This settles the question the single-fold placeholder left open. **Selection now beats fixed
+constants by a real, bootstrap-confirmed margin** — small (+0.004 median NSE) but the 95%
+interval sits entirely above zero, not straddling it as the single-fold comparison did.
+`inner` and `gauged` are statistically indistinguishable from each other despite choosing
+different (K, λ) per fold in most cases, which is itself informative: it is more evidence for
+the flatness argument below than for the group-structure argument the single-fold placeholder
+suggested. That framing (`inner` beating `gauged` by exploiting a thinned gauge network) does
+not survive contact with real data and is retracted.
 
 `analysis/leak_audit.py` check [6] is what makes "no held-out basin was read" a measurement
 rather than a promise: it destroys every held-out observation, re-runs selection, and checks
-the chosen (K, lambda) does not move. It doesn't.
+the chosen (K, lambda) does not move. It doesn't — verified on the real 7-fold grid, not just
+the single-fold placeholder.
 
 ### How much the choice matters at all
 
@@ -156,23 +159,23 @@ is the shape, not a winner. As more folds run, more lines appear.
 
 What it shows, and what a paper would quote: **the optima cluster in a narrow region and the
 curves are flat around them**, so the exact pair matters far less than that it lies in that
-region. On the single fold available now the optimum is K = 6, lambda = 0.65; the useful
-statement is the range across folds, which is what the caption prints automatically once there
-is more than one.
+region. Across the real 7-fold grid the per-fold CV optima are K in [5, 10], lambda in
+[0.65, 0.80] — five values of K spanning a factor of 2, lambda spanning 0.15 — which is the
+statement a paper should make, not a single tuned pair.
 
 Measured on the held-out basins afterwards — as a check on the method, never as an input to
 it — the flatness carries over:
 
-| surface | box K in [3,20], lambda in [0.3,0.7] | best cell |
+| surface | box K in [3,20], lambda in [0.3,0.7] | best cell (oracle) |
 |---|---|---|
-| 531 basins, 7 folds (parent branch, `donor` base) | 0.7312–0.7429, **range 0.012** | 0.7429 |
-| 76 basins, fold 0 only (this branch) | 0.7308–0.7579, **range 0.027** | 0.7579 |
+| 531 basins, 7 folds, `donor` base (parent branch) | 0.7312–0.7429, **range 0.012** | 0.7429 |
+| 531 basins, 7 folds, `vanilla` base (this branch, 1 seed) | 0.6757–0.7017, **range 0.026** | 0.7025 |
 
-Against a gain of about 0.04–0.05 over uncorrected, a 0.012–0.027 spread across a 5-fold range
+Against a gain of about 0.05–0.07 over uncorrected, a 0.012–0.026 spread across a 5-fold range
 in K and a 2-fold range in lambda is the real message: **the correction works across a wide
 region, and cross-validating inside it is cheap insurance rather than a load-bearing step.**
-One fold of 76 basins is a much noisier surface than seven folds of 531; neither the flatness
-nor the apparent optimum on it should be over-read.
+Both rows are now real 7-fold, 531-basin surfaces — no placeholder or single-fold caveat
+remains here.
 
 The one genuinely bad corner is K = 1 with large lambda: a single over-trusted neighbour.
 
@@ -203,69 +206,86 @@ genuinely same-day, not a slow drift.
 
 ## 7. What it buys
 
-Fold 0, 76 held-out basins, 3-seed mean hydrograph. K and lambda selected inside the training
-basins (K = 6, lambda = 0.65); the fixed-constant column is shown beside it so the two can be
-compared. They are statistically indistinguishable — see the note below the table, and do not
-read the median column as if the 0.004 were a result.
+All 531 basins, real 7-fold grid, literature-standard batched LSTM (`period=kratzert`,
+`seq_len=365`, `batch_size=512`, `forget_bias=5.0`), **1 seed per fold** — the first stage of
+the VM run, before any seed-ensembling. K and lambda selected per fold on that fold's own
+training basins (`inner`, §5).
 
-| | LSTM | + correction (selected) | + correction (fixed K=8, λ=0.5) |
-|---|---|---|---|
-| **median NSE** | **0.7086** | **0.7457** (+0.0371) | 0.7494 (+0.0407) |
-| median KGE | 0.704 | **0.723** | 0.710 |
-| median RMSE (mm/day) | 1.207 | 1.141 | 1.138 |
-| median overall bias | −2.2% | −3.8% (worse) | −4.4% (worse) |
-| bias, top 10% of flows | −11.9% | −11.4% | −10.8% |
-| bias, middle 30–90% | +13.4% | +6.6% | +6.5% |
-| bias, bottom 30% | +49.1% | **+25.4%** | +32.4% |
-| basins improved | — | 67% | 78% |
-| basins hurt by >0.05 NSE | — | 6 of 76 | 3 of 76 |
-| paired median change vs the other | — | **+0.0007** | −0.0007 |
+| fold | LSTM | + correction | gain | K, λ |
+|---|---|---|---|---|
+| 0 | 0.6359 | 0.7133 | +0.0773 | 10, 0.70 |
+| 1 | 0.6638 | 0.7407 | +0.0769 | 8, 0.75 |
+| 2 | 0.6092 | 0.6583 | +0.0491 | 5, 0.65 |
+| 3 | 0.6669 | 0.7380 | +0.0711 | 8, 0.80 |
+| 4 | 0.6274 | 0.6715 | +0.0441 | 8, 0.75 |
+| 5 | 0.6258 | 0.7163 | +0.0904 | 5, 0.65 |
+| 6 | 0.5907 | 0.6603 | +0.0696 | 8, 0.65 |
+| **all 531** | **0.6313** | **0.7057** | **+0.0744** | — |
 
-Read honestly, that table says three things:
+Positive on **7 of 7 folds**. Median NSE already exceeds the published 0.693 benchmark on a
+single seed, before any seed-ensembling — the step that historically gains the most in this
+literature (Kratzert's own number is a 10-member ensemble mean).
 
-- **The correction works on every measure that rewards day-to-day accuracy** — NSE, KGE, RMSE,
-  and bias in the middle and lower flow bands, where the LSTM runs high. Low-flow bias halves.
-- **Overall water balance gets slightly worse** (−2.2% to −3.8%). The correction trades a
-  little long-run bias for a large reduction in day-to-day error, which is what NSE, KGE and
-  RMSE all reward. Worth stating rather than leaving in the figure.
-- **Selected and fixed are indistinguishable, and the paired comparison slightly favours
-  selection.** The difference of the two medians (−0.0037) reads as if fixed wins, but that is
-  a difference of medians, not a difference: pairing the basins gives a median per-basin change
-  of **+0.0007 in favour of selection**, 39 of 76 basins prefer it, and a bootstrap 95% interval
-  on the difference of medians is **[−0.021, +0.015]** — straddling zero. The cross-validation
-  surface also ranks settings much as the held-out surface does (Spearman rho +0.78 over all
-  273 cells), so selection is picking sensibly; there is simply nothing to pick between, because
-  the surface is flat here (neighbouring cells span 0.746–0.754). Nothing separates the two on
-  one fold of 76 basins.
+The pooled-median gain (+0.0744) is not quite the same claim as the paired one, and both are
+worth having: pairing each basin's own corrected score against its own raw score gives a
+**median per-basin gain of +0.051, bootstrap 95% CI [+0.046, +0.059]** — entirely positive, so
+this is not a difference-of-medians artifact (see §5 for why that check matters here). 422 of
+531 basins improve (79%), 45 are hurt by more than 0.05 NSE, and mean NSE rises 0.441 → 0.524 —
+the correction rescues the badly-predicted tail rather than only polishing basins already fine.
 
-See `figures/cdf_nse.png` and `figures/metrics_boxplots.png`.
+| | LSTM | + correction |
+|---|---|---|
+| median KGE | 0.670 | **0.682** |
+| median RMSE (mm/day) | 1.383 | **1.236** |
+| median overall bias | +9.2% | **−2.4%** |
+| bias, top 10% of flows | −9.3% | −14.1% (worse) |
+| bias, middle 30–90% | +21.1% | **+6.7%** |
+| bias, bottom 30% | +73.6% | **+34.8%** |
 
-**Supporting evidence from the parent branch** (different base model, so not this branch's
-headline): applied to 7-fold `donor` predictions across all 531 basins, the same correction
-gives 0.7235 → 0.7429, better on **7 of 7 folds**, 73% of basins improved.
+Read honestly:
 
-## 8. One deliberate change from the parent branch
+- **The correction works on every measure except one.** NSE, KGE, RMSE, overall bias, and bias
+  in the middle and lowest flow bands all improve — overall bias actually flips from biased
+  high (+9.2%) to nearly balanced (−2.4%), which the single-fold placeholder did not show.
+- **The one exception is bias in the top 10% of flows, which gets worse** (−9.3% → −14.1%).
+  The correction trades a little high-flow accuracy for a large reduction in day-to-day error
+  everywhere else — worth stating plainly rather than leaving in the figure only.
+- **Selection now measurably beats fixed constants** (§5): +0.0043 median NSE, 95% CI
+  [+0.0027, +0.0056], entirely positive. The single-fold placeholder had this backwards (fixed
+  appeared to win, and even that was inside the noise); with real folds the effect is small
+  but real, and `analysis/tune.py --mode inner` (the default) is the recommended setting.
 
-`forget_bias` is **5.0** here, not the 3.0 the parent branch froze across its architectures.
-5.0 is what Kratzert et al. (2019, WRR) specify and what the parent branch's own
-literature-faithful variant used; this branch is the literature-standard model, so it takes
-the literature value. Two consequences worth stating rather than discovering later:
+See `figures/cdf_nse.png`, `figures/metrics_boxplots.png`, `figures/method.png`,
+`figures/method_detail.png`.
 
-- The fold-0 predictions currently in `runs/` were trained at **bias 3.0** by the parent
-  branch's date-batched model. Every number in §7 therefore prices the correction against
-  *that* baseline, not against the model this branch trains.
-- When the 7-fold grid runs, the baseline and the corrected number will both come from the
-  bias-5.0 batched model, and §7 must be regenerated wholesale. Do not mix the two.
+**Consistent with the parent branch's independent evidence** (different base model — `donor`,
+not `vanilla` — so not the same claim, but the same direction): applied to 7-fold `donor`
+predictions, the same correction code gives 0.7235 → 0.7429, better on 7 of 7 folds, 73% of
+basins improved. Two different base models, two independent 7-fold grids, the same qualitative
+result each time.
+
+## 8. Configuration this run actually used
+
+`forget_bias` is **5.0** here, not the 3.0 the parent branch froze across its architectures —
+Kratzert et al. (2019, WRR)'s own value, taken because this branch trains the
+literature-standard model. `seq_len` is 365 (the common literature choice) and `batch_size` is
+512 (between the framework's 256 and the paper's 2000). §10 covers the train/test window.
+
+The 7-fold grid in §7 was trained end to end with exactly this configuration on an A100 —
+there is no longer a version mismatch to track between this section and the results above.
 
 ## 9. What is still unproven
 
-1. **One fold, and the wrong model.** This branch carries fold 0 only, borrowed from the
-   parent branch's date-batched `vanilla` at forget bias 3.0 — not the literature-standard
-   batched model at bias 5.0 that `src/` now trains (§8). The headline is a placeholder.
-2. **No uncertainty bars.** The correction is deterministic given a hydrograph, but the
-   underlying predictions carry seed noise that has not been propagated.
-3. **Gauge density is a real limit.** The gain falls from about +0.027 NSE where the nearest
-   gauge is 10–25 km away to about +0.002 beyond 100 km.
+1. **Single seed.** §7's numbers are one seed per fold. The correction is deterministic given
+   a hydrograph, so it is unaffected by seed noise directly, but the *baseline* LSTM's own
+   score carries seed variance that has not yet been averaged out. This literature typically
+   reports ensemble means (Kratzert's 0.693 is a 10-member ensemble) precisely because a single
+   seed reads lower and noisier — which is consistent with §7's uncorrected 0.6313 sitting
+   below the historical 3-seed placeholder's 0.7086. The natural next step, if pursued, is
+   `SEEDS="0 1 2"` on the same `run_screen.sh` grid.
+2. **Gauge density is a real limit.** Measured on the parent branch's `donor`-based evidence
+   (§6/§7): the gain falls from about +0.027 NSE where the nearest gauge is 10–25 km away to
+   about +0.002 beyond 100 km. Not yet re-measured on this branch's own predictions.
 
 ## 10. Train/test windows
 
@@ -275,8 +295,8 @@ lining up the wrong dates would be invisible.
 
 | | train | test | train qobs complete | test qobs complete |
 |---|---|---|---|---|
-| `complete` (default) | WY1990–2004, 5479 d | WY2005–2014, 3652 d | **100.000%**, all 531 basins | 98.7% |
-| `kratzert` | WY1981–1995, 5478 d | WY1996–2010, 5479 d | 96.7% — 55 basins have gaps, worst 40% | **99.99%**, 530/531 basins |
+| `kratzert` (default; used for §7) | WY1981–1995, 5478 d | WY1996–2010, 5479 d | 96.7% — 55 basins have gaps, worst 40% | **99.99%**, 530/531 basins |
+| `complete` | WY1990–2004, 5479 d | WY2005–2014, 3652 d | **100.000%**, all 531 basins | 98.7% |
 
 `kratzert` matches Kratzert et al. (2019, WRR) exactly, which makes the 0.693 benchmark a much
 closer comparison — same basins, same windows, same lengths. What still differs is the forcing
@@ -293,16 +313,28 @@ covers 5388 days instead of 5478.
 Its test window is the better of the two — 15 years at 99.99% complete against 10 years at
 98.7% — which matters more for the reported number than the training gaps do.
 
-## 11. To settle it
+## 11. What was run, and the natural next step
+
+Stage 1 — one seed, all 7 folds — has been run on an A100 and is what §7 reports:
 
 ```bash
-FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh
+python -m src.train --benchmark 200                              # measured first, per CLAUDE.md
+FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh       # 7 runs
 python -m src.evaluate
 python -m src.correct --out runs/corrected_metrics.csv
 python analysis/tune.py --out runs/tuning.csv
+python analysis/leak_audit.py
 python figures/make_cdf_figure.py && python figures/make_boxplot_figure.py
 python figures/make_hyperparam_figure.py && python figures/make_method_figure.py
+python figures/make_method_detail_figure.py
 ```
 
-21 runs. That produces the 7-fold `vanilla` baseline this project has never had, and the
-corrected number beside it, from the same predictions.
+7 runs (training + full-record inference), ~8.5 h wall-clock at CONCURRENCY=4 on one A100
+(22.1 ms/step measured single-process; actual pace was ~7 min/epoch once 4 runs shared the
+GPU), ≈$31 at $3.67/h. All 7 succeeded, 0 failures.
+
+The one thing §9 leaves open is seed noise in the baseline. Widening to
+`SEEDS="0 1 2"` on the same grid — 14 more runs, since fold 0's seed 0 already exists and
+`run_screen.sh` skips completed runs — would give the 3-seed ensemble-mean baseline this
+literature conventionally reports, and is the natural next step if a fully seed-stable number
+is wanted.

@@ -26,8 +26,18 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from src.config import PERIODS  # noqa: E402
 from src.correct import apply_all  # noqa: E402
 from src.evaluate import metrics  # noqa: E402
+
+
+def test_period_label(runs_dir):
+    """Human-readable test window, read from an actual run rather than assumed."""
+    import glob, json
+    paths = sorted(glob.glob(f"{runs_dir}/vanilla_fold*_seed*/config.json"))
+    period = json.load(open(paths[0]))["period"] if paths else "complete"
+    (_, _), (t0, t1) = PERIODS[period]
+    return f"{t0[:4]}-{t1[:4]}"
 
 
 def collect(runs_dir="runs"):
@@ -57,6 +67,7 @@ def style(ax):
 
 def main(runs_dir="runs", out=None):
     raw, cor, folds, settings = collect(runs_dir)
+    period_label = test_period_label(runs_dir)
     n = len(raw)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.3))
 
@@ -87,7 +98,11 @@ def main(runs_dir="runs", out=None):
             color=np.where(d[order] > 0, CORRECTED, RAW), zorder=3)
     ax2.axhline(0, color=MUTE, lw=0.9, zorder=2)
     ax2.set_xlim(-1, len(d))
-    lim = np.abs(d).max() * 1.18
+    # A percentile bound, not the max: a single-seed hydrograph can have one basin whose
+    # ratio blows up (near-zero observed flow), and letting that basin set the axis crushes
+    # the other 530 into an unreadable band near zero.
+    lim = np.percentile(np.abs(d), 99) * 1.25
+    n_off = int((np.abs(d) > lim).sum())
     ax2.set_ylim(-lim, lim)
     ax2.set_xlabel("basins, ranked by change", color=INK, fontsize=10)
     ax2.set_ylabel("change in NSE", color=INK, fontsize=10)
@@ -97,11 +112,14 @@ def main(runs_dir="runs", out=None):
              ha="right", va="top", fontsize=9.5, color=INK)
     ax2.text(0.97, 0.05, f"worsened  {down}/{len(d)}", transform=ax2.transAxes,
              ha="right", va="bottom", fontsize=9.5, color=MUTE)
+    if n_off:
+        ax2.text(0.02, 0.05, f"{n_off} basin(s) beyond axis", transform=ax2.transAxes,
+                 ha="left", va="bottom", fontsize=8, color=MUTE)
     style(ax2)
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     fig.text(0.008, 0.015,
-             f"{n} held-out basins, {fold_txt}, WY2005-2014.  Correction: "
+             f"{n} held-out basins, {fold_txt}, test period {period_label}.  Correction: "
              + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}" for fd, (k, lam) in zip(folds, settings))
                 if len(folds) < 4 else f"K and $\\lambda$ selected per fold")
              + ", chosen inside the training basins only.",
