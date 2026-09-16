@@ -50,7 +50,7 @@ def collect(runs_dir="runs"):
         raw.append(metrics(f["raw"], obs).nse.to_numpy())
         cor.append(metrics(f["corrected"], obs).nse.to_numpy())
         folds.append(f["fold"])
-        settings.append((f["k"], f["lam"]))
+        settings.append((f["k"], f["lam"], f["p"]))
     return np.concatenate(raw), np.concatenate(cor), folds, settings
 
 
@@ -120,8 +120,9 @@ def main(runs_dir="runs", out=None):
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     fig.text(0.008, 0.015,
              f"{n} held-out basins, {fold_txt}, test period {period_label}.  Correction: "
-             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}" for fd, (k, lam) in zip(folds, settings))
-                if len(folds) < 4 else f"K and $\\lambda$ selected per fold")
+             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
+                          for fd, (k, lam, pw) in zip(folds, settings))
+                if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
              + ", chosen inside the training basins only.",
              fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 1))

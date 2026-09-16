@@ -71,7 +71,7 @@ def main(fold=0):
     results.append(same)
 
     # Selection is the other place a held-out basin could get in: if the search that picks
-    # (K, lambda) scored the test basins, the reported result would be tuned on itself.
+    # (K, lambda, p) scored the test basins, the reported result would be tuned on itself.
     print()
     for mode in ("inner", "gauged"):
         folds = load_all()

@@ -62,7 +62,7 @@ def collect(runs_dir="runs"):
         raw.append(metrics(f["raw"], obs))
         cor.append(metrics(f["corrected"], obs))
         folds.append(f["fold"])
-        settings.append((f["k"], f["lam"]))
+        settings.append((f["k"], f["lam"], f["p"]))
     return (pd.concat(raw, ignore_index=True), pd.concat(cor, ignore_index=True),
             folds, settings)
 
@@ -123,8 +123,9 @@ def main(runs_dir="runs", out=None):
     fig.text(0.008, 0.012,
              f"{len(raw)} held-out basins, {fold_txt}, test period {period_label}.  Boxes: quartiles and "
              f"median; whiskers 1.5 IQR, outliers omitted.  "
-             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}" for fd, (k, lam) in zip(folds, settings))
-                if len(folds) < 4 else "K and $\\lambda$ selected per fold")
+             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
+                          for fd, (k, lam, pw) in zip(folds, settings))
+                if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
              + ", chosen inside the training basins only.",
              fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
