@@ -20,7 +20,9 @@ set -uo pipefail
 CONCURRENCY="${CONCURRENCY:-4}"
 FOLDS="${FOLDS:-${FOLD:-0}}"
 SEEDS="${SEEDS:-0 1 2}"
-PERIOD="${PERIOD:-complete}"
+# No hardcoded fallback here: an empty PERIOD means "let src.train use Cfg's own
+# default" rather than silently picking a different window than the code would on its own.
+PERIOD="${PERIOD:-}"
 mkdir -p logs
 failed=0
 planned=0
@@ -34,7 +36,7 @@ for fold in $FOLDS; do
     planned=$((planned + 1))
     while (( $(jobs -rp | wc -l) >= CONCURRENCY )); do wait -n || failed=$((failed + 1)); done
     echo "launching fold $fold seed $seed"
-    python -m src.train --fold "$fold" --seed "$seed" --period "$PERIOD" \
+    python -m src.train --fold "$fold" --seed "$seed" ${PERIOD:+--period "$PERIOD"} \
       > "logs/vanilla_fold${fold}_seed${seed}.log" 2>&1 &
   done
 done
