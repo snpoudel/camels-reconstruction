@@ -45,19 +45,20 @@ class Cfg:
     hidden: int = 256
     layers: int = 1
     dropout: float = 0.4
-    seq_len: int = 270      # 269 preceding days + the target day
+    seq_len: int = 365      # 364 preceding days + the target day
     forget_bias: float = 5.0
     epochs: int = 30
     clip_norm: float = 1.0
 
     # Literature-standard training: fixed-size batches of independently sampled
-    # (basin, date-window) pairs. Kratzert used 2000; 256 is the NeuralHydrology default and
-    # what this project has used for its literature-faithful runs.
-    batch_size: int = 256
+    # (basin, date-window) pairs. Kratzert used 2000, the NeuralHydrology default is 256;
+    # 512 sits between them and halves the step count against 256 at the same number of data
+    # passes, which is the cheaper end of a difference nothing here is sensitive to.
+    batch_size: int = 512
 
     # Which of PERIODS to train and test on. Recorded in every run's config.json, and runs
     # from different periods must never be pooled -- their test axes are different lengths.
-    period: str = "complete"
+    period: str = "kratzert"
 
     n_folds: int = 7
     cache_dir: str = "data/cache"

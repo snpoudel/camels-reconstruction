@@ -283,10 +283,12 @@ closer comparison — same basins, same windows, same lengths. What still differ
 product (Daymet here, extended NLDAS there), the number of folds (7 vs 12) and the ensemble
 size, so it is a closer comparison, not an identical one.
 
-Its costs are real but small: the training window has 3.3% missing targets, which `nse_loss`
-masks per-sample but which `complete` avoids entirely; and it begins at day index 274 of the
-cache, leaving five days of spare warm-up for a 270-day sequence. `prepare` asserts on that
-rather than silently truncating, so a longer `seq_len` fails loudly.
+Its costs are real but small. The training window has ~2.8% missing targets, which `nse_loss`
+masks per-sample but which `complete` avoids entirely. And it begins at day index 274 of the
+cache, while a 365-day sequence needs 364 days of history, so **the first 90 training days are
+unreachable** — `prepare` moves the first target to 1980-12-30 and prints exactly what it
+dropped (90 of 5478 days, 1.6%) rather than silently running short windows. Training therefore
+covers 5388 days instead of 5478.
 
 Its test window is the better of the two — 15 years at 99.99% complete against 10 years at
 98.7% — which matters more for the reported number than the training gaps do.

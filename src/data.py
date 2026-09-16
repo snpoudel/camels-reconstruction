@@ -97,11 +97,20 @@ def prepare(cfg: Cfg, device) -> Data:
 
     tr0, tr1 = bounds(cfg.train_period)
     te0, te1 = bounds(cfg.test_period)
-    # The "kratzert" window starts 274 days into the cache, so a 270-day sequence clears this
-    # by 5 days and a longer one would not. Fail loudly rather than silently truncating.
-    assert tr0 >= cfg.seq_len - 1, (
-        f"period {cfg.period!r} starts at day {tr0}, but seq_len {cfg.seq_len} needs "
-        f"{cfg.seq_len - 1} days of warm-up before it")
+    # A target day needs `seq_len - 1` days of history behind it, and the cache begins on
+    # 1980-01-01. The "kratzert" window opens at day 274, so anything past a 275-day sequence
+    # cannot be trained from its first day. Move the first target forward to the earliest day
+    # that has its full history rather than quietly running short windows -- and say so,
+    # loudly, because it is a change to the training period.
+    if tr0 < cfg.seq_len - 1:
+        lost = cfg.seq_len - 1 - tr0
+        tr0 = cfg.seq_len - 1
+        print(f"  NOTE: period {cfg.period!r} starts {lost} days before seq_len={cfg.seq_len} "
+              f"has enough history; first target moved to {str(dates[tr0])[:10]} "
+              f"({lost} of {tr1 - (tr0 - lost)} training days dropped, "
+              f"{100 * lost / (tr1 - (tr0 - lost)):.1f}%)", flush=True)
+    assert tr1 - tr0 > 365, "training period too short after warm-up trimming"
+    assert te0 >= cfg.seq_len - 1, "not enough warm-up before the test period"
 
     folds = assign_folds(len(basins), cfg.n_folds)
     gauged = np.flatnonzero(folds != cfg.fold)
