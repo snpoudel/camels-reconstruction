@@ -1,6 +1,6 @@
 """The (K, lambda, p) surface, and what selecting on it is worth.
 
-    python analysis/tune.py --out runs/tuning.csv
+    python analysis/tune.py --out runs/recon_ungauged_tuning.csv
 
 Writes one row per (fold, K, lambda, p) with the median NSE over that fold's held-out basins --
 the surface `figures/make_hyperparam_figure.py` draws -- and prints what each selection rule
@@ -34,30 +34,32 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, ".")
-from src.correct import (K_GRID, P, choose, load_all,  # noqa: E402
-                         nse_per_basin, surface)
+from src.correct import (K_GRID, P, choose, fold_surfaces, load_all,  # noqa: E402
+                         nse_per_basin)
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--runs", default="runs")
-    p.add_argument("--arch", default="vanilla",
-                   help="run prefix in runs/; 'donor' reads the parent branch's 7 folds")
-    p.add_argument("--out", default="runs/tuning.csv")
+    p.add_argument("--out", default="runs/recon_ungauged_tuning.csv")
     a = p.parse_args()
 
-    folds = load_all(a.runs, arch=a.arch)
+    folds = load_all(a.runs)
     if not folds:
-        raise SystemExit(f"no {a.arch}_fold*_seed*/ runs under {a.runs}/")
+        raise SystemExit(f"no vanilla_fold*_seed*/ runs under {a.runs}/")
     print(f"folds present: {[f['fold'] for f in folds]}")
 
-    surfaces, cv_surfaces, rows = {}, {}, []
+    # `cv` is the surface selection is allowed to see: leave-one-group-out inside the training
+    # basins. `heldout` is the test set, computed only to price the rules below and never to
+    # choose. Both are written so the figure and the audit can use either. One process per
+    # fold computes both surfaces together, so the (large) per-fold data only crosses the
+    # process boundary once.
+    by_fold = fold_surfaces(folds, ("inner", "held"))
+    surfaces = {fold_id: s["held"] for fold_id, s in by_fold.items()}
+    cv_surfaces = {fold_id: s["inner"] for fold_id, s in by_fold.items()}
+
+    rows = []
     for f in folds:
-        # `cv` is the surface selection is allowed to see: leave-one-group-out inside the
-        # training basins. `heldout` is the test set, computed only to price the rules below
-        # and never to choose. Both are written so the figure and the audit can use either.
-        cv_surfaces[f["fold"]] = surface(f, on="inner")
-        surfaces[f["fold"]] = surface(f, on="held")
         base_h = np.nanmedian(nse_per_basin(f["pred"][f["held"]], f["obs"][f["held"]]))
         base_cv = np.nanmedian(cv_surfaces[f["fold"]][(K_GRID[0], 0.0, P)])
         for name, surf, base, n in (("cv", cv_surfaces[f["fold"]], base_cv, len(f["pool"])),
@@ -92,7 +94,10 @@ def main():
     print("\nwhat each selection rule gets, scored afterwards on the held-out basins")
     print("(the scoring is the measurement; none of these rules saw those basins):")
     for mode in ("inner", "gauged", "fixed"):
-        picked, note = choose(folds, mode=mode)
+        # "inner" was already computed above (`cv_surfaces`) -- pass it through instead of
+        # paying for the identical leave-one-group-out grid search a second time.
+        kwargs = dict(surfaces=cv_surfaces) if mode == "inner" else {}
+        picked, note = choose(folds, mode=mode, **kwargs)
         scored = np.concatenate([surfaces[f["fold"]][picked[f["fold"]]] for f in folds])
         per = ", ".join(f"f{f['fold']}:K={picked[f['fold']][0]},l={picked[f['fold']][1]:.2f},"
                         f"p={picked[f['fold']][2]:.2g}" for f in folds)

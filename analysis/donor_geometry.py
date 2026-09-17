@@ -1,7 +1,6 @@
 """Which donors the correction actually uses, and how far away they can be before it stops working.
 
-    python analysis/donor_geometry.py                    # this branch's runs (vanilla)
-    python analysis/donor_geometry.py --arch donor       # parent branch's 7 folds, all 531 basins
+    python analysis/donor_geometry.py
 
 Two questions, one script. Neither needs a GPU -- both read hydrographs already in `runs/`.
 
@@ -23,7 +22,8 @@ region turns out to be sparsely gauged. Basins left with fewer than K donors abo
 receive no correction at all (weights zero, so R = 0) and are counted separately rather than
 being silently corrected from a garbage neighbourhood.
 
-Writes `runs/donor_geometry.csv` (one row per held-out basin) and `runs/donor_range.csv` (one
+Writes `runs/recon_ungauged_donor_geometry.csv` (one row per held-out basin) and
+`runs/recon_ungauged_donor_range.csv` (one
 row per basin and floor); `figures/make_donor_figure.py` draws both.
 """
 import argparse
@@ -113,27 +113,18 @@ def break_even(curve):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs")
-    ap.add_argument("--arch", default="vanilla",
-                    help="run prefix in runs/; 'donor' reads the parent branch's 7 folds")
     ap.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner")
-    ap.add_argument("--out-geometry", default=None,
-                    help="default: runs/donor_geometry_<arch>.csv")
-    ap.add_argument("--out-range", default=None,
-                    help="default: runs/donor_range_<arch>.csv")
+    ap.add_argument("--out-geometry", default="runs/recon_ungauged_donor_geometry.csv")
+    ap.add_argument("--out-range", default="runs/recon_ungauged_donor_range.csv")
     a = ap.parse_args()
-    # Arch-suffixed by default: without it, running --arch donor after --arch vanilla
-    # silently overwrites vanilla's CSVs, and a figure drawn afterwards mixes the two
-    # archs' outputs without any error. Happened once; this is the fix.
-    a.out_geometry = a.out_geometry or f"runs/donor_geometry_{a.arch}.csv"
-    a.out_range = a.out_range or f"runs/donor_range_{a.arch}.csv"
 
-    folds = load_all(a.runs, arch=a.arch)
+    folds = load_all(a.runs)
     if not folds:
-        raise SystemExit(f"no {a.arch}_fold*_seed*/ runs under {a.runs}/")
+        raise SystemExit(f"no vanilla_fold*_seed*/ runs under {a.runs}/")
     picked, note = choose(folds, mode=a.mode)
     geo, curve = geometry(folds, picked), range_curve(folds, picked)
     n, nf = len(geo), geo.fold.nunique()
-    print(f"{a.arch}: {n} held-out basins over {nf} fold(s).  (K, lambda, p) {note}")
+    print(f"{n} held-out basins over {nf} fold(s).  (K, lambda, p) {note}")
 
     print("\n=== donor distance, km ===")
     print(f"{'':>24} {'p5':>7} {'p25':>7} {'median':>7} {'p75':>7} {'p95':>7}")

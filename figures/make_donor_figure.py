@@ -1,7 +1,6 @@
 """Which donors the correction uses, and the distance at which it stops paying.
 
-    python figures/make_donor_figure.py                  # -> figures/donor_range_vanilla.png
-    python figures/make_donor_figure.py --arch donor     # parent branch's 7 folds, 531 basins
+    python figures/make_donor_figure.py                  # -> figures/recon_ungauged_donor_range.png
 
 Left: the donor network itself, for one fold. Every held-out basin is joined to the K gauged
 basins it actually borrows from, each line's weight drawn as its opacity, so the reader can see
@@ -18,8 +17,9 @@ The strip above that panel carries the donor-distance distributions on the same 
 the point of putting them there: the reader can see directly how much of the real network sits
 inside the working range and how much of it does not.
 
-Both panels read `runs/donor_geometry_<arch>.csv` and `runs/donor_range_<arch>.csv` from
-`analysis/donor_geometry.py`, which is where the arithmetic and the caveats live.
+Both panels read `runs/recon_ungauged_donor_geometry.csv` and
+`runs/recon_ungauged_donor_range.csv` from `analysis/donor_geometry.py`, which is where the
+arithmetic and the caveats live.
 
 Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue = gauged donors and the uncorrected
 baseline, #eb6834 orange = the correction), validated there -- normal-vision dE 33.6, protan
@@ -43,7 +43,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from analysis.donor_geometry import break_even  # noqa: E402
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import distances, idw_weights, load_all  # noqa: E402
+from src.correct import (default_target_group, distances, find_fold,  # noqa: E402
+                         idw_weights, load_all, reconstruct_gauged)
 
 
 def style(ax):
@@ -57,12 +58,20 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def draw_network(ax, runs_dir, arch, k, pw, loc_csv="data/camels531.csv"):
-    """The donor links of whichever fold is available first, over the CAMELS gauge positions."""
-    folds = load_all(runs_dir, arch=arch)
-    if not folds:
-        raise SystemExit(f"no {arch}_fold*_seed*/ runs under {runs_dir}/")
-    f = folds[0]
+def draw_network(ax, runs_dir, k, pw, loc_csv="data/camels531.csv", f_override=None):
+    """The donor links of whichever fold is available first, over the CAMELS gauge positions.
+
+    `f_override`, when given, is a gauged-reconstruction pilot dict (from
+    `src.correct.reconstruct_gauged`) instead of the real PUB fold -- its `pool`/`held` are the
+    donor/"learn" set and the reconstructed group, not the real gauged/ungauged split.
+    """
+    if f_override is not None:
+        f = f_override
+    else:
+        folds = load_all(runs_dir)
+        if not folds:
+            raise SystemExit(f"no vanilla_fold*_seed*/ runs under {runs_dir}/")
+        f = folds[0]
     D, basins = distances(loc_csv=loc_csv)
     loc = pd.read_csv(loc_csv, dtype={"gauge_id": str}).set_index("gauge_id")
     lat = loc.loc[basins, "gauge_lat"].to_numpy()
@@ -78,16 +87,22 @@ def draw_network(ax, runs_dir, arch, k, pw, loc_csv="data/camels531.csv"):
     a = np.asarray(alphas)
     ax.add_collection(LineCollection(segs, colors=MUTE, linewidths=0.5,
                                      alpha=0.10 + 0.45 * (a / a.max()), zorder=2))
+    held_label = ("reconstructed basins" if f_override is not None else "held-out basins")
     ax.scatter(lon[pool], lat[pool], s=5, color=RAW, alpha=0.55, lw=0, zorder=3,
                label=f"gauged donors ({len(pool)})")
     ax.scatter(lon[held], lat[held], s=13, color=CORRECTED, lw=0.4, zorder=4,
-               edgecolor="white", label=f"held-out basins ({len(held)})")
+               edgecolor="white", label=f"{held_label} ({len(held)})")
     ax.set_aspect(1 / np.cos(np.radians(np.mean(lat))))
     ax.set_xlabel("longitude", color=INK, fontsize=10)
     ax.set_ylabel("latitude", color=INK, fontsize=10)
     ax.legend(frameon=False, loc="lower left", fontsize=8.5, labelcolor=INK,
               handletextpad=0.4, borderpad=0.2)
-    return f["fold"], f"Donor links actually used, fold {f['fold']} (K = {k}, p = {pw:g})"
+    if f_override is not None:
+        title = (f"Donor links actually used, reconstruction (gauged), fold {f['fold']}, "
+                f"group {f['target_group']} (K = {k}, p = {pw:g})")
+    else:
+        title = f"Donor links actually used, fold {f['fold']} (K = {k}, p = {pw:g})"
+    return f["fold"], title
 
 
 def draw_distance_strip(ax, geo):
@@ -144,23 +159,18 @@ def draw_range(ax, curve):
     return real, be, "What the correction is worth as its donors recede"
 
 
-def main(runs_dir="runs", arch="vanilla", out=None,
-         geometry_csv=None, range_csv=None):
-    # Arch-suffixed by default: a fixed filename here would mean the last `--arch` run of
-    # analysis/donor_geometry.py silently decides what this figure draws, with no error.
-    geometry_csv = geometry_csv or f"runs/donor_geometry_{arch}.csv"
-    range_csv = range_csv or f"runs/donor_range_{arch}.csv"
+def main(runs_dir="runs", out=None, geometry_csv="runs/recon_ungauged_donor_geometry.csv",
+         range_csv="runs/recon_ungauged_donor_range.csv", f_override=None, pilot=False):
     for path in (geometry_csv, range_csv):
         if not os.path.exists(path):
-            raise SystemExit(f"{path} missing -- run analysis/donor_geometry.py "
-                             f"--arch {arch} first")
+            raise SystemExit(f"{path} missing -- run analysis/donor_geometry.py first")
     geo = pd.read_csv(geometry_csv, dtype={"basin": str})
     curve = pd.read_csv(range_csv, dtype={"basin": str})
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.4, 4.6),
                                    gridspec_kw=dict(width_ratios=(1.3, 1.0), wspace=0.22))
     one = geo[geo.fold == geo.fold.min()].iloc[0]
-    fold, t1 = draw_network(ax1, runs_dir, arch, int(one.k), float(one.p))
+    fold, t1 = draw_network(ax1, runs_dir, int(one.k), float(one.p), f_override=f_override)
     style(ax1)
     real, be, t2 = draw_range(ax2, curve)
     style(ax2)
@@ -170,19 +180,23 @@ def main(runs_dir="runs", arch="vanilla", out=None,
 
     n, nf = geo.basin.nunique(), geo.fold.nunique()
     fold_txt = f"fold {fold}" if nf == 1 else f"all {nf} folds"
-    fig.text(0.008, 0.012, textwrap.fill(
-        f"{n} held-out basins, {fold_txt}. K, $\\lambda$ and p held at the values the pipeline "
-        f"selected inside the training basins; the correction is never re-tuned as donors are "
-        f"removed, because a deployed one could not be. Basins left with fewer than K donors "
-        f"above a floor are not corrected, and are excluded at that floor only.", 168),
-        fontsize=8.5, color=MUTE, va="bottom")
+    basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
+    caption = (f"{n} {basin_word} basins, {fold_txt}. K, $\\lambda$ and p held at the values "
+              f"the pipeline selected inside the training basins; the correction is never "
+              f"re-tuned as donors are removed, because a deployed one could not be. Basins "
+              f"left with fewer than K donors above a floor are not corrected, and are "
+              f"excluded at that floor only.")
+    if pilot:
+        caption += (" Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
+                    "pool, not the full pool a real deployment or the PUB cell has.")
+    fig.text(0.008, 0.012, textwrap.fill(caption, 168), fontsize=8.5, color=MUTE, va="bottom")
     fig.subplots_adjust(left=0.055, right=0.985, bottom=0.20, top=0.80, wspace=0.20)
     # Both panel titles on one baseline: ax2 carries the distance strip above it, so neither
     # can use its own axes title without colliding with the other's.
     for ax, title in ((ax1, t1), (ax2, t2)):
         fig.text(ax.get_position().x0, 0.945, title, color=INK, fontsize=11, va="bottom")
-    # Arch-suffixed for the same reason as the CSVs above: two archs must not share one file.
-    out = out or f"{HERE}/donor_range_{arch}.png"
+    out = out or (f"{HERE}/recon_gauged_donor_range.png" if pilot
+                 else f"{HERE}/recon_ungauged_donor_range.png")
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   real network {real:+.4f}, "
           + (f"break-even {be:.0f} km" if be else "never crosses zero"))
@@ -191,7 +205,19 @@ def main(runs_dir="runs", arch="vanilla", out=None,
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs")
-    ap.add_argument("--arch", default="vanilla")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--fold", type=int, default=None,
+                    help="build the gauged-reconstruction pilot for this outer fold instead of "
+                    "the real PUB folds (reads runs/recon_gauged_donor_{geometry,range}.csv)")
+    ap.add_argument("--target-group", type=int, default=None,
+                    help="which inner group goes dark (default: smallest available)")
     a = ap.parse_args()
-    main(a.runs, a.arch, a.out)
+
+    if a.fold is None:
+        main(a.runs, a.out)
+    else:
+        f = find_fold(load_all(a.runs), a.fold)
+        target_group = a.target_group if a.target_group is not None else default_target_group(f)
+        pilot_f, _ = reconstruct_gauged(f, target_group)
+        main(a.runs, a.out, geometry_csv="runs/recon_gauged_donor_geometry.csv",
+             range_csv="runs/recon_gauged_donor_range.csv", f_override=pilot_f, pilot=True)

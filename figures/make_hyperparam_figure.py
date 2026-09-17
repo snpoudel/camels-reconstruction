@@ -1,7 +1,7 @@
 """Cross-validation for the correction's three constants: K, lambda, and the IDW power p.
 
-    python analysis/tune.py --out runs/tuning.csv     # first
-    python figures/make_hyperparam_figure.py          # -> figures/hyperparameters.png
+    python analysis/tune.py --out runs/recon_ungauged_tuning.csv     # first
+    python figures/make_hyperparam_figure.py                         # -> figures/recon_ungauged_hyperparameters.png
 
 The correction has three free numbers: K, how many gauges to consult; lambda, how much of
 their error to believe; and p, how steeply weight falls off with distance (weight ~ 1/d^p).
@@ -22,6 +22,7 @@ one hue rather than getting a categorical palette; identity comes from the count
 caption, and no line needs to be told apart from another. Colour: `figures/palette.py` slot 1
 (#eb6834), with ink and mute for rules and text.
 """
+import argparse
 import os
 import sys
 
@@ -46,7 +47,7 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main(tuning="runs/tuning.csv", out=None):
+def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
     df = pd.read_csv(tuning)
     if "set" in df.columns:
         df = df.query("set == 'cv'")
@@ -115,23 +116,36 @@ def main(tuning="runs/tuning.csv", out=None):
         ax.set_ylim(0.5, 1.03)
         style(ax)
 
-    fig.suptitle("Cross-validation for K, $\\lambda$, and the IDW power p, within the training basins",
+    basin_word = "reconstructed-group" if pilot else "training"
+    fig.suptitle(f"Cross-validation for K, $\\lambda$, and the IDW power p, within the "
+                f"{basin_word} basins",
                  fontsize=12.5, color=INK, x=0.012, ha="left", y=0.975)
     krange = f"K = {opt_k[0]}" if len(set(opt_k)) == 1 else f"K in [{min(opt_k)}, {max(opt_k)}]"
     lrange = (f"$\\lambda$ = {opt_l[0]:g}" if len(set(opt_l)) == 1
               else f"$\\lambda$ in [{min(opt_l):g}, {max(opt_l):g}]")
     prange = (f"p = {opt_p[0]:g}" if len(set(opt_p)) == 1
               else f"p in [{min(opt_p):g}, {max(opt_p):g}]")
-    fig.text(0.012, 0.015,
-             f"{len(folds)} fold{'s' if len(folds) > 1 else ''}, {n_basins} training basins each, "
-             f"scored leave-one-group-out.  Optima: {krange}, {lrange}, {prange}.  "
-             f"$\\lambda$ = 0 is the uncorrected model.  No held-out basin is used here.",
-             fontsize=8.5, color=MUTE)
+    caption = (f"{len(folds)} fold{'s' if len(folds) > 1 else ''}, {n_basins} {basin_word} "
+              f"basins each, scored leave-one-group-out.  Optima: {krange}, {lrange}, {prange}.  "
+              f"$\\lambda$ = 0 is the uncorrected model.  No held-out basin is used here.")
+    if pilot:
+        caption += ("  Single-(fold, group) pilot: this is the gauged-reconstruction cell "
+                    "(OOS-time), not the PUB cell -- donors are ~5/6 of the fold's training "
+                    "pool, not the full pool a real deployment or the PUB cell has.")
+    fig.text(0.012, 0.015, caption, fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 0.945))
-    out = out or f"{HERE}/hyperparameters.png"
+    out = out or (f"{HERE}/recon_gauged_hyperparameters.png" if pilot
+                 else f"{HERE}/recon_ungauged_hyperparameters.png")
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   optima: K {opt_k}, lambda {opt_l}, p {opt_p}")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tuning", default=None)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--pilot", action="store_true",
+                    help="tuning CSV is the gauged-reconstruction pilot's, not the PUB one")
+    a = ap.parse_args()
+    main(a.tuning or (f"runs/recon_gauged_tuning.csv" if a.pilot else "runs/recon_ungauged_tuning.csv"),
+         a.out, pilot=a.pilot)

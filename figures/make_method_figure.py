@@ -6,17 +6,24 @@ Every step box carries the arithmetic on top and a sketch of the same neighbourh
 so the notation can be read straight off the picture: step 1 names the basins (q_1, q_2, q_j at
 the gauges, q_i at the ungauged target), step 2 turns distance into weight on those same points,
 step 3 puts today's error at each gauge, step 4 pools them onto the target, step 5 shows the
-shift that comes out. The neighbourhood is identical in all five -- that is the point, the eye
-tracks one target and three donors the whole way across.
+shift that comes out. The neighbourhood is the same one throughout -- that is the point, the
+eye tracks a single target and its donors the whole way across. Step 1 is the one panel that
+draws every gauge alike: nothing has been selected yet, and singling the donors out there
+would give away a choice step 2 has not made.
+
+The band above the five steps says where the three constants come from: the seven folds drawn
+as seven cells -- one ungauged (held out), six gauged (the donor pool) -- and the one line of
+text that K, p and lambda are cross-validated on those gauged folds. The cell colours are the
+figure's own: blue is a gauged basin in every step panel, orange is the ungauged target.
 
 Nothing here is measured. It is a method diagram: the sketches are schematic (step 5's
-hydrograph is an analytic curve, not a run), and the only numbers on the page -- eps and the
-search grid -- are imported from `src.correct` so they cannot drift from the code. For the same
-method on real data see `analysis/tune.py` and `runs/corrected_metrics.csv`.
+hydrograph is an analytic curve, not a run), and the only numbers on the page -- the search
+grid for K, p and lambda -- are imported from `src.correct` so they cannot drift from the code.
+For the same method on real data see `analysis/tune.py` and `runs/recon_ungauged_metrics.csv`.
 
-Detail deliberately pushed to the footer rather than into the equations: the 1 km distance
-floor, the renormalisation over donors that reported, and how (K, p, lambda) are selected.
-Those belong in a caption -- carrying them inline made the equations unreadable at print size.
+No footnotes: the distance floor, the epsilon that keeps the logs finite, and the
+renormalisation over donors that reported are all in METHOD.md and belong in the caption.
+Carrying them on the figure made it busier than the five steps it exists to show.
 
 `check_fit` measures every string against the box it sits in and prints a WARN if one spills,
 because the failure mode of this figure is silent: an equation grows, overruns its border, and
@@ -43,12 +50,18 @@ matplotlib.rcParams["svg.fonttype"] = "path"
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import EPS, K_GRID, LAM_GRID, P_GRID  # noqa: E402
+from src.correct import K_GRID, LAM_GRID, P_GRID  # noqa: E402
 
 FIG_W, FIG_H = 11.0, 5.05
 MARGIN, GAP = 0.32, 0.34
-BOX_H, Y0 = 3.40, 0.60
+BOX_H, Y0 = 3.40, 0.28
 BOX_W = (FIG_W - 2 * MARGIN - 4 * GAP) / 5
+
+# The cross-validation band above the steps: seven fold cells, then one line of text. Sized so
+# the five step boxes keep their own geometry -- the room comes from dropping the footnotes.
+CV_Y, CV_H = 3.82, 0.66
+CELL_W, CELL_H, CELL_GAP = 0.26, 0.24, 0.045
+SPLIT_GAP = 0.16          # separates the one ungauged cell from the six gauged ones
 
 # One neighbourhood, drawn five times, in unit coordinates inside each sketch panel. Three
 # constraints on these positions: every donor is nearer the target than every other gauge, so
@@ -118,11 +131,18 @@ def pt(rect, u, v):
     return x0 + u * w, y0 + v * h
 
 
-def basins(ax, rect):
-    """The same map in every panel: three donors, three farther gauges, one ungauged target."""
-    for u, v in OTHERS:
+def basins(ax, rect, mark_donors=True):
+    """The same map in every panel: three donors, three farther gauges, one ungauged target.
+
+    `mark_donors=False` draws every gauge alike -- step 1, where the LSTM has simply predicted
+    everywhere and no donor has been picked yet. The K nearest are chosen in step 2, so that is
+    the first panel allowed to single them out.
+    """
+    faint = OTHERS if mark_donors else ()
+    strong = DONORS if mark_donors else OTHERS + DONORS
+    for u, v in faint:
         ax.scatter(*pt(rect, u, v), s=15, color=RAW, alpha=0.28, linewidths=0, zorder=4)
-    for u, v in DONORS:
+    for u, v in strong:
         ax.scatter(*pt(rect, u, v), s=38, color=RAW, edgecolor="white", linewidth=0.7, zorder=5)
     tx, ty = pt(rect, *TARGET)
     ax.scatter([tx], [ty], s=140, marker="*", color=CORRECTED, edgecolor="white",
@@ -171,7 +191,7 @@ def sketch(ax, rect, i):
         hydrograph(ax, rect)
         return
 
-    tx, ty = basins(ax, rect)
+    tx, ty = basins(ax, rect, mark_donors=i != 0)
     if i == 0:
         label_donors(ax, rect, Q_LAB)
         ax.text(*pt(rect, TARGET[0] - 0.08, TARGET[1] - 0.02), r"$q_i$", fontsize=LAB_FS,
@@ -186,8 +206,6 @@ def sketch(ax, rect, i):
                     bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.92))
     elif i == 2:
         label_donors(ax, rect, R_LAB)
-        ax.text(*pt(rect, TARGET[0] - 0.08, TARGET[1] - 0.02), "?", fontsize=LAB_FS + 1.5,
-                color=CORRECTED, fontweight="bold", ha="right", va="center", zorder=7)
     elif i == 3:
         for (u, v), wj in zip(DONORS, weights()):
             ax.add_patch(FancyArrowPatch(pt(rect, u, v), (tx, ty), arrowstyle="-|>",
@@ -218,35 +236,68 @@ def add_box(ax, x, y, step, n):
             color="white", fontweight="bold", zorder=7)
 
 
+def cv_band(ax):
+    """Where K, p and lambda come from: seven fold cells, an arrow, and one line of text.
+
+    The ungauged fold is drawn first and set apart by a wider gap, so the six that follow read
+    as the pool the search is allowed to use. Colours are the figure's own -- orange is the
+    ungauged target everywhere else on the page, blue is a gauged basin -- so the band needs no
+    legend of its own.
+    """
+    x0, w = MARGIN, FIG_W - 2 * MARGIN
+    ax.add_patch(FancyBboxPatch((x0, CV_Y), w, CV_H,
+                                boxstyle="round,pad=0,rounding_size=0.08", linewidth=1.0,
+                                edgecolor=MUTE, facecolor=GRID, alpha=0.45, zorder=2))
+    cy = CV_Y + CV_H - 0.10 - CELL_H / 2      # cell row, sitting above its labels
+    cell_y = cy - CELL_H / 2
+
+    ungauged_x = x0 + 0.16
+    gauged_x = ungauged_x + CELL_W + SPLIT_GAP
+    for n in range(7):
+        held = n == 0
+        cx = ungauged_x if held else gauged_x + (n - 1) * (CELL_W + CELL_GAP)
+        colour = CORRECTED if held else RAW
+        ax.add_patch(FancyBboxPatch((cx, cell_y), CELL_W, CELL_H,
+                                    boxstyle="round,pad=0,rounding_size=0.03", linewidth=1.1,
+                                    edgecolor=colour, facecolor=colour, alpha=0.30, zorder=4))
+    gauged_end = gauged_x + 6 * CELL_W + 5 * CELL_GAP
+
+    # Two lines each: "ungauged (target)" on one line is three times its cell's width, and
+    # widening the split to fit it would spend exactly the room the sentence needs.
+    lab_y = cell_y - 0.05
+    track(ax.text(ungauged_x + CELL_W / 2, lab_y, "ungauged\n(target)", fontsize=7.4,
+                  color=CORRECTED, ha="center", va="top", linespacing=1.25, zorder=5),
+          x0, gauged_x)
+    track(ax.text((gauged_x + gauged_end) / 2, lab_y, "gauged\n(donors)", fontsize=7.4,
+                  color=RAW, ha="center", va="top", linespacing=1.25, zorder=5),
+          gauged_x, gauged_end)
+
+    arr_x0, arr_x1 = gauged_end + 0.15, gauged_end + 0.58
+    ax.add_patch(FancyArrowPatch((arr_x0, cy), (arr_x1, cy), arrowstyle="-|>",
+                                 mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
+
+    text_x = arr_x1 + 0.16
+    track(ax.text(text_x, cy,
+                  f"Select $K$ (donor gauges, {K_GRID[0]}–{K_GRID[-1]}), "
+                  f"$p$ (IDW exponent, {P_GRID[0]:g}–{P_GRID[-1]:g}) and "
+                  f"$\\lambda$ (error shrinkage, {LAM_GRID[0]:g}–{LAM_GRID[-1]:g}) "
+                  f"by cross-validation on gauged folds",
+                  fontsize=8.4, color=INK, ha="left", va="center", zorder=5),
+          text_x, x0 + w - 0.12)
+
+
 def main(out=None):
     fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.set_xlim(0, FIG_W)
     ax.set_ylim(0, FIG_H)
     ax.axis("off")
 
-    ax.text(MARGIN, FIG_H - 0.13, "Neighbour-residual correction", fontsize=14, color=INK,
-            fontweight="bold", ha="left", va="top")
+    track(ax.text(MARGIN, FIG_H - 0.11,
+                  "Correcting a target ungauged basin using donor basins' errors",
+                  fontsize=13, color=INK, fontweight="bold", ha="left", va="top"),
+          MARGIN, FIG_W - MARGIN)
 
-    # The one quantity in the method that is fitted rather than computed, kept beside the
-    # sequence so no one reads it as a sixth step. Sized to its text, not guessed at, and
-    # placed before the subtitle so the subtitle can be checked against its left edge.
-    chip = ax.text(0, 0, r"$K$, $p$, $\lambda$: cross-validated on the gauged basins",
-                   fontsize=8.5, color=INK, ha="center", va="center", zorder=4)
-    fig.canvas.draw()
-    bb = chip.get_window_extent(renderer=fig.canvas.get_renderer()).transformed(
-        ax.transData.inverted())
-    cw, ch = bb.width + 0.36, bb.height + 0.30
-    ccx, ccy = FIG_W - MARGIN - cw / 2, FIG_H - 0.14 - ch / 2
-    chip.set_position((ccx, ccy))
-    ax.add_patch(FancyBboxPatch((ccx - cw / 2, ccy - ch / 2), cw, ch,
-                                boxstyle="round,pad=0,rounding_size=0.08", linewidth=1.0,
-                                edgecolor=MUTE, facecolor=GRID, alpha=0.55,
-                                linestyle=(0, (3.5, 2.5)), zorder=3))
-
-    track(ax.text(MARGIN, FIG_H - 0.50,
-                  "no gauge at the target basin -- but its neighbours' errors today say "
-                  "something about its error today",
-                  fontsize=8.8, color=MUTE, ha="left", va="top"), MARGIN, ccx - cw / 2 - 0.12)
+    cv_band(ax)
 
     xs = [MARGIN + i * (BOX_W + GAP) for i in range(5)]
     for i, step in enumerate(STEPS):
@@ -255,20 +306,6 @@ def main(out=None):
             ax.add_patch(FancyArrowPatch((xs[i - 1] + BOX_W, Y0 + BOX_H * 0.75),
                                          (xs[i], Y0 + BOX_H * 0.75), arrowstyle="-|>",
                                          mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
-
-    track(ax.text(MARGIN, 0.35,
-                  f"Great-circle distances, floored at 1 km;  $\\epsilon$ = {EPS} mm/day keeps "
-                  f"the logs finite at zero flow;  all quantities are for one day $t$;  donors "
-                  f"silent that day are dropped and their weight redistributed.",
-                  fontsize=7.3, color=MUTE, ha="left", va="top"), MARGIN, FIG_W - MARGIN)
-    track(ax.text(MARGIN, 0.16,
-                  f"$K$, $p$, $\\lambda$: leave-one-group-out cross-validation inside the "
-                  f"training (gauged) basins, per fold -- never a held-out basin.  "
-                  f"$K \\in$ [{K_GRID[0]}, {K_GRID[-1]}],  "
-                  f"$p \\in$ {{{', '.join(f'{v:g}' for v in P_GRID)}}},  "
-                  f"$\\lambda \\in$ [{LAM_GRID[0]:g}, {LAM_GRID[-1]:g}] step "
-                  f"{LAM_GRID[1] - LAM_GRID[0]:g}.",
-                  fontsize=7.3, color=MUTE, ha="left", va="top"), MARGIN, FIG_W - MARGIN)
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     bad = check_fit(fig, ax)

@@ -10,6 +10,7 @@ Two cells carry the comparison:
 import argparse
 import glob
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -99,7 +100,7 @@ def load_runs(runs_dir="runs", cache_dir="data/cache"):
     all_basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
     rows, periods = [], set()
     for path in sorted(glob.glob(f"{runs_dir}/vanilla_fold*_seed*/predictions.npz")):
-        cfg = json.load(open(path.rsplit("/", 1)[0] + "/config.json"))
+        cfg = json.load(open(os.path.join(os.path.dirname(path), "config.json")))
         if cfg.get("max_steps"):
             print(f"skipping smoke run {path}")
             continue

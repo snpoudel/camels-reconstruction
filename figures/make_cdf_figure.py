@@ -1,6 +1,6 @@
 """NSE distribution, the LSTM alone vs the LSTM plus the neighbour correction.
 
-    python figures/make_cdf_figure.py    # -> figures/cdf_nse.png
+    python figures/make_cdf_figure.py    # -> figures/recon_ungauged_cdf_nse.png
 
 Left: the empirical CDF across held-out (ungauged) basins. Each basin contributes one point --
 the score of its seed-mean hydrograph -- so a curve lying to the right is winning at every
@@ -15,6 +15,7 @@ Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue, #eb6834 orange), valid
 normal-vision dE 33.6, protan 24.5, deutan 31.6, all past the >=15 / >=8 thresholds. Identity
 never rests on colour alone: both series are legend-identified and separated in position.
 """
+import argparse
 import os
 import sys
 
@@ -27,7 +28,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
-from src.correct import apply_all  # noqa: E402
+from src.correct import (apply_all, default_target_group, find_fold,  # noqa: E402
+                         load_all, reconstruct_gauged)
 from src.evaluate import metrics  # noqa: E402
 
 
@@ -40,8 +42,11 @@ def test_period_label(runs_dir):
     return f"{t0[:4]}-{t1[:4]}"
 
 
-def collect(runs_dir="runs"):
-    got, note = apply_all(runs_dir=runs_dir)
+def collect(runs_dir="runs", folds_override=None):
+    if folds_override is not None:
+        got, note = folds_override, "reconstruction pilot"
+    else:
+        got, note = apply_all(runs_dir=runs_dir)
     if not got:
         raise SystemExit(note)
     raw, cor, folds, settings = [], [], [], []
@@ -65,8 +70,8 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main(runs_dir="runs", out=None):
-    raw, cor, folds, settings = collect(runs_dir)
+def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
+    raw, cor, folds, settings = collect(runs_dir, folds_override)
     period_label = test_period_label(runs_dir)
     n = len(raw)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.3))
@@ -118,18 +123,38 @@ def main(runs_dir="runs", out=None):
     style(ax2)
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
-    fig.text(0.008, 0.015,
-             f"{n} held-out basins, {fold_txt}, test period {period_label}.  Correction: "
-             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
-                          for fd, (k, lam, pw) in zip(folds, settings))
-                if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
-             + ", chosen inside the training basins only.",
-             fontsize=8.5, color=MUTE)
+    basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
+    settings_txt = ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
+                              for fd, (k, lam, pw) in zip(folds, settings))
+                    if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
+    caption = (f"{n} {basin_word} basins, {fold_txt}, test period {period_label}.  Correction: "
+              f"{settings_txt}, chosen inside the training basins only.")
+    if pilot:
+        caption += ("  Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
+                    "pool, not the full pool a real deployment or the PUB cell has.")
+    fig.text(0.008, 0.015, caption, fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 1))
-    out = out or f"{HERE}/cdf_nse.png"
+    out = out or f"{HERE}/recon_ungauged_cdf_nse.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   n={n}, median {np.nanmedian(raw):.4f} -> {np.nanmedian(cor):.4f}")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--runs", default="runs")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--fold", type=int, default=None,
+                    help="build the gauged-reconstruction pilot for this outer fold instead of "
+                    "the real PUB folds")
+    ap.add_argument("--target-group", type=int, default=None,
+                    help="which inner group goes dark (default: smallest available)")
+    a = ap.parse_args()
+
+    if a.fold is None:
+        main(a.runs, a.out)
+    else:
+        f = find_fold(load_all(a.runs), a.fold)
+        target_group = a.target_group if a.target_group is not None else default_target_group(f)
+        pilot, _ = reconstruct_gauged(f, target_group)
+        main(a.runs, a.out or f"{HERE}/recon_gauged_cdf_nse.png",
+             folds_override=[pilot], pilot=True)

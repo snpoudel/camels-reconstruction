@@ -1,6 +1,6 @@
 """Error metrics before and after the neighbour correction, six panels.
 
-    python figures/make_boxplot_figure.py   # -> figures/metrics_boxplots.png
+    python figures/make_boxplot_figure.py   # -> figures/recon_ungauged_metrics_boxplots.png
 
 NSE alone hides where a correction acts. These six say it: overall skill (KGE), magnitude of
 error (RMSE), overall water balance (percent bias), and then bias split by how high the river
@@ -18,6 +18,7 @@ Colour: `figures/palette.py` slots 0 and 1, validated there (normal dE 33.6, CVD
 Boxes are also separated in position and labelled on the x-axis, so identity never rests on
 colour alone.
 """
+import argparse
 import os
 import sys
 
@@ -30,7 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
-from src.correct import apply_all  # noqa: E402
+from src.correct import (apply_all, default_target_group, find_fold,  # noqa: E402
+                         load_all, reconstruct_gauged)
 from src.evaluate import metrics  # noqa: E402
 
 PANELS = [
@@ -51,8 +53,11 @@ def test_period_label(runs_dir):
     return f"{t0[:4]}-{t1[:4]}"
 
 
-def collect(runs_dir="runs"):
-    got, note = apply_all(runs_dir=runs_dir)
+def collect(runs_dir="runs", folds_override=None):
+    if folds_override is not None:
+        got, note = folds_override, "reconstruction pilot"
+    else:
+        got, note = apply_all(runs_dir=runs_dir)
     if not got:
         raise SystemExit(note)
     import pandas as pd
@@ -67,8 +72,8 @@ def collect(runs_dir="runs"):
             folds, settings)
 
 
-def main(runs_dir="runs", out=None):
-    raw, cor, folds, settings = collect(runs_dir)
+def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
+    raw, cor, folds, settings = collect(runs_dir, folds_override)
     period_label = test_period_label(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
 
@@ -120,16 +125,19 @@ def main(runs_dir="runs", out=None):
                     fontsize=7.5, color=MUTE, ha="left", va="bottom")
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
-    fig.text(0.008, 0.012,
-             f"{len(raw)} held-out basins, {fold_txt}, test period {period_label}.  Boxes: quartiles and "
-             f"median; whiskers 1.5 IQR, outliers omitted.  "
-             + ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
-                          for fd, (k, lam, pw) in zip(folds, settings))
-                if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
-             + ", chosen inside the training basins only.",
-             fontsize=8.5, color=MUTE)
+    basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
+    settings_txt = ("; ".join(f"fold {fd}: K={k}, $\\lambda$={lam:g}, p={pw:g}"
+                              for fd, (k, lam, pw) in zip(folds, settings))
+                    if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
+    caption = (f"{len(raw)} {basin_word} basins, {fold_txt}, test period {period_label}.  "
+              f"Boxes: quartiles and median; whiskers 1.5 IQR, outliers omitted.  "
+              f"{settings_txt}, chosen inside the training basins only.")
+    if pilot:
+        caption += ("  Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
+                    "pool, not the full pool a real deployment or the PUB cell has.")
+    fig.text(0.008, 0.012, caption, fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    out = out or f"{HERE}/metrics_boxplots.png"
+    out = out or f"{HERE}/recon_ungauged_metrics_boxplots.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
     for col, title, _, _ in PANELS:
@@ -137,4 +145,21 @@ def main(runs_dir="runs", out=None):
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--runs", default="runs")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--fold", type=int, default=None,
+                    help="build the gauged-reconstruction pilot for this outer fold instead of "
+                    "the real PUB folds")
+    ap.add_argument("--target-group", type=int, default=None,
+                    help="which inner group goes dark (default: smallest available)")
+    a = ap.parse_args()
+
+    if a.fold is None:
+        main(a.runs, a.out)
+    else:
+        f = find_fold(load_all(a.runs), a.fold)
+        target_group = a.target_group if a.target_group is not None else default_target_group(f)
+        pilot, _ = reconstruct_gauged(f, target_group)
+        main(a.runs, a.out or f"{HERE}/recon_gauged_metrics_boxplots.png",
+             folds_override=[pilot], pilot=True)

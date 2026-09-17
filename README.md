@@ -34,15 +34,12 @@ q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 search — it costs seconds — searching **only inside that fold's training basins**, never a
 held-out basin of any fold (`METHOD.md` §5; `analysis/leak_audit.py` check [6] verifies it by
 destroying every held-out observation and confirming the selection does not move). Selection
-measurably beats fixed constants on this branch's own data: paired median +0.0062, bootstrap
-95% CI [+0.0049, +0.0079], entirely positive — but on the parent branch's `donor` data the same
-paired comparison is indistinguishable from zero, so both results are reported (`METHOD.md`
-§5) rather than only the one that favours selection. Every fold, on both architectures, selects
-p > 1: the correction leans more on its nearest few donors than plain inverse distance would.
+measurably beats fixed constants: paired median +0.0062, bootstrap 95% CI [+0.0049, +0.0079],
+entirely positive (`METHOD.md` §5). Every fold selects p > 1: the correction leans more on its
+nearest few donors than plain inverse distance would.
 
 It needs a gauge nearby, not merely a gauged country: the gain decays with donor distance and
-crosses zero at 326 km on this branch's data, 136 km on the parent branch's `donor` data
-(`METHOD.md` §8, `figures/donor_range_vanilla.png` / `donor_range_donor.png`).
+crosses zero at 326 km (`METHOD.md` §8, `figures/recon_ungauged_donor_range.png`).
 
 The target basin's own discharge is never read. Deleting it from the record entirely leaves the
 corrected hydrographs bit-identical; deleting a *gauged* neighbour instead moves them, which is
@@ -70,15 +67,15 @@ python -c "from src.data import build_cache; build_cache()"   # -> data/cache/
 python -m src.train --benchmark 200                            # measure ms/step first
 FOLDS="0 1 2 3 4 5 6" SEEDS=0 CONCURRENCY=4 ./run_screen.sh   # stage 1: one seed, all folds
 python -m src.evaluate                                         # -> runs/metrics.csv
-python -m src.correct --out runs/corrected_metrics.csv         # selects K, lambda, p; raw vs corrected
-python analysis/tune.py --out runs/tuning.csv                  # the sensitivity surface
+python -m src.correct --out runs/recon_ungauged_metrics.csv    # selects K, lambda, p; raw vs corrected
+python analysis/tune.py --out runs/recon_ungauged_tuning.csv   # the sensitivity surface
 python analysis/leak_audit.py                                  # prove there is no leak
 python analysis/donor_geometry.py                              # donor distances, and the range limit
 python figures/make_method_figure.py                           # method diagram, steps + equations
 python figures/make_cdf_figure.py
 python figures/make_boxplot_figure.py
 python figures/make_hyperparam_figure.py
-python figures/make_donor_figure.py                            # donor network + break-even distance
+python figures/make_donor_figure.py                            # -> figures/recon_ungauged_donor_range.png
 ```
 
 The correction needs no GPU and no training — `python -m src.correct` runs on any machine in
@@ -87,9 +84,9 @@ under a second once predictions exist.
 ## Status
 
 Stage 1 is complete: the literature-standard batched LSTM (`forget_bias=5.0`,
-Kratzert et al. 2019, `METHOD.md` §9), 1 seed per fold, all 7 folds, trained end to end on
+Kratzert et al. 2019, `METHOD.md` §8), 1 seed per fold, all 7 folds, trained end to end on
 an A100 (≈8.5 h wall-clock, ≈$31). A third free constant (p, the IDW distance exponent) and the
 donor-geometry / break-even analysis were added in a second pass, on a separate checkout, and
 reconciled against these same real predictions rather than left as a placeholder-based draft
-(`METHOD.md` §5, §8). Every number in this README and `METHOD.md` now comes from that real
-grid. `METHOD.md` §10 covers what a wider seed grid (`SEEDS="0 1 2"`) would still settle.
+(`METHOD.md` §5, §7). Every number in this README and `METHOD.md` comes from that real grid.
+`METHOD.md` §9 covers what a wider seed grid (`SEEDS="0 1 2"`) would still settle.
