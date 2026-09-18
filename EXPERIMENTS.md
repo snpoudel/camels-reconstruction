@@ -20,6 +20,171 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-18 — what kind of flow error the correction actually fixes, a wider search range, and a metric-robustness check
+
+**What I ran** — Four follow-on investigations on top of the three-start ensemble baseline
+logged just below, all using the same 21 runs (seven splits of the 531 basins, three random
+starts each). Working tree as of commit `7a06022` plus the changes described here, committed
+together with this entry.
+
+*1. What is the correction actually correcting?* The correction (`src/correct.py`) borrows the
+day-by-day error of nearby basins with a gauge and nudges a given basin's prediction toward
+that borrowed error. The open question was whether it only fixes an overall volume bias (the
+model running consistently too high or too low), or whether it also touches timing (the flow
+arriving on the wrong day) and variability (the model under- or over-reacting to storms). I
+decomposed the Kling-Gupta efficiency (KGE, a skill score that separately tracks correlation
+with the true flow, the ratio of predicted-to-observed variability, and the ratio of
+predicted-to-observed mean) before and after correction, then tested a same-day time shift and
+a variance-rescaling step directly.
+
+*2. Does the correction still improve things if it is asked to search over more neighbour
+counts?* The correction has three adjustable settings — how many nearby gauges to borrow from
+(K), how steeply to weight closer gauges over farther ones (a distance-weighting power), and
+how much of the borrowed error to apply (a fraction between 0 and 1). These are chosen
+separately for each of the seven splits, searched only over that split's own training basins,
+never over the basins being scored. The neighbour-count search previously ran from 1 to 20, and
+two splits were landing right at 20, suggesting the true best value lay above the range that had
+been tried.
+
+*3. A bug this uncovered.* Widening the search range broke one of the pipeline's scripts.
+
+*4. Does choosing the three settings to maximise KGE instead of NSE trade one measure of skill
+for the other?* Nash-Sutcliffe efficiency (NSE) — the project's primary skill score, where 1.0
+is a perfect match to measured flow, 0.0 is no better than always predicting the long-term
+average, and negative values are worse than that — improves by a lot after correction, while
+KGE improves by much less. That gap raises a fair question: if the settings are chosen to
+maximise NSE, does the method only look good on that one measure? I re-ran the same
+neighbour-selection procedure twice, once choosing settings to maximise each split's NSE (as
+the pipeline already does) and once to maximise KGE instead, then scored both choices on both
+measures.
+
+**What came out**
+
+*1. Timing is already right; variability is the one real weakness, and it cannot be borrowed
+from neighbours.* Splitting KGE into its three parts, averaged over all 531 basins the model
+never saw during training:
+
+| part of KGE | before correction | after correction |
+|---|---|---|
+| correlation with true flow | 0.860 | 0.892 (better) |
+| ratio of predicted to true variability | 0.916 | 0.874 (worse — moves further from the ideal of 1.0) |
+| ratio of predicted to true mean flow | 1.075 | 0.963 (better, though it slightly overshoots) |
+| KGE overall | 0.693 | 0.705 |
+
+Shifting each basin's corrected flow earlier or later by up to three days almost never helped:
+69 of 76 basins on one split already had their best alignment at zero days of shift, and even
+letting each basin pick its own best shift by looking at its own true flow (a check that is not
+a fair method, since a real prediction cannot see the answer first, but useful as a ceiling on
+what timing correction could ever be worth) bought only 0.0017 of NSE. Timing is not an
+opportunity here.
+
+Variability is a real weakness — rescaling each basin's corrected flow to match its own true
+variability (again, an unfair ceiling that looks at the answer) would be worth 0.0302 of NSE,
+nearly as much as the entire existing correction's 0.0477 on that split. But this number cannot
+be reached honestly: how much a basin's flow under- or over-reacts to storms turned out to
+correlate only 0.275 with what its 20 nearest gauges under- or over-react by, far below the
+0.547 correlation that makes the existing day-by-day borrowing work. Neighbouring gauges also
+consistently underestimate how much rescaling a truly unmonitored basin needs, because those
+gauges were basins the model trained on, which react less sharply than a genuinely unmonitored
+one. Every realistic way of borrowing a variability fix from neighbours that was tried made
+predictions worse, not better.
+
+A related idea — choosing which gauges to borrow from based on how similar their simulated flow
+looks, rather than by distance alone — also made predictions worse: it lowered the day-by-day
+match between a basin's error and its neighbours' from 0.547 to as low as 0.407. The borrowing
+works because nearby basins share the same day's weather-driven mistakes, not because they
+behave alike in general, so weighting by behavioural similarity dilutes the very thing that
+makes the method work.
+
+To make this visible rather than just numerical, I built one new figure,
+`figures/recon_ungauged_coherence.png` (`figures/make_coherence_figure.py`): a map of one day's
+model error across all 455 basins with a gauge (deliberately a typical day, not a flattering
+one, chosen as the day whose spatial pattern is closest to the test period's median), a curve
+showing how strongly two basins' same-day errors agree as a function of the distance between
+them, and a bar chart comparing four things by how well a basin's 20 nearest gauges predict
+them — a basin's general "flashiness" (used as a check that a real regional pattern shows up at
+all, and it does, at 0.586), the day-to-day error the method borrows (0.429-0.567 depending on
+distance), each basin's standing bias (0.397), and its variability shortfall (0.185, clearly not
+a regional pattern). The agreement between basins' same-day errors decays with distance and
+crosses zero close to where the correction itself stops paying off — independent evidence that
+the correction's useful range and the distance over which errors stay shared are the same thing.
+
+*2. Widening the neighbour-count search paid off, and moved where borrowing stops helping.*
+Every one of the seven splits now chooses to borrow from somewhere between 15 and 37 neighbours
+(previously two splits were pinned at the old ceiling of 20). Split-by-split NSE, before and
+after correction:
+
+| split | neighbours used | fraction of borrowed error applied | before | after |
+|---|---|---|---|---|
+| 0 | 35 | 85% | 0.707 | 0.757 |
+| 1 | 37 | 70% | 0.703 | 0.761 |
+| 2 | 17 | 75% | 0.652 | 0.692 |
+| 3 | 23 | 60% | 0.685 | 0.745 |
+| 4 | 15 | 70% | 0.670 | 0.702 |
+| 5 | 17 | 65% | 0.678 | 0.756 |
+| 6 | 37 | 65% | 0.619 | 0.731 |
+
+Across all 531 basins, the median NSE moved from 0.676 (no correction) to 0.742 (corrected) —
+essentially the same overall result as before this change (0.743), which is expected: this was
+never meant to move the headline number, only to remove an artificial ceiling. The distance at
+which the correction stops paying off (found separately by testing how the correction does once
+every neighbour closer than a given distance is deleted) moved from 275 km to 330 km — with more
+neighbours available to borrow from, the correction can profitably reach further out before
+distant, less-relevant ones start hurting more than they help.
+
+*3. The wider search broke a script, now fixed.* The correction's fallback settings — used when
+no search is run at all — assumed a neighbour count of 8 would always be one of the values
+tried. Once the search only tried odd counts, 8 was no longer one of them, and the script that
+compares different selection strategies (`analysis/tune.py`) crashed looking it up. Fixed by
+moving the fallback to 7, the nearest value the search actually tries. The project's leak audit
+(`analysis/leak_audit.py`, which proves the correction cannot see the basin it is predicting)
+still passes cleanly with the wider search.
+
+*4. Choosing settings by KGE instead of NSE does not trade one for the other.* Across all seven
+splits, scored on the basins each model never trained on:
+
+| how settings were chosen | NSE | KGE |
+|---|---|---|
+| no correction | 0.678 | 0.693 |
+| chosen to maximise NSE (current default) | 0.745 | 0.704 |
+| chosen to maximise KGE instead | 0.740 | 0.716 |
+
+Both ways of choosing the settings improve both measures over no correction at all — maximising
+NSE does not come at KGE's expense, and maximising KGE barely costs any NSE while buying more
+KGE. The two choices differ from each other only slightly, not in which direction they push
+either measure.
+
+One split is a genuine exception worth stating plainly rather than hiding: on split 4, KGE ends
+up slightly below its no-correction value under both choices (0.667 and 0.675, versus 0.693
+uncorrected), even though NSE improves under both. This lines up with the variability weakness
+found in part 1 above — split 4 appears to be a case where the correction's side effect on
+variability outweighs its benefit to KGE specifically, even as NSE still improves.
+
+The settings that maximise KGE consistently use far fewer neighbours than the settings that
+maximise NSE (as few as 3-7 on most splits, versus 15-37 for NSE), and jump around more from
+split to split. Borrowing from fewer neighbours means less averaging, which is a way of fighting
+the variability weakness from part 1 by relying on it less. Because the KGE-based choice is less
+stable across splits, NSE remains the better choice to search on and report, and this check
+shows that choice is not costing KGE anything meaningful in return.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- The variability weakness (the model under-reacting to storms, more so than the observed
+  network can help fix) looks like a property of the LSTM itself rather than something the
+  correction can ever reach. Worth checking whether it is tied to a specific training setting
+  before concluding it is a hard ceiling.
+- Split 4 stayed the one exception where correcting for KGE doesn't fully overcome the
+  variability weakness. Worth a closer look at what is different about that split's basins.
+- Update `README.md` and `METHOD.md`'s reported numbers (0.6313 -> 0.7095 single-start, the
+  275 km reach) to reflect the three-start ensemble and the wider neighbour-count search —
+  tracked separately since those files are the project's methodology write-up, not its
+  experiment log.
+
+---
+
 ## 2026-09-18 — three-start ensemble baseline, and where to average the correction
 
 **What I ran** — First entry for the new post-processing approach described in `README.md` /

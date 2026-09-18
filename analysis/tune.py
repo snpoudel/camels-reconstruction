@@ -19,7 +19,7 @@ Three rules are compared:
     gauged  the same training basins without the group structure, self masked. Simpler, but
             lets a basin borrow from its immediate neighbours in a way a held-out group
             could not.
-    fixed   K = 8, lambda = 0.5, p = 1.0, no search.
+    fixed   K = 7, lambda = 0.5, p = 1.0, no search.
 
 The held-out surface is computed here too, but only to draw the figure and to report what
 each rule cost -- never to choose.

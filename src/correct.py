@@ -32,14 +32,19 @@ from .data import assign_folds
 
 # Used when selection is switched off, and as the fallback when there are too few folds to
 # select honestly (see `choose`). All three sit inside the flat region of the surface.
-K = 8
+# K=7, not 8: it must be an actual K_GRID point, or analysis/tune.py's held-out lookup for
+# mode="fixed" KeyErrors on a value the grid search never scored.
+K = 7
 LAMBDA = 0.5
 P = 1.0
 
-# The search grid. Every K from 1 to 20 -- dense enough not to jump over the optimum -- and no
-# higher: 30/50 scored worse on every fold and widening the grid past a basin's real donor
-# density buys nothing.
-K_GRID = tuple(range(1, 21))
+# The search grid: odd K from 1 to 39. Twenty points either way, so this costs exactly what the
+# old every-K-to-20 grid did, but reaches twice as far. The surface is flat enough near its
+# optimum that stepping by 2 cannot jump over it. The ceiling moved because averaging three
+# seeds de-noises each donor's residual, which makes consulting more donors pay: fold 0 selected
+# at the old grid's K=20 boundary and now selects K=35; every fold now selects K in [15, 37],
+# genuinely per-fold, so the grid must span the whole range.
+K_GRID = tuple(range(1, 41, 2))
 LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
 # The IDW exponent: 1 is plain inverse distance, 2 the classic Shepard weighting. Searched
 # only over [1, 3] -- below 1 flattens toward a simple average over the K donors and scored
@@ -295,7 +300,7 @@ def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode
 
     `mode="gauged"` searches the same training basins without the group structure.
 
-    `mode="fixed"` skips the search: K = 8, lambda = 0.5, p = 1.0.
+    `mode="fixed"` skips the search: K = 7, lambda = 0.5, p = 1.0.
 
     All three are clean. They differ in how well they *predict* the held-out optimum, which is
     a measurement, not an assumption -- `analysis/tune.py` prints it.
