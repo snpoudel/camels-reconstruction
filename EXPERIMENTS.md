@@ -20,6 +20,97 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-18 — running both NSE- and KGE-maximising settings end to end, for both cells
+
+**What I ran** — The correction's three settings — how many nearby gauges to borrow from,
+how steeply to favour closer gauges over farther ones, and what fraction of the borrowed error
+to apply — are chosen separately for each of the seven splits of the basins, by searching only
+that split's own training basins. Until now that search always chose the settings that maximise
+Nash–Sutcliffe efficiency (NSE): a skill score where 1.0 is a perfect match to measured flow,
+0.0 is no better than always predicting the long-term average, and negative values are worse
+than that. This run adds the option to choose settings that maximise Kling–Gupta efficiency
+(KGE) instead — a skill score that separately tracks how well predicted flow correlates with
+true flow, how well its day-to-day swings match the true swings, and how well its long-term
+average matches the true average — and runs the whole pipeline once under each choice, for both
+cells: the 531 basins the model never saw during training ("PUB", for predicting flow in
+ungauged basins), and the smaller pilot that simulates a gauge going dark partway through (76
+basins on one split, standing in for a basin that was gauged during training but has no
+measurements for the years being predicted). Commit `cc6456f`.
+
+**What came out**
+
+Root-mean-square error (RMSE) below is the typical size of the daily error, in millimetres of
+flow per day — lower is better. Percent bias is how far off the total water volume is over some
+period — zero is best. "Distance borrowing stops paying off" is found separately, by deleting
+every candidate gauge closer than a growing floor and checking how far out the correction still
+helps.
+
+*The 531 basins the model never saw, pooled over all seven splits:*
+
+| | settings chosen to maximise NSE | settings chosen to maximise KGE |
+|---|---|---|
+| gauges borrowed from, by split | 15 to 37 | 3 to 27 |
+| median NSE, before -> after | 0.676 -> 0.742 | 0.676 -> 0.735 |
+| median KGE, before -> after | 0.693 -> 0.703 | 0.693 -> 0.712 |
+| basins improved | 81% | 78% |
+| basins hurt by more than 0.05 NSE | 32 of 531 | 50 of 531 |
+| distance borrowing stops paying off | 330 km | 130 km |
+
+Choosing settings to maximise KGE buys a little more KGE (0.712 against 0.703) while giving up
+only a little NSE (0.735 against 0.742) — neither choice trades the other measure away, they
+land at slightly different points on the same curve. That confirms, through the real pipeline
+rather than a one-off script, what a smaller check already found in the entry below ("what kind
+of flow error the correction actually fixes").
+
+The KGE-maximising choice consistently borrows from far fewer, closer gauges (as few as 3, never
+more than 27) than the NSE-maximising choice (never fewer than 15, up to 37) — which is why its
+useful distance is so much shorter, 130 km against 330 km. Borrowing from fewer neighbours means
+less averaging, and less averaging means less of the smoothing-out that KGE's day-to-day-swings
+component specifically penalises.
+
+Six further measures, median over the 531 basins, before and after correction:
+
+| | before | after, max. NSE | after, max. KGE |
+|---|---|---|---|
+| KGE | 0.693 | 0.703 | 0.712 |
+| RMSE (mm/day) | 1.299 | 1.160 | 1.165 |
+| overall percent bias | +7.5% | −4.1% | −2.0% |
+| bias on the highest 10% of flows | −9.6% | −14.2% | −12.0% |
+| bias on the middle 30–90% of flows | +21.4% | +8.1% | +9.4% |
+| bias on the lowest 30% of flows | +73.4% | +34.8% | +35.5% |
+
+*The gauge-going-dark pilot, one split, 76 basins:*
+
+| | settings chosen to maximise NSE | settings chosen to maximise KGE |
+|---|---|---|
+| settings chosen | 29 gauges, believe 75% of their error | 9 gauges, believe 65% of their error |
+| median score, before -> after | NSE 0.794 -> 0.843 | KGE 0.804 -> 0.852 |
+| distance borrowing stops paying off | 217 km | 154 km |
+
+The pilot moves the same direction as that split's real basins (0.707 to 0.757 under the
+NSE choice), which is reassuring rather than new — it is a smaller version of the same thing.
+One exception worth stating plainly: on this split, choosing settings to maximise KGE leaves
+that split's *real* basins' KGE very slightly worse, not better — 0.717 down to 0.714. This is
+the same split-specific exception already flagged in the entry below; it reproduces under the
+real pipeline rather than going away.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- Decide whether KGE-maximising settings are worth reporting as a standing alternative, or
+  whether this entry settles the "is the correction only good on the one metric it's tuned for"
+  question and NSE-maximising stays the only one carried forward.
+- `README.md` and `METHOD.md` still describe only the NSE-maximising pipeline and quote stale
+  numbers from the original single-random-start run; they have not been updated to mention that
+  a choice of maximising metric now exists.
+- Every figure and file under `runs/` and `figures/` now carries an explicit `_nse` or `_kge`
+  name so it is never ambiguous which one produced it — the seven now-superseded unsuffixed
+  figures were deleted in favour of their replacements.
+
+---
+
 ## 2026-09-18 — what kind of flow error the correction actually fixes, a wider search range, and a metric-robustness check
 
 **What I ran** — Four follow-on investigations on top of the three-start ensemble baseline
