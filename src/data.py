@@ -113,8 +113,11 @@ def prepare(cfg: Cfg, device) -> Data:
     assert te0 >= cfg.seq_len - 1, "not enough warm-up before the test period"
 
     folds = assign_folds(len(basins), cfg.n_folds)
-    gauged = np.flatnonzero(folds != cfg.fold)
-    ungauged = np.flatnonzero(folds == cfg.fold)
+    if cfg.fold is None:
+        gauged, ungauged = np.arange(len(basins)), np.array([], dtype=int)
+    else:
+        gauged = np.flatnonzero(folds != cfg.fold)
+        ungauged = np.flatnonzero(folds == cfg.fold)
     order = np.concatenate([gauged, ungauged])
     X, Q = X[order], Q[order]
     basins = [basins[i] for i in order]
