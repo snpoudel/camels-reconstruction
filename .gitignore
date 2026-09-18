@@ -11,8 +11,3 @@ data/cache/
 runs/
 logs/
 *.log
-
-# Local working docs -- agent instructions, VM and cost details stay off the public repo.
-# EXPERIMENTS.md IS tracked: it is the project's record of what was run and what came out,
-# and the repository does not explain itself without it.
-CLAUDE.md
