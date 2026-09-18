@@ -26,8 +26,9 @@ receive no correction at all (weights zero, so R = 0) and are counted separately
 being silently corrected from a garbage neighbourhood.
 
 Writes `runs/recon_ungauged_donor_geometry_<metric>.csv` (one row per held-out basin) and
-`runs/recon_ungauged_donor_range_<metric>.csv` (one row per basin and floor);
-`figures/make_donor_figure.py` draws both.
+`runs/recon_ungauged_donor_range_<metric>.csv` (one row per basin and floor). Standalone
+analysis -- `figures/make_donor_figure.py` draws its network map straight from `choose()`
+and does not read either file.
 """
 import argparse
 import sys

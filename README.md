@@ -75,7 +75,7 @@ python figures/make_method_figure.py                           # method diagram,
 python figures/make_cdf_figure.py
 python figures/make_boxplot_figure.py
 python figures/make_hyperparam_figure.py
-python figures/make_donor_figure.py                            # -> figures/recon_ungauged_donor_range.png
+python figures/make_donor_figure.py                            # -> figures/recon_ungauged_donor_map.png
 ```
 
 The correction needs no GPU and no training — `python -m src.correct` runs on any machine in
