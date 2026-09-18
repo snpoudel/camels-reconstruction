@@ -40,6 +40,15 @@ evaluate → correct → tune → audit → figures).
   `analysis/*.py`, `figures/make_*.py`) is CPU-only and runs locally on this
   machine — no GPU needed, per the top-of-file note.
 
+## Workflow
+
+- Read `EXPERIMENTS.md` (top entry) at the start of a session — it's the
+  repo's memory across sessions, so it should tell you what was last run
+  and what's next without needing chat history.
+- If you notice a request that's part of a repeating pattern, or that a
+  hook, subagent, or skill would handle better than doing it ad hoc, say so
+  and suggest creating one. Build it only after I approve.
+
 ## Code hygiene
 
 - No comments explaining *what* code does — names should do that. Comment

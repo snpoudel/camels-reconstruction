@@ -1,83 +1,77 @@
 ---
 name: log-experiment
-description: Record a completed experiment run in EXPERIMENTS.md — what was run, what came out, in plain language. Use after a training batch finishes and `python -m src.evaluate` has written runs/metrics.csv. Also use when the user says "log this", "write this up", or "add this to the experiment log".
+description: Record a completed experiment run in EXPERIMENTS.md — what was run, what came out, in plain language — and keep it usable as the project's memory across sessions: a new session should read the top entry and know where things stand. Use after a training batch finishes and `python -m src.evaluate` has written runs/metrics.csv, or when the user says "log this", "write this up", or "add this to the experiment log".
 ---
 
 # Log an experiment
 
-Append one entry to `EXPERIMENTS.md` describing a completed run batch.
+Append one entry to `EXPERIMENTS.md`, newest first. The top entry is what a
+future session reads to get oriented — write "What's next" as a briefing for
+someone with no other context.
 
-## 1. Gather the facts — do not guess any of them
+## 1. Gather the facts — don't guess
 
 ```bash
 ls -d runs/*/ | wc -l                       # how many runs
 cat runs/*/config.json                      # arch, fold, seed, every hyperparameter
-python -m src.evaluate                      # runs/metrics.csv — per-start, for the spread only
-python figures/make_results_figure.py       # runs/metrics_ensemble.csv — THE headline numbers
+python -m src.evaluate                      # runs/metrics.csv — per-start, spread only
+python figures/make_results_figure.py       # runs/metrics_ensemble.csv — headline numbers
 grep -c . runs/metrics.csv                  # sanity: rows present
 tail -3 logs/*.log                          # wall-clock per run
+git log --oneline -1                        # commit the runs came from
 ```
 
-**Every score quoted in an entry is the ensemble-mean hydrograph**: average the starts'
-day-by-day predictions per basin first, then compute NSE/KGE once. That is the median printed
-by `make_results_figure.py` and stored per-basin in `runs/metrics_ensemble.csv`. It is the
-project's only headline convention — it matches CLAUDE.md's invariant and matches how the
-reference number is built (Kratzert's 0.693 is a 10-member ensemble mean, see `BENCHMARKS.md`).
+Every score quoted is the ensemble-mean hydrograph (average the starts'
+day-by-day predictions per basin, then compute NSE/KGE once) — the project's
+only headline convention, matching CLAUDE.md and how the Kratzert 0.693
+reference number is built. `summarise()`'s per-start medians read lower and
+are for step 2 only; never quote them as a result. Don't recompute either by
+hand.
 
-`src/evaluate.py`'s `summarise()` prints something different — per-start medians averaged across
-starts, which reads several hundredths lower. **Never quote those as a result.** They exist for
-step 2 only. Do not recompute either set by hand.
+## 2. Check the difference is real before describing it
 
-Check `git log --oneline -1` and record the commit the runs came from. A result you cannot
-trace back to a commit is a result you cannot reproduce.
+An ensemble gives one number per architecture per fold, so it carries no
+uncertainty of its own — the spread comes from `summarise()`'s per-start
+`mean [min, max]` across seeds. Compare the ensemble gap to that spread
+before claiming one variant beat another.
 
-## 2. Check whether the difference is real before you describe it
-
-An ensemble gives one number per architecture per fold, so it carries no uncertainty of its own.
-The spread comes from the per-start numbers: `summarise()` prints each architecture's median as
-`mean [min, max]` across seeds. Before writing that one variant beat another, compare the gap
-between the *ensemble* numbers to the width of those per-start brackets.
-
-**If the gap is smaller than the seed-to-seed spread, say that plainly.** Write "the difference
-between them is smaller than the variation between random starts of the same model, so this
-run cannot tell them apart" — not "X improved by 0.02". This is the single most important
-instruction in this skill: the previous round of this project stalled for months because an
-unresolvable difference got recorded as if it were a finding.
+**If the gap is smaller than the seed-to-seed spread, say so plainly** —
+"this run cannot tell them apart," not "X improved by 0.02." A past round of
+this project stalled for months on an unresolvable difference recorded as a
+finding.
 
 ## 3. Append the entry
 
-Newest first, directly under the `---` at the top of `EXPERIMENTS.md`. Never edit past
-entries. On the first real entry, delete the italic "No experiments yet" placeholder.
+Under the `---` at the top. Never edit past entries. Delete the italic "No
+experiments yet" placeholder on the first real one.
 
 ```markdown
 ## YYYY-MM-DD — <short name>
 
-**What I ran** — plain sentences. Which model variants, how many random starts, which
-split of the basins, how long it took, which commit.
+**What I ran** — model variants, random starts, basin split, runtime, commit.
 
-**What came out** — a table of the numbers, then what stands out. Explain each measure
-the first time it appears in the entry.
+**What came out** — a table of numbers, then what stands out. Explain each
+measure on first use.
 
 **What it means**
 <!-- NEEDS YOUR REVIEW -->
 
-**What's next** — one or two concrete items.
+**What's next** — concrete items, written so a cold session can act on them.
 ```
 
-Leave `NEEDS YOUR REVIEW` in place. Never write the interpretation section and never remove
-that marker — an unreviewed reading has to stay visibly unreviewed.
+Leave `NEEDS YOUR REVIEW` in place — never write that section or remove the
+marker; an unreviewed reading stays visibly unreviewed.
 
-## 4. The plain-language rule
+## 4. Plain language, always
 
-Write for someone who knows hydrology but not this codebase and not machine-learning jargon.
+Write for someone who knows hydrology but not this codebase or ML jargon.
+Explain every measure on first use, e.g.:
 
-Explain every measure the first time it appears:
+> NSE, which measures how closely predicted daily flow tracks measured flow
+> — 1.0 is a perfect match, 0.0 no better than the long-term average,
+> negative worse than that.
 
-> NSE, which measures how closely predicted daily flow tracks measured flow — 1.0 is a perfect
-> match, 0.0 means no better than always predicting the long-term average, and negative values
-> are worse than that.
-
-Say what a thing is, not what it is called:
+Say what a thing is, not what it's called:
 
 | write this | not this |
 |---|---|
@@ -89,15 +83,14 @@ Say what a thing is, not what it is called:
 | turning one piece of the model off | ablation |
 | 0.71, up from 0.68 | +0.03 |
 
-Also: no unexpanded acronyms on first use. No "SOTA", "delta", "vs baseline". Write full
-sentences — the entry is prose with a table in it, not a metrics dump.
+No unexpanded acronyms, no "SOTA"/"delta"/"vs baseline". Prose with a table
+in it, not a metrics dump.
 
-## 5. Check before finishing
+## 5. Before finishing, check
 
-Read the entry back and confirm:
-
-- Every number has a unit or a scale attached, and every measure was explained once.
-- No acronym appears unexpanded on first use.
-- Any difference within the seed spread is described as inconclusive.
-- The `NEEDS YOUR REVIEW` marker is present and the interpretation section is empty.
-- The commit hash is recorded.
+- Every number has a unit/scale; every measure was explained once.
+- No unexpanded acronym on first use.
+- Any difference within the seed spread is called inconclusive.
+- `NEEDS YOUR REVIEW` present, interpretation section empty.
+- Commit hash recorded.
+- "What's next" is concrete enough for a new session to act on cold.
