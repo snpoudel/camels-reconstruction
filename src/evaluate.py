@@ -99,7 +99,7 @@ def load_runs(runs_dir="runs", cache_dir="data/cache"):
     Q = np.load(f"{cache_dir}/Q.npy")
     all_basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
     rows, periods = [], set()
-    for path in sorted(glob.glob(f"{runs_dir}/vanilla_fold*_seed*/predictions.npz")):
+    for path in sorted(glob.glob(f"{runs_dir}/vanilla_*_seed*/predictions.npz")):
         cfg = json.load(open(os.path.join(os.path.dirname(path), "config.json")))
         if cfg.get("max_steps"):
             print(f"skipping smoke run {path}")

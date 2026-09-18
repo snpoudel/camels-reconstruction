@@ -38,7 +38,7 @@ N_DAYS = 12784  # 1980-01-01 to 2014-12-31, no gaps
 class Cfg:
     """One training run. Only `fold` and `seed` are meant to vary."""
 
-    fold: int = 0   # which of n_folds is held out as ungauged
+    fold: int | None = 0   # which of n_folds is held out as ungauged; None trains on every basin
     seed: int = 0
 
     # Kratzert et al. 2019
@@ -74,4 +74,6 @@ class Cfg:
 
     @property
     def name(self) -> str:
+        if self.fold is None:
+            return f"vanilla_all_seed{self.seed}"
         return f"vanilla_fold{self.fold}_seed{self.seed}"

@@ -84,11 +84,16 @@ def benchmark(cfg: Cfg, data, n_steps):
           "be longer than this (total throughput still improves).")
 
 
+def fold_arg(v):
+    return None if v == "all" else int(v)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--period", choices=("complete", "kratzert"), default=Cfg.period,
                    help=f"which train/test windows; see src/config.py PERIODS (default: {Cfg.period})")
-    p.add_argument("--fold", type=int, default=0)
+    p.add_argument("--fold", type=fold_arg, default=0,
+                   help="0..n_folds-1 held-out fold, or 'all' to train on every basin")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--epochs", type=int, help="override for smoke tests only")
     p.add_argument("--seq-len", type=int, help="override for smoke tests only")
