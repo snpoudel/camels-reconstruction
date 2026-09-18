@@ -20,6 +20,91 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-18 — three-start ensemble baseline, and where to average the correction
+
+**What I ran** — First entry for the new post-processing approach described in `README.md` /
+`METHOD.md`: a standard LSTM (one layer, catchment attributes concatenated in, close to
+Kratzert and colleagues' 2019 design) trained separately for each of the seven splits of the
+531 basins, three times per split from different random starts (21 runs total, all vanilla, no
+correction applied during training). Working from commit `7e6fdc7`.
+
+For each basin a split never trained on, I then applied the neighbour-based correction in
+`src/correct.py`: borrow the day-by-day error of the nearest gauged basins, weighted by
+distance, and nudge the prediction by a fraction of that borrowed error. The number of
+neighbours borrowed from, the distance weighting, and the fraction of the error applied were
+each chosen separately per split using only that split's own training basins, never the basins
+being scored, so the choice cannot leak information from the basins under test.
+
+Two questions were checked:
+1. Does averaging three random starts together, before scoring, beat scoring a single start alone?
+2. Should the correction be applied before or after averaging the three random starts?
+
+Every number below follows the ensemble-mean convention: the three starts' predicted flow are
+averaged day by day first, and Nash–Sutcliffe efficiency (NSE) is computed once from that
+averaged hydrograph. NSE measures how closely predicted daily flow tracks measured flow: 1.0 is
+a perfect match, 0.0 is no better than always predicting the long-term average flow, and
+negative values are worse than that. This matches how the published reference number is built
+(Kratzert and colleagues, 2019, report 0.693 this way; see `BENCHMARKS.md`) and is the only
+convention this project uses for headline numbers.
+
+**What came out**
+
+*Does averaging three random starts help, before any correction?*
+
+| | median NSE across the 531 basins held out of training |
+|---|---|
+| one random start alone (average of the three starts' own medians) | 0.631 |
+| three random starts averaged into one hydrograph | 0.676 |
+
+The three individual starts scored 0.631, 0.631, and 0.630 on their own — a spread of just
+0.001, so any one start is about as good as any other. Averaging them into one hydrograph
+before scoring raised the median by 0.045, far outside that spread, so this is a real effect
+and not noise — the same variance-reduction behaviour widely reported for averaging repeated
+LSTM runs.
+
+*Correct before or after averaging the three starts?* Same per-split choice of neighbour count,
+distance weighting, and borrowed-error fraction used in both cases:
+
+| approach | median NSE | mean NSE |
+|---|---|---|
+| average the three starts first, then correct once (what `src/correct.py` already does) | 0.743 | 0.604 |
+| correct each start separately, then average the three corrected hydrographs | 0.742 | 0.598 |
+
+The gap between these two (0.001 on the median) is far smaller than the 0.045 spread from
+averaging in the first table, and correcting-then-averaging only came out ahead on 259 of the
+531 basins (49%) — essentially a coin flip. This difference cannot be told apart from noise;
+the two approaches are best treated as equivalent, and the cheaper one (average first, correct
+once — a third of the compute, one correction pass per split instead of three) is the one to
+keep.
+
+The correction itself, applied the cheap way, raised the median from 0.676 (no correction) to
+0.743, and improved 81% of the 531 basins; 31 basins got worse by more than 0.05 NSE. Split by
+split:
+
+| split | neighbours borrowed from | fraction of borrowed error applied | distance weighting | before correction | after correction |
+|---|---|---|---|---|---|
+| 0 | 20 | 0.75 | 2.0 | 0.707 | 0.755 |
+| 1 | 12 | 0.65 | 2.0 | 0.703 | 0.758 |
+| 2 | 16 | 0.75 | 1.5 | 0.652 | 0.694 |
+| 3 | 17 | 0.55 | 2.0 | 0.685 | 0.748 |
+| 4 | 14 | 0.70 | 1.5 | 0.670 | 0.702 |
+| 5 | 16 | 0.65 | 2.0 | 0.678 | 0.756 |
+| 6 | 18 | 0.70 | 2.0 | 0.619 | 0.735 |
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- Decide whether to run more random starts per split (five to ten, matching the size of the
+  published ensemble) to see whether the uncorrected baseline closes more of the gap to the
+  published reference of 0.693. The three individual starts were nearly identical to each
+  other, so further starts may run into diminishing returns, but this has not been tested.
+- The averaging-order question is settled: always average the random starts first, then correct
+  once. It is numerically tied for best and three times cheaper to compute.
+
+---
+
 ## 2026-09-15 — closing the project
 
 **Why it stops here.** Across all seven splits of the basins — every one of the 531 held out
