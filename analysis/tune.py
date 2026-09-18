@@ -37,7 +37,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, ".")
-from src.correct import K_GRID, P, SCORERS, choose, fold_surfaces, load_all  # noqa: E402
+from src.correct import K_GRID, P, SCORERS, TOLERANCE, choose, fold_surfaces  # noqa: E402
+from src.correct import load_all, pick_row  # noqa: E402
 
 
 def main():
@@ -112,9 +113,11 @@ def main():
                         f"p={picked[f['fold']][2]:.2g}" for f in folds)
         print(f"  {mode:<7} {np.nanmedian(scored):.4f}   {per}")
         print(f"          {note}")
-    print(f"\ncross-validation optima (what the figure draws, and what a paper would quote):")
+    print(f"\ncross-validation optima, ties within {TOLERANCE:g} broken toward the simplest "
+          f"(K, lambda, p) -- what the figure draws, and what a paper would quote:")
     cv = df.query("set == 'cv'")
-    opt = cv.loc[cv.groupby("fold").score.idxmax()]
+    opt = pd.DataFrame([pick_row(cv.query("fold == @fold"), TOLERANCE)
+                        for fold in sorted(cv.fold.unique())])
     for _, r in opt.iterrows():
         print(f"  fold {int(r.fold)}: K = {int(r.k):>2}, lambda = {r.lam:.2f}, p = {r.p:.2g}  "
               f"(CV median {metric_name} {r.score:.4f})")

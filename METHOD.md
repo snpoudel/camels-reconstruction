@@ -160,6 +160,35 @@ same message as §3: the correction works across a wide region, and cross-valida
 is cheap insurance rather than a load-bearing step. The one genuinely bad corner is K = 1 with
 large lambda — a single over-trusted neighbour.
 
+### Breaking ties toward the simplest triple
+
+The raw argmax over that wide, flat region is not a real preference — it is noise in the
+fourth decimal place dressed up as a choice. `src/correct.py:choose` therefore does not take
+the argmax directly; it takes `pick(surf, tolerance=TOLERANCE)`, `TOLERANCE = 0.001`: among
+every (K, λ, p) scoring within `TOLERANCE` of the true maximum, it keeps the simplest — smallest
+K, then λ, then p, in that order (that ordering happens to be exactly what Python's tuple
+comparison gives for free, since every surface is keyed `(K, λ, p)`).
+
+K and λ are simpler when smaller for the same reason: K is how much of the donor network the
+correction depends on, and λ is how far it shrinks toward the uncorrected model (λ = 0 *is* the
+uncorrected model), so smaller is less reliant on external information either way. Measured on
+the real grid, letting K and λ range freely within `TOLERANCE` recovers K roughly halved in
+every fold (e.g. 35→27, 37→21, 17→9) for a median cost of 0.0000 and a worst case of 0.0009 —
+the plateau this buys from is wide.
+
+p is not the same kind of knob, and does **not** get fixed to a constant. Holding K and λ at
+their optimum, p alone swings the score by 0.01–0.04 across its range — ten to forty times
+`TOLERANCE` — because it sets how concentrated the correction's weight is on the very nearest
+donor versus spread across all K of them (effective donor count, `1/Σw²`, roughly halves every
+time p doubles). That is a real, not a free, choice: fixing p = 2 in advance and letting K and
+λ compensate costs at most 0.0013 when selecting on NSE, but up to **0.0042** when selecting on
+KGE (three folds, all of which want p = 3, the steepest the grid offers) — over four times
+`TOLERANCE`, and no coincidence: KGE-selection already prefers smaller K for the same reason
+(§9 / `EXPERIMENTS.md`, the variability finding) — concentrating weight on fewer, closer donors
+fights the same over-damping that hurts KGE's variability term. Smaller p is still preferred
+*within* genuinely tied cells (lower variance, more averaged), but the grid keeps searching it,
+because for KGE in particular it is doing real work, not redundant work already done by K.
+
 ## 6. What it buys
 
 All 531 basins, real 7-fold grid, literature-standard batched LSTM (`period=kratzert`,

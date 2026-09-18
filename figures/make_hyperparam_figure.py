@@ -14,9 +14,10 @@ held-out observation and confirming the choice does not move.
 
 One line per fold. Each is a profile through that fold's own CV optimum: each panel sweeps one
 constant with the other two held at that fold's best, and the marker sits on the optimum
-itself. Reading across the lines is the point -- the optima cluster in a narrow region, and the
-curves are flat around them, so the exact triple a paper quotes matters much less than that it
-lies in that region.
+itself -- specifically the simplest (K, lambda, p) within `TOLERANCE` of the true maximum (see
+`src/correct.py:pick`), the same rule `choose()` actually selects with, not the raw argmax.
+Reading across the lines is the point -- the optima cluster in a narrow region, and the curves
+are flat around them, which is exactly why that simplification is safe to make.
 
 Folds are replicates of the same procedure, not different things being compared, so they share
 one hue rather than getting a categorical palette; identity comes from the count in the
@@ -36,7 +37,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE  # noqa: E402
-from src.correct import SCORERS  # noqa: E402
+from src.correct import SCORERS, TOLERANCE, pick_row  # noqa: E402
 
 
 def style(ax):
@@ -73,7 +74,7 @@ def main(tuning="runs/recon_ungauged_tuning_nse.csv", out=None, pilot=False, met
     opt_k, opt_l, opt_p = [], [], []
     for fold in folds:
         d = df.query("fold == @fold")
-        best = d.loc[d.score.idxmax()]
+        best = pick_row(d, TOLERANCE)
         opt_k.append(int(best.k)); opt_l.append(float(best.lam)); opt_p.append(float(best.p))
 
         sub = d.query("lam == @best.lam and p == @best.p").sort_values("k")

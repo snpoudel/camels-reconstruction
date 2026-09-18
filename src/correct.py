@@ -51,6 +51,13 @@ LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
 # only over [1, 3] -- below 1 flattens toward a simple average over the K donors and scored
 # worse; above 3 sharpens toward the nearest donor with no further gain.
 P_GRID = (1.0, 1.5, 2.0, 3.0)
+# The CV surface is flat near its optimum: on the real grid, letting K and lambda range freely
+# over every cell within 0.001 of the true maximum still recovers K roughly halved in every fold
+# (e.g. 35->27, 37->21, 17->9) for a median cost of 0.0000 and a worst case of 0.0009 -- the raw
+# argmax is mostly noise in the fourth decimal place, not a real preference. p is different: at
+# a fixed K and lambda, p alone swings the score by 0.01-0.04, ten to forty times this tolerance,
+# so it is rarely simplified away and never fixed to a constant -- see METHOD.md for the analysis.
+TOLERANCE = 0.001
 # mm/day. Keeps log() finite on the 2.8% of days that report exactly zero flow, and is small
 # enough to be hydrologically negligible. A far smaller floor (1e-5) makes those days produce
 # log-residuals near -11 and costs ~0.005 NSE.
@@ -318,8 +325,34 @@ def fold_surfaces(folds, modes, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID,
     return out
 
 
+def pick(surf, tolerance=TOLERANCE):
+    """The (K, lambda, p) that maximises median score, or -- if another cell scores within
+    `tolerance` of it -- the simplest cell that does: smallest K, then lambda, then p, in that
+    order (Python tuple comparison already sorts ascending on exactly those three fields, since
+    that is the order every surface dict is keyed in). `tolerance=0` recovers the raw argmax.
+
+    Smaller K and lambda are simpler by the same logic: K is how much of the donor network the
+    correction depends on, lambda is how far it shrinks toward the uncorrected model (lambda=0
+    *is* the uncorrected model), so smaller is less reliant on external information either way.
+    p is simpler when smaller for a different reason -- it sets how concentrated the weight is
+    on the very nearest donor versus spread across all K of them (effective donor count halves
+    roughly every time p doubles), so a smaller p is the lower-variance, more-averaged choice.
+    """
+    scored = {c: np.nanmedian(v) for c, v in surf.items()}
+    best = max(scored.values())
+    return min(c for c, v in scored.items() if v >= best - tolerance)
+
+
+def pick_row(df, tolerance=TOLERANCE):
+    """`pick`, for a per-fold slice of a tuning DataFrame (columns k, lam, p, score) instead of
+    a raw surface dict -- the same policy, so `analysis/tune.py` and the hyperparameter figure
+    report exactly what `choose` would actually select."""
+    best = df.score.max()
+    return df[df.score >= best - tolerance].sort_values(["k", "lam", "p"]).iloc[0]
+
+
 def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode="inner",
-          workers=None, surfaces=None, metric="nse"):
+          workers=None, surfaces=None, metric="nse", tolerance=TOLERANCE):
     """(K, lambda, p) per fold, and a note saying how they were arrived at.
 
     **No mode ever reads a held-out basin of any fold.** The held-out basins are the test set;
@@ -327,7 +360,9 @@ def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode
     result had been tuned on itself, since every basin is some fold's test set.
 
     `metric` picks which score (from `SCORERS`) the search maximises -- "nse" (default) or
-    "kge". `mode="fixed"` ignores it: those constants were never chosen by either score.
+    "kge". `tolerance` (default `TOLERANCE`) then breaks ties toward the simplest triple within
+    that much of the true optimum, via `pick` -- see there for what "simplest" means and why.
+    `mode="fixed"` ignores both: those constants were never chosen by any score.
 
     `mode="inner"` (default) searches the leave-one-group-out surface inside fold f's own 455
     training basins (`surface(..., on="inner")`). This is selection done entirely within the
@@ -352,11 +387,11 @@ def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode
         by_fold = fold_surfaces(folds, (mode,), k_grid, lam_grid, p_grid, eps, workers=workers,
                                 metric=metric)
         surfaces = {fold_id: s[mode] for fold_id, s in by_fold.items()}
-    picked = {f["fold"]: max(surfaces[f["fold"]], key=lambda c: np.nanmedian(surfaces[f["fold"]][c]))
-             for f in folds}
+    picked = {f["fold"]: pick(surfaces[f["fold"]], tolerance) for f in folds}
     where = ("leave-one-group-out within each fold's training basins"
              if mode == "inner" else "each fold's training basins, self masked")
-    return picked, f"chosen on {where} to maximise {metric.upper()}; no held-out basin was read"
+    tol_note = f", ties within {tolerance:g} broken toward the simplest (K, lambda, p)" if tolerance else ""
+    return picked, f"chosen on {where} to maximise {metric.upper()}{tol_note}; no held-out basin was read"
 
 
 def apply_all(runs_dir="runs", cache_dir="data/cache", mode="inner", eps=EPS, metric="nse"):
@@ -406,7 +441,7 @@ def _group_surface(args):
 
 
 def reconstruct_gauged(f, target_group, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS,
-                       workers=None, metric="nse"):
+                       workers=None, metric="nse", tolerance=TOLERANCE):
     """Simulate one inner training group's gauge going fully dark for the whole test window.
 
     This is the OOS-**time** cell: a basin that WAS gauged during training (so `f["pool"]`
@@ -461,7 +496,7 @@ def reconstruct_gauged(f, target_group, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid
         for tgt, partial in map(_group_surface, tasks):
             for key, vals in partial.items():
                 surf[key][tgt] = vals
-    k, lam, p = max(surf, key=lambda c: np.nanmedian(surf[c]))
+    k, lam, p = pick(surf, tolerance)
 
     donor_idx, target_idx = pool[learn], pool[target]
     corrected = correct(f["pred"][target_idx], f["pred"][donor_idx], f["obs"][donor_idx],
