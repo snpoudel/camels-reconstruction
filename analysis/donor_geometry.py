@@ -1,8 +1,11 @@
 """Which donors the correction actually uses, and how far away they can be before it stops working.
 
     python analysis/donor_geometry.py
+    python analysis/donor_geometry.py --metric kge
 
 Two questions, one script. Neither needs a GPU -- both read hydrographs already in `runs/`.
+`--metric` picks which score (`src/correct.py`'s `SCORERS`) both selects (K, lambda, p) and is
+reported as the gain; output file names carry it.
 
 **Where are the donors?** For each held-out basin, the distance to its nearest donor, to the
 K-th (farthest one it uses), and the inverse-distance-weighted mean of the K. Also how
@@ -22,9 +25,9 @@ region turns out to be sparsely gauged. Basins left with fewer than K donors abo
 receive no correction at all (weights zero, so R = 0) and are counted separately rather than
 being silently corrected from a garbage neighbourhood.
 
-Writes `runs/recon_ungauged_donor_geometry.csv` (one row per held-out basin) and
-`runs/recon_ungauged_donor_range.csv` (one
-row per basin and floor); `figures/make_donor_figure.py` draws both.
+Writes `runs/recon_ungauged_donor_geometry_<metric>.csv` (one row per held-out basin) and
+`runs/recon_ungauged_donor_range_<metric>.csv` (one row per basin and floor);
+`figures/make_donor_figure.py` draws both.
 """
 import argparse
 import sys
@@ -33,16 +36,16 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, ".")
-from src.correct import (EPS, apply_shrinkage, choose, idw_weights,  # noqa: E402
-                         load_all, neighbour_residual, nse_per_basin)
+from src.correct import EPS, SCORERS, apply_shrinkage, choose, idw_weights  # noqa: E402
+from src.correct import load_all, neighbour_residual  # noqa: E402
 
 # Donor-distance floors, in km. Doubling past 200 km because the interesting structure is all
 # below it; 3200 km is the width of the CONUS gauge network, i.e. as far away as donors can get.
 FLOORS = (0, 25, 50, 75, 100, 150, 200, 400, 800, 1600, 3200)
 
 
-def _corrected_nse(f, d, k, lam, p, eps=EPS):
-    """NSE per held-out basin using donor distances `d`, and which basins had K donors at all.
+def _corrected_score(f, d, k, lam, p, eps=EPS, metric="nse"):
+    """Score per held-out basin using donor distances `d`, and which basins had K donors at all.
 
     `d` may contain inf where a donor has been censored. A basin with fewer than K finite
     donors is not corrected: its weights are zeroed, so R = 0 and the hydrograph is the raw
@@ -54,18 +57,18 @@ def _corrected_nse(f, d, k, lam, p, eps=EPS):
     W[~ok] = 0.0
     R = neighbour_residual(f["pred"][f["pool"]], f["obs"][f["pool"]], W, eps)
     sim = apply_shrinkage(f["pred"][f["held"]], R, lam, eps)
-    return nse_per_basin(sim, f["obs"][f["held"]]), ok, W
+    return SCORERS[metric](sim, f["obs"][f["held"]]), ok, W
 
 
-def geometry(folds, picked):
+def geometry(folds, picked, metric="nse"):
     """One row per held-out basin: donor distances, weight concentration, and the gain."""
+    score_fn = SCORERS[metric]
     rows = []
     for f in folds:
         k, lam, p = picked[f["fold"]]
         d = f["d_held"]
-        cor, _, W = _corrected_nse(f, d, k, lam, p)
-        raw = nse_per_basin(f["raw"] if "raw" in f else f["pred"][f["held"]],
-                            f["obs"][f["held"]])
+        cor, _, W = _corrected_score(f, d, k, lam, p, metric=metric)
+        raw = score_fn(f["raw"] if "raw" in f else f["pred"][f["held"]], f["obs"][f["held"]])
         order = np.argsort(d, axis=1)
         d_sort = np.take_along_axis(d, order, 1)[:, :k]
         w_sort = np.take_along_axis(W, order, 1)[:, :k]
@@ -77,16 +80,17 @@ def geometry(folds, picked):
     return pd.concat(rows, ignore_index=True)
 
 
-def range_curve(folds, picked, floors=FLOORS):
+def range_curve(folds, picked, floors=FLOORS, metric="nse"):
     """One row per (basin, floor): the gain once every donor nearer than `floor` is deleted."""
+    score_fn = SCORERS[metric]
     rows = []
     for f in folds:
         k, lam, p = picked[f["fold"]]
         d0 = f["d_held"]
-        raw = nse_per_basin(f["pred"][f["held"]], f["obs"][f["held"]])
+        raw = score_fn(f["pred"][f["held"]], f["obs"][f["held"]])
         for floor in floors:
             d = np.where(d0 < floor, np.inf, d0)
-            cor, ok, _ = _corrected_nse(f, d, k, lam, p)
+            cor, ok, _ = _corrected_score(f, d, k, lam, p, metric=metric)
             d_sort = np.sort(np.where(np.isinf(d), np.nan, d), axis=1)[:, :k]
             with np.errstate(invalid="ignore"):
                 med_km = np.nanmedian(d_sort, axis=1)
@@ -114,16 +118,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner")
-    ap.add_argument("--out-geometry", default="runs/recon_ungauged_donor_geometry.csv")
-    ap.add_argument("--out-range", default="runs/recon_ungauged_donor_range.csv")
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which score selects (K, lambda, p) and is reported as the gain")
+    ap.add_argument("--out-geometry", default=None)
+    ap.add_argument("--out-range", default=None)
     a = ap.parse_args()
+    out_geometry = a.out_geometry or f"runs/recon_ungauged_donor_geometry_{a.metric}.csv"
+    out_range = a.out_range or f"runs/recon_ungauged_donor_range_{a.metric}.csv"
 
     folds = load_all(a.runs)
     if not folds:
         raise SystemExit(f"no vanilla_fold*_seed*/ runs under {a.runs}/")
-    picked, note = choose(folds, mode=a.mode)
-    geo, curve = geometry(folds, picked), range_curve(folds, picked)
+    picked, note = choose(folds, mode=a.mode, metric=a.metric)
+    geo = geometry(folds, picked, metric=a.metric)
+    curve = range_curve(folds, picked, metric=a.metric)
     n, nf = len(geo), geo.fold.nunique()
+    metric_name = a.metric.upper()
     print(f"{n} held-out basins over {nf} fold(s).  (K, lambda, p) {note}")
 
     print("\n=== donor distance, km ===")
@@ -136,15 +146,17 @@ def main():
           f"   effective donors: median {geo.n_eff.median():.1f} of K={int(geo.k.median())}"
           f"\nbasins whose nearest gauge is >100 km away: {int((geo.d_near > 100).sum())} of {n}")
 
-    print("\n=== gain by observed distance to nearest donor (confounded with basin difficulty) ===")
+    print(f"\n=== {metric_name} gain by observed distance to nearest donor "
+          f"(confounded with basin difficulty) ===")
     edges = [0, 10, 25, 50, 100, 200, np.inf]
     labels = ["<10", "10-25", "25-50", "50-100", "100-200", ">200"]
-    print(f"{'km':>10} {'n':>5} {'raw NSE':>9} {'corrected':>10} {'median gain':>12} {'improved':>9}")
+    print(f"{'km':>10} {'n':>5} {'raw':>9} {'corrected':>10} {'median gain':>12} {'improved':>9}")
     for key, v in geo.groupby(pd.cut(geo.d_near, edges, labels=labels), observed=True):
         print(f"{key:>10} {len(v):5d} {v.raw.median():9.3f} {v.cor.median():10.3f} "
               f"{v.gain.median():+12.4f} {(v.gain > 0).mean():8.0%}")
 
-    print("\n=== gain once every donor nearer than the floor is deleted (each basin its own control) ===")
+    print(f"\n=== {metric_name} gain once every donor nearer than the floor is deleted "
+          f"(each basin its own control) ===")
     print(f"{'floor':>8} {'corrected':>12} {'median donor':>13} {'median gain':>12} {'improved':>9}")
     for floor, v in curve.groupby("floor"):
         w = v[v.corrected]
@@ -153,9 +165,9 @@ def main():
     be = break_even(curve)
     print(f"\nbreak-even: {be:.0f} km" if be else "\nbreak-even: curve never crosses zero")
 
-    geo.to_csv(a.out_geometry, index=False)
-    curve.to_csv(a.out_range, index=False)
-    print(f"-> {a.out_geometry}\n-> {a.out_range}")
+    geo.to_csv(out_geometry, index=False)
+    curve.to_csv(out_range, index=False)
+    print(f"-> {out_geometry}\n-> {out_range}")
 
 
 if __name__ == "__main__":

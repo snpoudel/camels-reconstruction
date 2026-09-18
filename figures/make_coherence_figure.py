@@ -1,6 +1,12 @@
 """Why a neighbour can speak for a basin it is not: the LSTM's error is regional.
 
-    python figures/make_coherence_figure.py   # -> figures/recon_ungauged_coherence.png
+    python figures/make_coherence_figure.py                # -> recon_ungauged_coherence_nse.png
+    python figures/make_coherence_figure.py --metric kge    # the KGE-selected break-even instead
+
+The coherence structure itself (panels a and b's curve) does not depend on which objective
+selects the correction's settings -- it is a property of the model's error, not of the
+correction. Only the break-even distance annotated on panel (b), read from
+`analysis/donor_geometry.py`'s output, depends on `--metric`.
 
 This figure is the motivation, drawn before the method is introduced. It makes one claim in
 three steps, and the claim is falsifiable at every step.
@@ -43,7 +49,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from analysis.donor_geometry import break_even  # noqa: E402
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW, TEAL  # noqa: E402
-from src.correct import EPS, load_all  # noqa: E402
+from src.correct import EPS, SCORERS, load_all  # noqa: E402
 
 EDGES = np.array([0, 25, 50, 100, 150, 200, 300, 400, 600, 800, 1200, 2000, 5000])
 N_NEAR = 20
@@ -92,8 +98,9 @@ def typical_day(res, mask, near):
     return int(np.nanargmin(np.abs(c - np.nanmedian(c)))), float(np.nanmedian(c))
 
 
-def main(runs_dir="runs", fold=0, out=None, range_csv="runs/recon_ungauged_donor_range.csv",
+def main(runs_dir="runs", fold=0, out=None, range_csv=None, metric="nse",
          loc_csv="data/camels531.csv", cache_dir="data/cache"):
+    range_csv = range_csv or f"runs/recon_ungauged_donor_range_{metric}.csv"
     f = next(x for x in load_all(runs_dir) if x["fold"] == fold)
     pool = f["pool"]
     sim, obs = f["pred"][pool], f["obs"][pool]
@@ -166,8 +173,8 @@ def main(runs_dir="runs", fold=0, out=None, range_csv="runs/recon_ungauged_donor
         be = break_even(pd.read_csv(range_csv, dtype={"basin": str}))
     if be:
         ax.axvline(be, color=INK, lw=1.2, ls=(0, (5, 3)), zorder=6)
-        ax.text(be * 1.08, 0.52, f"the correction stops\npaying at {be:.0f} km",
-                fontsize=8.5, color=INK, va="top")
+        ax.text(be * 1.08, 0.52, f"the {metric.upper()}-selected correction\nstops paying at "
+                f"{be:.0f} km", fontsize=8.5, color=INK, va="top")
     ax.set_xscale("log")
     ax.set_xlabel("distance between two basins  (km)", color=INK, fontsize=10)
     ax.set_ylabel("correlation of their same-day errors", color=INK, fontsize=10)
@@ -219,7 +226,7 @@ def main(runs_dir="runs", fold=0, out=None, range_csv="runs/recon_ungauged_donor
         f"against its {N_NEAR} nearest gauges' mean; the day-to-day bar correlates the daily "
         f"series against theirs, then takes the median basin.")
     fig.text(0.008, 0.022, caption, fontsize=8.5, color=MUTE, linespacing=1.5)
-    out = out or f"{HERE}/recon_ungauged_coherence.png"
+    out = out or f"{HERE}/recon_ungauged_coherence_{metric}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
     print(f"   typical day index {day}, median spatial structure {med_struct:.3f}")
@@ -231,6 +238,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--fold", type=int, default=0)
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which selection objective's break-even distance to annotate")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    main(a.runs, a.fold, a.out)
+    main(a.runs, a.fold, a.out, metric=a.metric)

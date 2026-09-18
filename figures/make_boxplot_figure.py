@@ -1,6 +1,11 @@
 """Error metrics before and after the neighbour correction, six panels.
 
-    python figures/make_boxplot_figure.py   # -> figures/recon_ungauged_metrics_boxplots.png
+    python figures/make_boxplot_figure.py                # selected on NSE (default)
+    python figures/make_boxplot_figure.py --metric kge    # selected on KGE instead
+
+`--metric` picks which selection objective (`src/correct.py`'s `SCORERS`) chose K, lambda and
+p; the panels themselves (including the KGE one) are unaffected by which objective picked the
+settings, so this figure is how the two selections compare across every panel at once.
 
 NSE alone hides where a correction acts. These six say it: overall skill (KGE), magnitude of
 error (RMSE), overall water balance (percent bias), and then bias split by how high the river
@@ -32,6 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
+from src.correct import SCORERS  # noqa: E402
 
 PANELS = [
     ("kge", "KGE", "higher is better", False),
@@ -62,7 +68,7 @@ def collect(metrics_csv):
     return raw, cor, folds, settings
 
 
-def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
+def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse"):
     raw, cor, folds, settings = collect(metrics_csv)
     period_label = test_period_label(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
@@ -121,7 +127,8 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
                     if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
     caption = (f"{len(raw)} {basin_word} basins, {fold_txt}, test period {period_label}.  "
               f"Boxes: quartiles and median; whiskers 1.5 IQR, outliers omitted.  "
-              f"{settings_txt}, chosen inside the training basins only.")
+              f"{settings_txt}, chosen to maximise {selected_on.upper()} inside the training "
+              f"basins only.")
     if pilot:
         caption += ("  Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
                     "pool, not the full pool a real deployment or the PUB cell has.")
@@ -137,15 +144,16 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--metrics", default=None)
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which selection objective chose K, lambda and p")
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--out", default=None)
     ap.add_argument("--pilot", action="store_true",
-                    help="metrics CSV is the gauged-reconstruction pilot's "
-                    "(runs/recon_gauged_metrics.csv), not the PUB one")
+                    help="metrics CSV is the gauged-reconstruction pilot's, not the PUB one")
     a = ap.parse_args()
 
-    metrics_csv = a.metrics or (f"{a.runs}/recon_gauged_metrics.csv" if a.pilot
-                                else f"{a.runs}/recon_ungauged_metrics.csv")
-    out = a.out or (f"{HERE}/recon_gauged_metrics_boxplots.png" if a.pilot
-                    else f"{HERE}/recon_ungauged_metrics_boxplots.png")
-    main(metrics_csv, out, a.runs, pilot=a.pilot)
+    stem = "recon_gauged_metrics" if a.pilot else "recon_ungauged_metrics"
+    out_stem = "recon_gauged_metrics_boxplots" if a.pilot else "recon_ungauged_metrics_boxplots"
+    metrics_csv = a.metrics or f"{a.runs}/{stem}_{a.metric}.csv"
+    out = a.out or f"{HERE}/{out_stem}_{a.metric}.png"
+    main(metrics_csv, out, a.runs, pilot=a.pilot, selected_on=a.metric)

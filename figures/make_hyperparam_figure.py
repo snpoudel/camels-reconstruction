@@ -1,7 +1,8 @@
 """Cross-validation for the correction's three constants: K, lambda, and the IDW power p.
 
-    python analysis/tune.py --out runs/recon_ungauged_tuning.csv     # first
-    python figures/make_hyperparam_figure.py                         # -> figures/recon_ungauged_hyperparameters.png
+    python analysis/tune.py                              # first, writes ..._tuning_nse.csv
+    python figures/make_hyperparam_figure.py              # -> recon_ungauged_hyperparameters_nse.png
+    python figures/make_hyperparam_figure.py --metric kge # the KGE-maximising surface instead
 
 The correction has three free numbers: K, how many gauges to consult; lambda, how much of
 their error to believe; and p, how steeply weight falls off with distance (weight ~ 1/d^p).
@@ -35,6 +36,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE  # noqa: E402
+from src.correct import SCORERS  # noqa: E402
 
 
 def style(ax):
@@ -47,12 +49,13 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
+def main(tuning="runs/recon_ungauged_tuning_nse.csv", out=None, pilot=False, metric="nse"):
     df = pd.read_csv(tuning)
     if "set" in df.columns:
         df = df.query("set == 'cv'")
     folds = sorted(df.fold.unique())
     n_basins = int(df.n_basins.iloc[0])
+    metric_name = metric.upper()
 
     # Both K and p are sampled unevenly (see src/correct.py:K_GRID, P_GRID), so plotting either
     # by value packs the grid unevenly. Plotting by rank instead gives every step an
@@ -70,24 +73,24 @@ def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
     opt_k, opt_l, opt_p = [], [], []
     for fold in folds:
         d = df.query("fold == @fold")
-        best = d.loc[d.median_nse.idxmax()]
+        best = d.loc[d.score.idxmax()]
         opt_k.append(int(best.k)); opt_l.append(float(best.lam)); opt_p.append(float(best.p))
 
         sub = d.query("lam == @best.lam and p == @best.p").sort_values("k")
-        axk.plot([k_pos[k] for k in sub.k], sub.median_nse, color=CORRECTED, lw=lw,
+        axk.plot([k_pos[k] for k in sub.k], sub.score, color=CORRECTED, lw=lw,
                  alpha=alpha, zorder=3)
-        axk.plot([k_pos[best.k]], [best.median_nse], "o", ms=7, color=CORRECTED,
+        axk.plot([k_pos[best.k]], [best.score], "o", ms=7, color=CORRECTED,
                  markeredgecolor="white", markeredgewidth=1.5, zorder=5)
 
         sub = d.query("k == @best.k and p == @best.p").sort_values("lam")
-        axl.plot(sub.lam, sub.median_nse, color=CORRECTED, lw=lw, alpha=alpha, zorder=3)
-        axl.plot([best.lam], [best.median_nse], "o", ms=7, color=CORRECTED,
+        axl.plot(sub.lam, sub.score, color=CORRECTED, lw=lw, alpha=alpha, zorder=3)
+        axl.plot([best.lam], [best.score], "o", ms=7, color=CORRECTED,
                  markeredgecolor="white", markeredgewidth=1.5, zorder=5)
 
         sub = d.query("k == @best.k and lam == @best.lam").sort_values("p")
-        axp.plot([p_pos[pw] for pw in sub.p], sub.median_nse, color=CORRECTED, lw=lw,
+        axp.plot([p_pos[pw] for pw in sub.p], sub.score, color=CORRECTED, lw=lw,
                  alpha=alpha, zorder=3)
-        axp.plot([p_pos[best.p]], [best.median_nse], "o", ms=7, color=CORRECTED,
+        axp.plot([p_pos[best.p]], [best.score], "o", ms=7, color=CORRECTED,
                  markeredgecolor="white", markeredgewidth=1.5, zorder=5)
 
     axk.set_xticks(range(len(k_grid)))
@@ -107,18 +110,21 @@ def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
     for ax, held in ((axk, "$\\lambda$ and p at each fold's optimum"),
                      (axl, "K and p at each fold's optimum"),
                      (axp, "K and $\\lambda$ at each fold's optimum")):
-        ax.set_ylabel("median NSE over cross-validation groups", color=INK, fontsize=10)
+        ax.set_ylabel(f"median {metric_name} over cross-validation groups", color=INK, fontsize=10)
         ax.plot([], [], color=CORRECTED, lw=lw, alpha=alpha,
                 label=f"{lines}, {held}")
         ax.plot([], [], "o", ms=7, color=CORRECTED, markeredgecolor="white", markeredgewidth=1.5,
                 label="that fold's cross-validation optimum")
         ax.legend(frameon=False, loc="lower right", fontsize=8.5, labelcolor=INK)
-        ax.set_ylim(0.5, 1.03)
+        # NSE and KGE surfaces don't necessarily share a range -- pad around the data rather
+        # than assume NSE's usual [0.5, 1.03].
+        lo, hi = min(df.score.min(), 0.5), max(df.score.max(), 1.0)
+        ax.set_ylim(lo - 0.03, hi + 0.03)
         style(ax)
 
     basin_word = "reconstructed-group" if pilot else "training"
     fig.suptitle(f"Cross-validation for K, $\\lambda$, and the IDW power p, within the "
-                f"{basin_word} basins",
+                f"{basin_word} basins, selected to maximise {metric_name}",
                  fontsize=12.5, color=INK, x=0.012, ha="left", y=0.975)
     krange = f"K = {opt_k[0]}" if len(set(opt_k)) == 1 else f"K in [{min(opt_k)}, {max(opt_k)}]"
     lrange = (f"$\\lambda$ = {opt_l[0]:g}" if len(set(opt_l)) == 1
@@ -134,8 +140,8 @@ def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
                     "pool, not the full pool a real deployment or the PUB cell has.")
     fig.text(0.012, 0.015, caption, fontsize=8.5, color=MUTE)
     fig.tight_layout(rect=(0, 0.045, 1, 0.945))
-    out = out or (f"{HERE}/recon_gauged_hyperparameters.png" if pilot
-                 else f"{HERE}/recon_ungauged_hyperparameters.png")
+    out_stem = "recon_gauged_hyperparameters" if pilot else "recon_ungauged_hyperparameters"
+    out = out or f"{HERE}/{out_stem}_{metric}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   optima: K {opt_k}, lambda {opt_l}, p {opt_p}")
 
@@ -143,9 +149,11 @@ def main(tuning="runs/recon_ungauged_tuning.csv", out=None, pilot=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--tuning", default=None)
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which selection objective the tuning surface was built from")
     ap.add_argument("--out", default=None)
     ap.add_argument("--pilot", action="store_true",
                     help="tuning CSV is the gauged-reconstruction pilot's, not the PUB one")
     a = ap.parse_args()
-    main(a.tuning or (f"runs/recon_gauged_tuning.csv" if a.pilot else "runs/recon_ungauged_tuning.csv"),
-         a.out, pilot=a.pilot)
+    stem = "recon_gauged_tuning" if a.pilot else "recon_ungauged_tuning"
+    main(a.tuning or f"runs/{stem}_{a.metric}.csv", a.out, pilot=a.pilot, metric=a.metric)

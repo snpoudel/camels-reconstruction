@@ -1,6 +1,7 @@
 """Which donors the correction uses, and the distance at which it stops paying.
 
-    python figures/make_donor_figure.py                  # -> figures/recon_ungauged_donor_range.png
+    python figures/make_donor_figure.py                  # -> recon_ungauged_donor_range_nse.png
+    python figures/make_donor_figure.py --metric kge      # the KGE-maximising selection instead
 
 Left: the donor network itself, for one fold. Every held-out basin is joined to the K gauged
 basins it actually borrows from, each line's weight drawn as its opacity, so the reader can see
@@ -43,7 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from analysis.donor_geometry import break_even  # noqa: E402
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import (default_target_group, distances, find_fold,  # noqa: E402
+from src.correct import (SCORERS, default_target_group, distances, find_fold,  # noqa: E402
                          idw_weights, load_all, reconstruct_gauged)
 
 
@@ -124,7 +125,7 @@ def draw_distance_strip(ax, geo):
     return ins
 
 
-def draw_range(ax, curve):
+def draw_range(ax, curve, metric="nse"):
     """Median gain against the donor-distance floor, with the per-fold spread behind it."""
     kept = curve[curve.corrected]
     per_fold = kept.groupby(["fold", "floor"]).gain.median().unstack(0)
@@ -154,13 +155,15 @@ def draw_range(ax, curve):
                     fontsize=9, color=INK, ha="left", va="center",
                     arrowprops=dict(arrowstyle="-", color=INK, lw=0.8))
     ax.set_xlabel("every donor nearer than this deleted (km)", color=INK, fontsize=10)
-    ax.set_ylabel("change in NSE vs the uncorrected LSTM", color=INK, fontsize=10)
+    ax.set_ylabel(f"change in {metric.upper()} vs the uncorrected LSTM", color=INK, fontsize=10)
     ax.legend(frameon=False, loc="lower left", fontsize=8.5, labelcolor=INK)
     return real, be, "What the correction is worth as its donors recede"
 
 
-def main(runs_dir="runs", out=None, geometry_csv="runs/recon_ungauged_donor_geometry.csv",
-         range_csv="runs/recon_ungauged_donor_range.csv", f_override=None, pilot=False):
+def main(runs_dir="runs", out=None, geometry_csv=None, range_csv=None, f_override=None,
+         pilot=False, metric="nse"):
+    geometry_csv = geometry_csv or f"runs/recon_ungauged_donor_geometry_{metric}.csv"
+    range_csv = range_csv or f"runs/recon_ungauged_donor_range_{metric}.csv"
     for path in (geometry_csv, range_csv):
         if not os.path.exists(path):
             raise SystemExit(f"{path} missing -- run analysis/donor_geometry.py first")
@@ -172,7 +175,7 @@ def main(runs_dir="runs", out=None, geometry_csv="runs/recon_ungauged_donor_geom
     one = geo[geo.fold == geo.fold.min()].iloc[0]
     fold, t1 = draw_network(ax1, runs_dir, int(one.k), float(one.p), f_override=f_override)
     style(ax1)
-    real, be, t2 = draw_range(ax2, curve)
+    real, be, t2 = draw_range(ax2, curve, metric=metric)
     style(ax2)
     strip = draw_distance_strip(ax2, geo)
     if be:
@@ -195,8 +198,8 @@ def main(runs_dir="runs", out=None, geometry_csv="runs/recon_ungauged_donor_geom
     # can use its own axes title without colliding with the other's.
     for ax, title in ((ax1, t1), (ax2, t2)):
         fig.text(ax.get_position().x0, 0.945, title, color=INK, fontsize=11, va="bottom")
-    out = out or (f"{HERE}/recon_gauged_donor_range.png" if pilot
-                 else f"{HERE}/recon_ungauged_donor_range.png")
+    out_stem = "recon_gauged_donor_range" if pilot else "recon_ungauged_donor_range"
+    out = out or f"{HERE}/{out_stem}_{metric}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   real network {real:+.4f}, "
           + (f"break-even {be:.0f} km" if be else "never crosses zero"))
@@ -205,19 +208,22 @@ def main(runs_dir="runs", out=None, geometry_csv="runs/recon_ungauged_donor_geom
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", default="runs")
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which selection objective chose K, lambda and p")
     ap.add_argument("--out", default=None)
     ap.add_argument("--fold", type=int, default=None,
                     help="build the gauged-reconstruction pilot for this outer fold instead of "
-                    "the real PUB folds (reads runs/recon_gauged_donor_{geometry,range}.csv)")
+                    "the real PUB folds (reads runs/recon_gauged_donor_{geometry,range}_<metric>.csv)")
     ap.add_argument("--target-group", type=int, default=None,
                     help="which inner group goes dark (default: smallest available)")
     a = ap.parse_args()
 
     if a.fold is None:
-        main(a.runs, a.out)
+        main(a.runs, a.out, metric=a.metric)
     else:
         f = find_fold(load_all(a.runs), a.fold)
         target_group = a.target_group if a.target_group is not None else default_target_group(f)
-        pilot_f, _ = reconstruct_gauged(f, target_group)
-        main(a.runs, a.out, geometry_csv="runs/recon_gauged_donor_geometry.csv",
-             range_csv="runs/recon_gauged_donor_range.csv", f_override=pilot_f, pilot=True)
+        pilot_f, _ = reconstruct_gauged(f, target_group, metric=a.metric)
+        main(a.runs, a.out, geometry_csv=f"runs/recon_gauged_donor_geometry_{a.metric}.csv",
+             range_csv=f"runs/recon_gauged_donor_range_{a.metric}.csv", f_override=pilot_f,
+             pilot=True, metric=a.metric)

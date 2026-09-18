@@ -1,10 +1,16 @@
 """NSE distribution, the LSTM alone vs the LSTM plus the neighbour correction.
 
-    python figures/make_cdf_figure.py    # -> figures/recon_ungauged_cdf_nse.png
+    python figures/make_cdf_figure.py                # -> figures/recon_ungauged_cdf_nse.png
+    python figures/make_cdf_figure.py --metric kge    # -> figures/recon_ungauged_cdf_kge.png
 
 The empirical CDF across held-out (ungauged) basins. Each basin contributes one point -- the
 score of its seed-mean hydrograph -- so a curve lying to the right is winning at every quantile
 it is right of, not merely on average.
+
+This always plots the NSE distribution; `--metric` instead picks which selection objective
+(`src/correct.py`'s `SCORERS`) chose K, lambda and p -- `--metric kge` reads the CSV where those
+settings were chosen to maximise KGE, not NSE, so the curve shows NSE under KGE-selected
+settings, a deliberate cross-metric comparison. The caption always says which.
 
 Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue, #eb6834 orange), validated there --
 normal-vision dE 33.6, protan 24.5, deutan 31.6, all past the >=15 / >=8 thresholds. Identity
@@ -24,6 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
+from src.correct import SCORERS  # noqa: E402
 
 
 def test_period_label(runs_dir):
@@ -57,7 +64,7 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
+def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse"):
     raw, cor, folds, settings = collect(metrics_csv)
     period_label = test_period_label(runs_dir)
     n = len(raw)
@@ -87,7 +94,8 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
                               for fd, (k, lam, pw) in zip(folds, settings))
                     if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
     caption = (f"{n} {basin_word} basins, {fold_txt}, test period {period_label}.  Correction: "
-              f"{settings_txt}, chosen inside the training basins only.")
+              f"{settings_txt}, chosen to maximise {selected_on.upper()} inside the training "
+              f"basins only.")
     if pilot:
         caption += ("  Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
                     "pool, not the full pool a real deployment or the PUB cell has.")
@@ -101,15 +109,16 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--metrics", default=None)
+    ap.add_argument("--metric", choices=list(SCORERS), default="nse",
+                    help="which selection objective chose K, lambda and p")
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--out", default=None)
     ap.add_argument("--pilot", action="store_true",
-                    help="metrics CSV is the gauged-reconstruction pilot's "
-                    "(runs/recon_gauged_metrics.csv), not the PUB one")
+                    help="metrics CSV is the gauged-reconstruction pilot's, not the PUB one")
     a = ap.parse_args()
 
-    metrics_csv = a.metrics or (f"{a.runs}/recon_gauged_metrics.csv" if a.pilot
-                                else f"{a.runs}/recon_ungauged_metrics.csv")
-    out = a.out or (f"{HERE}/recon_gauged_cdf_nse.png" if a.pilot
-                    else f"{HERE}/recon_ungauged_cdf_nse.png")
-    main(metrics_csv, out, a.runs, pilot=a.pilot)
+    stem = "recon_gauged_metrics" if a.pilot else "recon_ungauged_metrics"
+    out_stem = "recon_gauged_cdf" if a.pilot else "recon_ungauged_cdf"
+    metrics_csv = a.metrics or f"{a.runs}/{stem}_{a.metric}.csv"
+    out = a.out or f"{HERE}/{out_stem}_{a.metric}.png"
+    main(metrics_csv, out, a.runs, pilot=a.pilot, selected_on=a.metric)

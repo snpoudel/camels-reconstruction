@@ -1,6 +1,7 @@
 """Neighbour-residual correction — the post-processing step this branch is about.
 
-    python -m src.correct                      # score vanilla, raw vs corrected
+    python -m src.correct                      # score vanilla, raw vs corrected; selects on NSE
+    python -m src.correct --metric kge          # select K, lambda, p to maximise KGE instead
     python -m src.correct --out runs/corrected.csv
 
 An ungauged basin has no discharge of its own, but its nearest gauges do, and their errors
@@ -108,6 +109,31 @@ def nse_per_basin(sim, obs):
                     1 - ((s - o) ** 2 * m).sum(1) / np.maximum(den, 1e-12), np.nan)
 
 
+def kge_per_basin(sim, obs):
+    """[n] KGE, vectorised over basins -- same calling convention as `nse_per_basin`.
+
+    r, alpha and beta are each a ratio of sums over the reported days, so the 1/n that would
+    normally turn a sum into a mean or a variance cancels in every one of the three ratios
+    except beta -- only beta needs an actual mean.
+    """
+    sim = np.clip(sim, 0, None)
+    m = np.isfinite(obs)
+    o, s, n = np.where(m, obs, 0.0), np.where(m, sim, 0.0), m.sum(1)
+    mu_o, mu_s = o.sum(1) / np.maximum(n, 1), s.sum(1) / np.maximum(n, 1)
+    do, ds = (o - mu_o[:, None]) * m, (s - mu_s[:, None]) * m
+    var_o, var_s, cov = (do ** 2).sum(1), (ds ** 2).sum(1), (do * ds).sum(1)
+    ok = (n > 1) & (var_o > 0) & (var_s > 0) & (mu_o != 0)
+    r = np.where(ok, cov / np.maximum(np.sqrt(var_o * var_s), 1e-12), np.nan)
+    alpha = np.where(ok, np.sqrt(var_s / np.maximum(var_o, 1e-12)), np.nan)
+    beta = np.where(ok, mu_s / np.where(mu_o != 0, mu_o, np.nan), np.nan)
+    return np.where(ok, 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2), np.nan)
+
+
+# Selection can maximise any per-basin score in here. Add an entry to extend it; every
+# selection function below takes a `metric` string and looks it up here.
+SCORERS = {"nse": nse_per_basin, "kge": kge_per_basin}
+
+
 def load_fold(fold, runs_dir="runs", cache_dir="data/cache"):
     """Seed-mean test hydrograph for one fold, in cache-basin order.
 
@@ -173,8 +199,12 @@ def load_all(runs_dir="runs", cache_dir="data/cache"):
     return out
 
 
-def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="held"):
-    """{(k, lam, p): per-basin NSE} for one fold, on one of three sets of basins.
+def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="held",
+           metric="nse"):
+    """{(k, lam, p): per-basin score} for one fold, on one of three sets of basins.
+
+    `metric` picks which score from `SCORERS` the surface is built from -- "nse" (default) or
+    "kge". It changes what counts as the optimum; it never changes which basins are read.
 
     `on="held"`   the fold's held-out basins -- the real objective, and the surface the figure
                   draws. **Never used to select anything**: it is the test set.
@@ -187,6 +217,7 @@ def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="hel
                   `inner` but lets a basin borrow from its immediate neighbours, which a truly
                   ungauged basin in a held-out *group* could not.
     """
+    score_fn = SCORERS[metric]
     if on == "held":
         target, donor, d = f["held"], f["pool"], f["d_held"]
         out = {}
@@ -195,7 +226,7 @@ def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="hel
                 R = neighbour_residual(f["pred"][donor], f["obs"][donor],
                                        idw_weights(d, k, p), eps)
                 for lam in lam_grid:
-                    out[(int(k), float(lam), float(p))] = nse_per_basin(
+                    out[(int(k), float(lam), float(p))] = score_fn(
                         apply_shrinkage(f["pred"][target], R, lam, eps), f["obs"][target])
         return out
 
@@ -225,8 +256,8 @@ def surface(f, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, on="hel
                 R = neighbour_residual(f["pred"][pool[don]], f["obs"][pool[don]],
                                        idw_weights(dd, k, p), eps)
                 for lam in lam_grid:
-                    v = nse_per_basin(apply_shrinkage(f["pred"][pool[tgt]], R, lam, eps),
-                                      f["obs"][pool[tgt]])
+                    v = score_fn(apply_shrinkage(f["pred"][pool[tgt]], R, lam, eps),
+                                f["obs"][pool[tgt]])
                     out[(int(k), float(lam), float(p))][tgt] = v
     return out
 
@@ -255,12 +286,13 @@ def _n_workers(n_tasks, workers):
 
 def _multi_surface(args):
     """Every requested `on=` surface for one fold. Top-level and picklable for a process pool."""
-    f, k_grid, lam_grid, p_grid, eps, modes = args
-    return f["fold"], {m: surface(f, k_grid, lam_grid, p_grid, eps, on=m) for m in modes}
+    f, k_grid, lam_grid, p_grid, eps, modes, metric = args
+    return f["fold"], {m: surface(f, k_grid, lam_grid, p_grid, eps, on=m, metric=metric)
+                      for m in modes}
 
 
 def fold_surfaces(folds, modes, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS,
-                  workers=None):
+                  workers=None, metric="nse"):
     """{fold: {mode: surf}} for every mode in `modes`, one process per fold.
 
     Every fold's search is independent (`surface` never mutates the fold dict it is given --
@@ -272,7 +304,7 @@ def fold_surfaces(folds, modes, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID,
     `workers` defaults to one worker per fold, capped at `os.cpu_count()`; pass `workers=1` to
     force the old sequential path (useful for debugging, or a single-core box).
     """
-    tasks = [(f, k_grid, lam_grid, p_grid, eps, modes) for f in folds]
+    tasks = [(f, k_grid, lam_grid, p_grid, eps, modes, metric) for f in folds]
     n_workers = _n_workers(len(tasks), workers)
     out = {}
     if n_workers > 1:
@@ -287,12 +319,15 @@ def fold_surfaces(folds, modes, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID,
 
 
 def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode="inner",
-          workers=None, surfaces=None):
+          workers=None, surfaces=None, metric="nse"):
     """(K, lambda, p) per fold, and a note saying how they were arrived at.
 
     **No mode ever reads a held-out basin of any fold.** The held-out basins are the test set;
     letting them into selection -- even another fold's -- would mean the pooled 531-basin
     result had been tuned on itself, since every basin is some fold's test set.
+
+    `metric` picks which score (from `SCORERS`) the search maximises -- "nse" (default) or
+    "kge". `mode="fixed"` ignores it: those constants were never chosen by either score.
 
     `mode="inner"` (default) searches the leave-one-group-out surface inside fold f's own 455
     training basins (`surface(..., on="inner")`). This is selection done entirely within the
@@ -307,28 +342,29 @@ def choose(folds, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS, mode
 
     The search itself runs through `fold_surfaces` (parallel across folds; see there for
     `workers`). `surfaces`, when given, is an already-computed `{fold: surf}` map for this
-    exact `mode` -- pass it when the caller has already built that surface for another reason
-    (`analysis/tune.py` builds the "inner" surface to price the cross-validation figure, and
-    would otherwise pay for the identical grid search a second time here).
+    exact `mode` and `metric` -- pass it when the caller has already built that surface for
+    another reason (`analysis/tune.py` builds the "inner" surface to price the cross-validation
+    figure, and would otherwise pay for the identical grid search a second time here).
     """
     if mode == "fixed":
         return {f["fold"]: (K, LAMBDA, P) for f in folds}, "fixed constants, no search"
     if surfaces is None:
-        by_fold = fold_surfaces(folds, (mode,), k_grid, lam_grid, p_grid, eps, workers=workers)
+        by_fold = fold_surfaces(folds, (mode,), k_grid, lam_grid, p_grid, eps, workers=workers,
+                                metric=metric)
         surfaces = {fold_id: s[mode] for fold_id, s in by_fold.items()}
     picked = {f["fold"]: max(surfaces[f["fold"]], key=lambda c: np.nanmedian(surfaces[f["fold"]][c]))
              for f in folds}
     where = ("leave-one-group-out within each fold's training basins"
              if mode == "inner" else "each fold's training basins, self masked")
-    return picked, f"chosen on {where}; no held-out basin was read"
+    return picked, f"chosen on {where} to maximise {metric.upper()}; no held-out basin was read"
 
 
-def apply_all(runs_dir="runs", cache_dir="data/cache", mode="inner", eps=EPS):
+def apply_all(runs_dir="runs", cache_dir="data/cache", mode="inner", eps=EPS, metric="nse"):
     """Raw and corrected hydrographs for every held-out basin of every available fold."""
     folds = load_all(runs_dir, cache_dir)
     if not folds:
         return [], "no runs found"
-    picked, note = choose(folds, eps=eps, mode=mode)
+    picked, note = choose(folds, eps=eps, mode=mode, metric=metric)
     for f in folds:
         k, lam, p = picked[f["fold"]]
         f["k"], f["lam"], f["p"] = k, lam, p
@@ -358,18 +394,19 @@ def _group_surface(args):
     plus indices) so only the one group's data crosses the process boundary, not the whole
     fold's.
     """
-    pred_don, obs_don, pred_tgt, obs_tgt, dd, tgt, k_grid, lam_grid, p_grid, eps = args
+    pred_don, obs_don, pred_tgt, obs_tgt, dd, tgt, k_grid, lam_grid, p_grid, eps, metric = args
+    score_fn = SCORERS[metric]
     out = {}
     for k in k_grid:
         for p in p_grid:
             R = neighbour_residual(pred_don, obs_don, idw_weights(dd, k, p), eps)
             for lam in lam_grid:
-                out[(k, lam, p)] = nse_per_basin(apply_shrinkage(pred_tgt, R, lam, eps), obs_tgt)
+                out[(k, lam, p)] = score_fn(apply_shrinkage(pred_tgt, R, lam, eps), obs_tgt)
     return tgt, out
 
 
 def reconstruct_gauged(f, target_group, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid=P_GRID, eps=EPS,
-                       workers=None):
+                       workers=None, metric="nse"):
     """Simulate one inner training group's gauge going fully dark for the whole test window.
 
     This is the OOS-**time** cell: a basin that WAS gauged during training (so `f["pool"]`
@@ -410,7 +447,7 @@ def reconstruct_gauged(f, target_group, k_grid=K_GRID, lam_grid=LAM_GRID, p_grid
         tgt, don = np.flatnonzero(learn_labels == gl), np.flatnonzero(learn_labels != gl)
         tasks.append((f["pred"][pool[learn][don]], f["obs"][pool[learn][don]],
                      f["pred"][pool[learn][tgt]], f["obs"][pool[learn][tgt]],
-                     d_learn[np.ix_(tgt, don)], tgt, k_grid, lam_grid, p_grid, eps))
+                     d_learn[np.ix_(tgt, don)], tgt, k_grid, lam_grid, p_grid, eps, metric))
 
     surf = {(k, lam, p): np.full(len(learn), np.nan)
             for k in k_grid for lam in lam_grid for p in p_grid}
@@ -440,11 +477,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--mode", choices=["inner", "gauged", "fixed"], default="inner",
                    help="how (K, lambda, p) are chosen; see correct.choose")
+    p.add_argument("--metric", choices=list(SCORERS), default="nse",
+                   help="which score the search maximises")
     p.add_argument("--runs", default="runs")
-    p.add_argument("--out", default="runs/recon_ungauged_metrics.csv")
+    p.add_argument("--out", default=None)
     a = p.parse_args()
+    out = a.out or f"runs/recon_ungauged_metrics_{a.metric}.csv"
 
-    folds, note = apply_all(runs_dir=a.runs, mode=a.mode)
+    folds, note = apply_all(runs_dir=a.runs, mode=a.mode, metric=a.metric)
     if not folds:
         raise SystemExit(note)
     rows = []
@@ -472,8 +512,8 @@ def main():
           f"{piv['vanilla + correction'].median():.4f} "
           f"({piv['vanilla + correction'].median() - piv['vanilla'].median():+.4f})")
     print(f"improved in {(gain > 0).mean():.0%} of basins; hurt by >0.05 in {int((gain < -0.05).sum())}")
-    df.to_csv(a.out, index=False)
-    print(f"-> {a.out}")
+    df.to_csv(out, index=False)
+    print(f"-> {out}")
 
 
 if __name__ == "__main__":
