@@ -83,8 +83,9 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse")
     ax1.set_ylim(0, 1)
     ax1.set_xlabel("NSE", color=INK, fontsize=10)
     ax1.set_ylabel("fraction of basins below", color=INK, fontsize=10)
-    ax1.set_title("Distribution across held-out basins", color=INK, fontsize=11,
-                  loc="left", pad=8)
+    title = ("Distribution across reconstructed basins, held-out time period" if pilot
+             else "Distribution across held-out basins")
+    ax1.set_title(title, color=INK, fontsize=11, loc="left", pad=8)
     ax1.legend(frameon=False, loc="upper left", fontsize=9, labelcolor=INK)
     style(ax1)
 

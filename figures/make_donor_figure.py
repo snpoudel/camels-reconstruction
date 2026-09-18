@@ -83,12 +83,8 @@ def draw_network(ax, runs_dir, k, pw, loc_csv="data/camels531.csv", f_override=N
     ax.set_ylabel("latitude", color=INK, fontsize=10)
     ax.legend(frameon=False, loc="lower left", fontsize=8.5, labelcolor=INK,
               handletextpad=0.4, borderpad=0.2)
-    if f_override is not None:
-        title = (f"Donor links actually used, reconstruction (gauged), fold {f['fold']}, "
-                f"group {f['target_group']} (K = {k}, p = {pw:g})")
-    else:
-        title = f"Donor links actually used, fold {f['fold']} (K = {k}, p = {pw:g})"
-    return f["fold"], title
+    target_group = f["target_group"] if f_override is not None else None
+    return f["fold"], target_group
 
 
 def main(runs_dir="runs", out=None, f_override=None, pilot=False, metric="nse"):
@@ -104,10 +100,14 @@ def main(runs_dir="runs", out=None, f_override=None, pilot=False, metric="nse"):
         n, nf = sum(len(f["held"]) for f in folds), len(folds)
 
     fig, ax = plt.subplots(figsize=(6.8, 5.6))
-    fold, title = draw_network(ax, runs_dir, k, p, f_override=f_override)
+    fold, target_group = draw_network(ax, runs_dir, k, p, f_override=f_override)
     style(ax)
 
+    title = (f"Reconstruction in training basins using donor gauges (K = {k})" if pilot
+             else f"Reconstruction in held-out basins using donor gauges (K = {k})")
     fold_txt = f"fold {fold}" if nf == 1 else f"all {nf} folds"
+    if pilot:
+        fold_txt += f", group {target_group}"
     basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
     caption = (f"{n} {basin_word} basins, {fold_txt}. K and p held at the values the pipeline "
               f"selected inside the training basins; the map shows fold {fold}'s network only.")
@@ -115,8 +115,8 @@ def main(runs_dir="runs", out=None, f_override=None, pilot=False, metric="nse"):
         caption += (" Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
                     "pool, not the full pool a real deployment or the PUB cell has.")
     fig.text(0.01, 0.015, textwrap.fill(caption, 110), fontsize=8.5, color=MUTE, va="bottom")
-    fig.subplots_adjust(left=0.10, right=0.97, bottom=0.19, top=0.82)
-    fig.text(0.10, 0.97, textwrap.fill(title, 58), color=INK, fontsize=11, va="top")
+    fig.subplots_adjust(left=0.10, right=0.97, bottom=0.19, top=0.86)
+    fig.text(0.10, 0.97, title, color=INK, fontsize=11.5, va="top")
     out_stem = "recon_gauged_donor_map" if pilot else "recon_ungauged_donor_map"
     out = out or f"{HERE}/{out_stem}_{metric}.png"
     fig.savefig(out, dpi=200, facecolor="white")

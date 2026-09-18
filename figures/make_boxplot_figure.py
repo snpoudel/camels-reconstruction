@@ -15,9 +15,14 @@ The flow bands are cut on the OBSERVED flow (Yilmaz et al. 2008), so "high-flow 
 model's error on the days the river really was high, not on the days it predicted high.
 
 For the bias panels zero is the target and the dashed line marks it, so a box that straddles
-zero more tightly is better regardless of which side it sits on. For KGE higher is better;
-for RMSE lower is better. Each panel says which way is good, because the direction changes
-between them and a reader should not have to remember.
+zero more tightly is better regardless of which side it sits on.
+
+Each box is drawn over its own basins as a faint jittered scatter, so the box summarises what
+is actually visible underneath it rather than standing in for it. The axis is scaled to the
+drawn whiskers, not the full data range, so a handful of extreme basins (percent bias on
+near-zero-flow streams can run to five figures) do not flatten every other box in the panel;
+the bracketed count under each box is how many of that box's basin-values fall outside the
+shown range.
 
 Colour: `figures/palette.py` slots 0 and 1, validated there (normal dE 33.6, CVD >= 24.5).
 Boxes are also separated in position and labelled on the x-axis, so identity never rests on
@@ -26,6 +31,7 @@ colour alone.
 import argparse
 import os
 import sys
+import textwrap
 
 import matplotlib
 matplotlib.use("Agg")
@@ -40,12 +46,12 @@ from src.config import PERIODS  # noqa: E402
 from src.correct import SCORERS  # noqa: E402
 
 PANELS = [
-    ("kge", "KGE", "higher is better", False),
-    ("rmse", "RMSE  (mm/day)", "lower is better", False),
-    ("pbias", "overall bias  (%)", "zero is better", True),
-    ("bias_high", "bias, top 10% of flows  (%)", "zero is better", True),
-    ("bias_mid", "bias, middle 30-90%  (%)", "zero is better", True),
-    ("bias_low", "bias, bottom 30%  (%)", "zero is better", True),
+    ("kge", "KGE", False),
+    ("rmse", "RMSE  (mm/day)", False),
+    ("pbias", "overall bias  (%)", True),
+    ("bias_high", "bias, top 10% of flows  (%)", True),
+    ("bias_mid", "bias, middle 30-90%  (%)", True),
+    ("bias_low", "bias, bottom 30%  (%)", True),
 ]
 
 
@@ -72,8 +78,9 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse")
     raw, cor, folds, settings = collect(metrics_csv)
     period_label = test_period_label(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
+    rng = np.random.default_rng(0)
 
-    for ax, (col, title, direction, centred) in zip(axes.ravel(), PANELS):
+    for ax, (col, title, centred) in zip(axes.ravel(), PANELS):
         a = raw[col].to_numpy(); b = cor[col].to_numpy()
         a, b = a[np.isfinite(a)], b[np.isfinite(b)]
         bp = ax.boxplot([a, b], positions=[0, 1], widths=0.52, patch_artist=True,
@@ -82,22 +89,27 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse")
                         capprops=dict(color=MUTE, lw=1.0))
         for patch, color in zip(bp["boxes"], (RAW, CORRECTED)):
             patch.set_facecolor(color)
-            patch.set_alpha(0.75)
+            patch.set_alpha(0.70)
             patch.set_edgecolor("white")      # 2px surface gap between adjacent fills
             patch.set_linewidth(1.6)
+            patch.set_zorder(3)
+        for element in ("medians", "whiskers", "caps"):
+            for line in bp[element]:
+                line.set_zorder(3)
         if centred:
             ax.axhline(0, color=MUTE, lw=0.9, ls=(0, (4, 3)), zorder=1)
+        # Faint jittered points behind each box: the box summarises what is actually there
+        # rather than standing in for it. Fixed seed so the figure is reproducible.
+        for x, vals, color in ((0, a, RAW), (1, b, CORRECTED)):
+            jitter = rng.uniform(-0.16, 0.16, size=len(vals))
+            ax.scatter(x + jitter, vals, s=5, color=color, alpha=0.30, linewidths=0, zorder=2)
         # medians printed: the boxes are close on several panels and the reader should not
         # have to estimate the difference off the ink.
         for x, v in ((0, np.median(a)), (1, np.median(b))):
             ax.annotate(f"{v:.2f}", (x, v), xytext=(0, 0), textcoords="offset points",
-                        ha="center", va="center", fontsize=8.5, color=INK,
+                        ha="center", va="center", fontsize=8.5, color=INK, zorder=4,
                         bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.85))
-        ax.set_xticks([0, 1])
-        ax.set_xticklabels(["LSTM", "+ correction"], fontsize=9, color=INK)
         ax.set_title(title, color=INK, fontsize=10, loc="left", pad=6)
-        ax.text(1.0, 1.015, direction, transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=8, color=MUTE)
         ax.grid(True, axis="y", color=GRID, lw=0.7, zorder=0)
         ax.set_axisbelow(True)
         for side in ("top", "right"):
@@ -114,11 +126,12 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse")
             lo, hi = min(lo, 0.0), max(hi, 0.0)
         pad = (hi - lo) * 0.16 + 1e-9
         ax.set_ylim(lo - pad, hi + pad)
-        n_off = int((a < lo - pad).sum() + (a > hi + pad).sum()
-                    + (b < lo - pad).sum() + (b > hi + pad).sum())
-        if n_off:
-            ax.text(0.02, 0.04, f"{n_off} basin-values beyond axis", transform=ax.transAxes,
-                    fontsize=7.5, color=MUTE, ha="left", va="bottom")
+        n_off_a = int((a < lo - pad).sum() + (a > hi + pad).sum())
+        n_off_b = int((b < lo - pad).sum() + (b > hi + pad).sum())
+        label = lambda base, n: f"{base}\n({n})" if n else base  # noqa: E731
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels([label("LSTM", n_off_a), label("+ correction", n_off_b)],
+                           fontsize=9, color=INK)
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
@@ -126,18 +139,19 @@ def main(metrics_csv, out=None, runs_dir="runs", pilot=False, selected_on="nse")
                               for fd, (k, lam, pw) in zip(folds, settings))
                     if len(folds) < 4 else "K, $\\lambda$, and p selected per fold")
     caption = (f"{len(raw)} {basin_word} basins, {fold_txt}, test period {period_label}.  "
-              f"Boxes: quartiles and median; whiskers 1.5 IQR, outliers omitted.  "
-              f"{settings_txt}, chosen to maximise {selected_on.upper()} inside the training "
-              f"basins only.")
+              f"Boxes: quartiles and median; whiskers 1.5 IQR, outliers omitted; dots are "
+              f"individual basins, jittered.  (n) under a box is how many of its basin-values "
+              f"fall beyond the shown axis.  {settings_txt}, chosen to maximise "
+              f"{selected_on.upper()} inside the training basins only.")
     if pilot:
         caption += ("  Single-(fold, group) pilot: donors are ~5/6 of that fold's training "
                     "pool, not the full pool a real deployment or the PUB cell has.")
-    fig.text(0.008, 0.012, caption, fontsize=8.5, color=MUTE)
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.text(0.008, 0.012, textwrap.fill(caption, 145), fontsize=8, color=MUTE, va="bottom")
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
     out = out or f"{HERE}/recon_ungauged_metrics_boxplots.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
-    for col, title, _, _ in PANELS:
+    for col, title, _ in PANELS:
         print(f"  {title:<32} {raw[col].median():+8.3f} -> {cor[col].median():+8.3f}")
 
 

@@ -27,6 +27,7 @@ caption, and no line needs to be told apart from another. Colour: `figures/palet
 import argparse
 import os
 import sys
+import textwrap
 
 import matplotlib
 matplotlib.use("Agg")
@@ -66,7 +67,7 @@ def main(tuning="runs/recon_ungauged_tuning_nse.csv", out=None, pilot=False, met
     p_grid = sorted(df.p.unique())
     p_pos = {pw: i for i, pw in enumerate(p_grid)}
 
-    fig, (axk, axl, axp) = plt.subplots(1, 3, figsize=(15.5, 4.6))
+    fig, (axk, axl, axp) = plt.subplots(1, 3, figsize=(8.0, 4.1), sharey=True)
     single = len(folds) == 1
     lw = 2.2 if single else 1.5
     alpha = 1.0 if single else 0.75
@@ -94,53 +95,54 @@ def main(tuning="runs/recon_ungauged_tuning_nse.csv", out=None, pilot=False, met
         axp.plot([p_pos[best.p]], [best.score], "o", ms=7, color=CORRECTED,
                  markeredgecolor="white", markeredgewidth=1.5, zorder=5)
 
+    # Too many K values to label every tick in a narrow panel -- thin to ~6 evenly spaced labels.
+    step = max(1, -(-len(k_grid) // 6))
     axk.set_xticks(range(len(k_grid)))
-    axk.set_xticklabels(k_grid)
-    axk.set_xlabel("K, number of neighbouring gauges", color=INK, fontsize=10)
-    axk.set_title("(a)  number of gauges consulted", color=INK, fontsize=11, loc="left", pad=8)
-    axl.set_xlabel("$\\lambda$, fraction of the neighbours' error applied", color=INK, fontsize=10)
-    axl.set_title("(b)  how much of their error to believe", color=INK, fontsize=11,
-                  loc="left", pad=8)
+    axk.set_xticklabels([str(k) if i % step == 0 else "" for i, k in enumerate(k_grid)])
+    axk.set_xlabel("K, gauges consulted", color=INK, fontsize=10)
+    axk.set_title("(a)  gauges consulted", color=INK, fontsize=10.5, loc="left", pad=8)
+    axl.set_xlabel("$\\lambda$, fraction of error applied", color=INK, fontsize=10)
+    axl.set_title("(b)  error trusted", color=INK, fontsize=10.5, loc="left", pad=8)
     axp.set_xticks(range(len(p_grid)))
     axp.set_xticklabels(p_grid)
-    axp.set_xlabel("p, IDW power  (weight $\\propto 1/d^p$)", color=INK, fontsize=10)
-    axp.set_title("(c)  how steeply weight favours the nearest gauges", color=INK, fontsize=11,
-                  loc="left", pad=8)
+    axp.set_xlabel("p, IDW power", color=INK, fontsize=10)
+    axp.set_title("(c)  distance weighting", color=INK, fontsize=10.5, loc="left", pad=8)
 
-    lines = ("one line per fold" if not single else "one fold")
-    for ax, held in ((axk, "$\\lambda$ and p at each fold's optimum"),
-                     (axl, "K and p at each fold's optimum"),
-                     (axp, "K and $\\lambda$ at each fold's optimum")):
-        ax.set_ylabel(f"median {metric_name} over cross-validation groups", color=INK, fontsize=10)
-        ax.plot([], [], color=CORRECTED, lw=lw, alpha=alpha,
-                label=f"{lines}, {held}")
+    line_label = "per-fold profile" if not single else "profile"
+    for ax in (axk, axl, axp):
+        ax.plot([], [], color=CORRECTED, lw=lw, alpha=alpha, label=line_label)
         ax.plot([], [], "o", ms=7, color=CORRECTED, markeredgecolor="white", markeredgewidth=1.5,
-                label="that fold's cross-validation optimum")
-        ax.legend(frameon=False, loc="lower right", fontsize=8.5, labelcolor=INK)
+                label="fold optimum")
+        ax.legend(frameon=False, loc="lower right", fontsize=8, labelcolor=INK)
         # NSE and KGE surfaces don't necessarily share a range -- pad around the data rather
         # than assume NSE's usual [0.5, 1.03].
         lo, hi = min(df.score.min(), 0.5), max(df.score.max(), 1.0)
         ax.set_ylim(lo - 0.03, hi + 0.03)
         style(ax)
+    axl.tick_params(labelleft=False)
+    axp.tick_params(labelleft=False)
+    fig.supylabel(f"median {metric_name} over cross-validation groups", color=INK, fontsize=9.5)
 
     basin_word = "reconstructed-group" if pilot else "training"
-    fig.suptitle(f"Cross-validation for K, $\\lambda$, and the IDW power p, within the "
-                f"{basin_word} basins, selected to maximise {metric_name}",
-                 fontsize=12.5, color=INK, x=0.012, ha="left", y=0.975)
+    fig.suptitle(f"Cross-validation for K, $\\lambda$, p  ({basin_word} basins, max {metric_name})",
+                 fontsize=11.5, color=INK, x=0.012, ha="left", y=0.975)
     krange = f"K = {opt_k[0]}" if len(set(opt_k)) == 1 else f"K in [{min(opt_k)}, {max(opt_k)}]"
     lrange = (f"$\\lambda$ = {opt_l[0]:g}" if len(set(opt_l)) == 1
               else f"$\\lambda$ in [{min(opt_l):g}, {max(opt_l):g}]")
     prange = (f"p = {opt_p[0]:g}" if len(set(opt_p)) == 1
               else f"p in [{min(opt_p):g}, {max(opt_p):g}]")
     caption = (f"{len(folds)} fold{'s' if len(folds) > 1 else ''}, {n_basins} {basin_word} "
-              f"basins each, scored leave-one-group-out.  Optima: {krange}, {lrange}, {prange}.  "
+              f"basins each, scored leave-one-group-out.  Each line holds the other two "
+              f"constants at that fold's optimum.  Optima: {krange}, {lrange}, {prange}.  "
               f"$\\lambda$ = 0 is the uncorrected model.  No held-out basin is used here.")
     if pilot:
         caption += ("  Single-(fold, group) pilot: this is the gauged-reconstruction cell "
                     "(OOS-time), not the PUB cell -- donors are ~5/6 of the fold's training "
                     "pool, not the full pool a real deployment or the PUB cell has.")
-    fig.text(0.012, 0.015, caption, fontsize=8.5, color=MUTE)
-    fig.tight_layout(rect=(0, 0.045, 1, 0.945))
+    wrapped = textwrap.wrap(caption, 108)
+    fig.text(0.012, 0.015, "\n".join(wrapped), fontsize=8, color=MUTE, va="bottom")
+    bottom = 0.07 + 0.028 * len(wrapped)
+    fig.tight_layout(rect=(0.02, bottom, 1, 0.90))
     out_stem = "recon_gauged_hyperparameters" if pilot else "recon_ungauged_hyperparameters"
     out = out or f"{HERE}/{out_stem}_{metric}.png"
     fig.savefig(out, dpi=200, facecolor="white")
