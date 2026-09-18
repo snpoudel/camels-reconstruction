@@ -20,6 +20,76 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-18 — KGE-only reporting going forward, tie-break rerun, and a simpler donor figure
+
+**What I ran** — Follow-on to the tie-break commit from last session (`319f860`): when several
+choices of the correction's three settings score almost the same on cross-validation, the
+pipeline now takes the simplest of any choice within 0.001 of the best-scoring one, rather than
+the single best-scoring one outright. First, the correction pipeline was re-run under that rule
+for both cells: the 531 basins the model never saw during training ("PUB"), and the pilot that
+simulates a gauge going dark partway through (76 basins on one split). Second, a decision was
+made to report only the settings chosen to maximise Kling-Gupta efficiency (KGE) going forward,
+not Nash-Sutcliffe efficiency (NSE) as well, so the NSE-maximising rerun was stopped partway
+through once that was clear, and only KGE-selected figures are kept from here on; `--metric nse`
+still works on every script, so NSE can be regenerated on request. Third, the donor-network
+figure was cut down to a single panel: it used to also show how the correction's benefit fades
+as donors are pushed farther away, but that panel needed its own expensive per-basin distance
+sweep, and the network map alone already makes "are the donors nearby" obvious without it. A
+separate coherence figure that nothing else used was deleted outright. Commit `e246490`.
+
+**What came out**
+
+A caveat surfaced while writing this up: `python -m src.correct`'s own on-screen summary line
+always reports NSE, even when `--metric kge` was used to choose the settings -- a pre-existing
+mislabeling in that script's printout, not something introduced today. The saved CSV is correct
+either way (it carries every measure, not just the one being optimised); only the terminal text
+is misleading. The numbers below are read from the CSV directly, not the terminal.
+
+*The 531 basins the model never saw, all seven splits pooled, settings chosen to maximise KGE:*
+
+| | before correction | after correction |
+|---|---|---|
+| median KGE | 0.693 | 0.709 |
+| basins improved (by KGE) | -- | 62% |
+| basins hurt by more than 0.05 KGE | -- | 100 of 531 |
+
+That gain (0.693 to 0.709) is a little smaller than the 0.693-to-0.712 gain the entry directly
+below reported for the pre-tie-break run, and the settings behind it are simpler: the number of
+donor gauges consulted per split now ranges 3 to 11, versus 3 to 27 before. That is the tie-break
+rule doing what it is meant to do -- when several settings score almost the same in
+cross-validation, prefer the plainer one -- and here that trade cost a little KGE. Whether that
+trade is worth it is a judgement call, not a correctness question.
+
+*The gauge-going-dark pilot, one split, 76 basins, settings chosen to maximise KGE:*
+
+| | before correction | after correction |
+|---|---|---|
+| pilot (gauge going dark), KGE | 0.804 | 0.857 |
+| same split's real PUB basins, KGE | 0.717 | 0.714 |
+
+The pilot's own gain (0.804 to 0.857) is close to the last time this was logged (0.804 to 0.852)
+-- consistent, not a new result. The same split-specific exception noted before reproduces again
+here: on this one split, KGE-maximising settings leave that split's real basins' KGE very
+slightly worse, not better.
+
+For the PUB cell, the correction stops helping, on average, past 128 km from the nearest usable
+donor. `analysis/leak_audit.py` passes cleanly (all six checks) on today's code.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- The `python -m src.correct` terminal printout's NSE-only mislabeling under `--metric kge`
+  (found while writing this entry) is still there -- harmless for anything reading the CSV
+  directly, but worth a one-line fix if anyone starts trusting the terminal output on its own.
+- `README.md` and `METHOD.md` still describe only the NSE-maximising, two-panel-donor-figure
+  pipeline; not updated today.
+- Figure and `runs/` filenames still carry `_nse`/`_kge` even though only KGE is generated now,
+  in case NSE gets regenerated later -- the suffix is what keeps it unambiguous.
+
+---
+
 ## 2026-09-18 — running both NSE- and KGE-maximising settings end to end, for both cells
 
 **What I ran** — The correction's three settings — how many nearby gauges to borrow from,
