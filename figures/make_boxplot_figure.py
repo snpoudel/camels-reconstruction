@@ -26,14 +26,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
-from src.correct import (apply_all, default_target_group, find_fold,  # noqa: E402
-                         load_all, reconstruct_gauged)
-from src.evaluate import metrics  # noqa: E402
 
 PANELS = [
     ("kge", "KGE", "higher is better", False),
@@ -53,27 +51,19 @@ def test_period_label(runs_dir):
     return f"{t0[:4]}-{t1[:4]}"
 
 
-def collect(runs_dir="runs", folds_override=None):
-    if folds_override is not None:
-        got, note = folds_override, "reconstruction pilot"
-    else:
-        got, note = apply_all(runs_dir=runs_dir)
-    if not got:
-        raise SystemExit(note)
-    import pandas as pd
-    raw, cor, folds, settings = [], [], [], []
-    for f in got:
-        obs = f["obs"][f["held"]]
-        raw.append(metrics(f["raw"], obs))
-        cor.append(metrics(f["corrected"], obs))
-        folds.append(f["fold"])
-        settings.append((f["k"], f["lam"], f["p"]))
-    return (pd.concat(raw, ignore_index=True), pd.concat(cor, ignore_index=True),
-            folds, settings)
+def collect(metrics_csv):
+    """Read the metrics `src/correct.py` (or `analysis/gauged_reconstruction.py`) already wrote,
+    rather than repeating their K x lambda x p grid search here."""
+    df = pd.read_csv(metrics_csv)
+    raw = df.query("variant == 'vanilla'")
+    cor = df.query("variant == 'vanilla + correction'")
+    folds = sorted(df.fold.unique())
+    settings = [tuple(raw.query("fold == @f")[["k", "lam", "p"]].iloc[0]) for f in folds]
+    return raw, cor, folds, settings
 
 
-def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
-    raw, cor, folds, settings = collect(runs_dir, folds_override)
+def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
+    raw, cor, folds, settings = collect(metrics_csv)
     period_label = test_period_label(runs_dir)
     fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.6))
 
@@ -146,20 +136,16 @@ def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--metrics", default=None)
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--fold", type=int, default=None,
-                    help="build the gauged-reconstruction pilot for this outer fold instead of "
-                    "the real PUB folds")
-    ap.add_argument("--target-group", type=int, default=None,
-                    help="which inner group goes dark (default: smallest available)")
+    ap.add_argument("--pilot", action="store_true",
+                    help="metrics CSV is the gauged-reconstruction pilot's "
+                    "(runs/recon_gauged_metrics.csv), not the PUB one")
     a = ap.parse_args()
 
-    if a.fold is None:
-        main(a.runs, a.out)
-    else:
-        f = find_fold(load_all(a.runs), a.fold)
-        target_group = a.target_group if a.target_group is not None else default_target_group(f)
-        pilot, _ = reconstruct_gauged(f, target_group)
-        main(a.runs, a.out or f"{HERE}/recon_gauged_metrics_boxplots.png",
-             folds_override=[pilot], pilot=True)
+    metrics_csv = a.metrics or (f"{a.runs}/recon_gauged_metrics.csv" if a.pilot
+                                else f"{a.runs}/recon_ungauged_metrics.csv")
+    out = a.out or (f"{HERE}/recon_gauged_metrics_boxplots.png" if a.pilot
+                    else f"{HERE}/recon_ungauged_metrics_boxplots.png")
+    main(metrics_csv, out, a.runs, pilot=a.pilot)

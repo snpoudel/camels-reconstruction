@@ -2,14 +2,9 @@
 
     python figures/make_cdf_figure.py    # -> figures/recon_ungauged_cdf_nse.png
 
-Left: the empirical CDF across held-out (ungauged) basins. Each basin contributes one point --
-the score of its seed-mean hydrograph -- so a curve lying to the right is winning at every
-quantile it is right of, not merely on average.
-
-Right: the same basins paired. The correction is applied to each basin's own hydrograph, so
-raw and corrected are matched and the honest summary is the per-basin change, not the shift
-between two independent distributions. The count above and below zero is printed on the panel
-because a median gain says nothing about how often the method hurts.
+The empirical CDF across held-out (ungauged) basins. Each basin contributes one point -- the
+score of its seed-mean hydrograph -- so a curve lying to the right is winning at every quantile
+it is right of, not merely on average.
 
 Colour: `figures/palette.py` slots 0 and 1 (#2a78d6 blue, #eb6834 orange), validated there --
 normal-vision dE 33.6, protan 24.5, deutan 31.6, all past the >=15 / >=8 thresholds. Identity
@@ -23,14 +18,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
 from src.config import PERIODS  # noqa: E402
-from src.correct import (apply_all, default_target_group, find_fold,  # noqa: E402
-                         load_all, reconstruct_gauged)
-from src.evaluate import metrics  # noqa: E402
 
 
 def test_period_label(runs_dir):
@@ -42,21 +35,15 @@ def test_period_label(runs_dir):
     return f"{t0[:4]}-{t1[:4]}"
 
 
-def collect(runs_dir="runs", folds_override=None):
-    if folds_override is not None:
-        got, note = folds_override, "reconstruction pilot"
-    else:
-        got, note = apply_all(runs_dir=runs_dir)
-    if not got:
-        raise SystemExit(note)
-    raw, cor, folds, settings = [], [], [], []
-    for f in got:
-        obs = f["obs"][f["held"]]
-        raw.append(metrics(f["raw"], obs).nse.to_numpy())
-        cor.append(metrics(f["corrected"], obs).nse.to_numpy())
-        folds.append(f["fold"])
-        settings.append((f["k"], f["lam"], f["p"]))
-    return np.concatenate(raw), np.concatenate(cor), folds, settings
+def collect(metrics_csv):
+    """Read the metrics `src/correct.py` (or `analysis/gauged_reconstruction.py`) already wrote,
+    rather than repeating their K x lambda x p grid search here."""
+    df = pd.read_csv(metrics_csv)
+    raw = df.query("variant == 'vanilla'")
+    cor = df.query("variant == 'vanilla + correction'")
+    folds = sorted(df.fold.unique())
+    settings = [tuple(raw.query("fold == @f")[["k", "lam", "p"]].iloc[0]) for f in folds]
+    return raw.nse.to_numpy(), cor.nse.to_numpy(), folds, settings
 
 
 def style(ax):
@@ -70,11 +57,11 @@ def style(ax):
     ax.tick_params(colors=MUTE, labelsize=9, length=3)
 
 
-def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
-    raw, cor, folds, settings = collect(runs_dir, folds_override)
+def main(metrics_csv, out=None, runs_dir="runs", pilot=False):
+    raw, cor, folds, settings = collect(metrics_csv)
     period_label = test_period_label(runs_dir)
     n = len(raw)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.3))
+    fig, ax1 = plt.subplots(figsize=(6.2, 4.3))
 
     # --- CDF -------------------------------------------------------------------
     for vals, color, label in ((raw, RAW, "LSTM"), (cor, CORRECTED, "LSTM + correction")):
@@ -93,34 +80,6 @@ def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
                   loc="left", pad=8)
     ax1.legend(frameon=False, loc="upper left", fontsize=9, labelcolor=INK)
     style(ax1)
-
-    # --- paired change ----------------------------------------------------------
-    d = cor - raw
-    d = d[np.isfinite(d)]
-    order = np.argsort(d)
-    up, down = (d > 0).sum(), (d < 0).sum()
-    ax2.bar(np.arange(len(d)), d[order], width=1.0,
-            color=np.where(d[order] > 0, CORRECTED, RAW), zorder=3)
-    ax2.axhline(0, color=MUTE, lw=0.9, zorder=2)
-    ax2.set_xlim(-1, len(d))
-    # A percentile bound, not the max: a single-seed hydrograph can have one basin whose
-    # ratio blows up (near-zero observed flow), and letting that basin set the axis crushes
-    # the other 530 into an unreadable band near zero.
-    lim = np.percentile(np.abs(d), 99) * 1.25
-    n_off = int((np.abs(d) > lim).sum())
-    ax2.set_ylim(-lim, lim)
-    ax2.set_xlabel("basins, ranked by change", color=INK, fontsize=10)
-    ax2.set_ylabel("change in NSE", color=INK, fontsize=10)
-    ax2.set_title("Per-basin change, same basins paired", color=INK, fontsize=11,
-                  loc="left", pad=8)
-    ax2.text(0.97, 0.93, f"improved  {up}/{len(d)}  ({up / len(d):.0%})", transform=ax2.transAxes,
-             ha="right", va="top", fontsize=9.5, color=INK)
-    ax2.text(0.97, 0.05, f"worsened  {down}/{len(d)}", transform=ax2.transAxes,
-             ha="right", va="bottom", fontsize=9.5, color=MUTE)
-    if n_off:
-        ax2.text(0.02, 0.05, f"{n_off} basin(s) beyond axis", transform=ax2.transAxes,
-                 ha="left", va="bottom", fontsize=8, color=MUTE)
-    style(ax2)
 
     fold_txt = "fold " + ", ".join(str(f) for f in folds) if len(folds) < 7 else "all 7 folds"
     basin_word = "reconstructed (gauged-but-discontinued)" if pilot else "held-out"
@@ -141,20 +100,16 @@ def main(runs_dir="runs", out=None, folds_override=None, pilot=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--metrics", default=None)
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--fold", type=int, default=None,
-                    help="build the gauged-reconstruction pilot for this outer fold instead of "
-                    "the real PUB folds")
-    ap.add_argument("--target-group", type=int, default=None,
-                    help="which inner group goes dark (default: smallest available)")
+    ap.add_argument("--pilot", action="store_true",
+                    help="metrics CSV is the gauged-reconstruction pilot's "
+                    "(runs/recon_gauged_metrics.csv), not the PUB one")
     a = ap.parse_args()
 
-    if a.fold is None:
-        main(a.runs, a.out)
-    else:
-        f = find_fold(load_all(a.runs), a.fold)
-        target_group = a.target_group if a.target_group is not None else default_target_group(f)
-        pilot, _ = reconstruct_gauged(f, target_group)
-        main(a.runs, a.out or f"{HERE}/recon_gauged_cdf_nse.png",
-             folds_override=[pilot], pilot=True)
+    metrics_csv = a.metrics or (f"{a.runs}/recon_gauged_metrics.csv" if a.pilot
+                                else f"{a.runs}/recon_ungauged_metrics.csv")
+    out = a.out or (f"{HERE}/recon_gauged_cdf_nse.png" if a.pilot
+                    else f"{HERE}/recon_ungauged_cdf_nse.png")
+    main(metrics_csv, out, a.runs, pilot=a.pilot)
