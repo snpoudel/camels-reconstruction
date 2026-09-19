@@ -3,9 +3,15 @@
     python figures/make_cdf.py --cell ungauged    # -> figures/ungauged_cdf.png
     python figures/make_cdf.py --cell gauged      # -> figures/gauged_cdf.png
 
-The empirical cumulative distribution of KGE across basins. Each basin contributes one point --
+The empirical cumulative distribution of NSE across basins. Each basin contributes one point --
 the score of its seed-mean hydrograph -- so a curve lying to the right is winning at every
 quantile it is right of, not merely on average.
+
+NSE here, KGE in the boxplot's first panel, so the two figures cover both and neither repeats
+the other. The settings on the page were still chosen to maximise KGE -- this is deliberately a
+cross-metric view, and the caption says so. The two disagree by more than the axis: the
+correction improves KGE's correlation and bias terms but slightly worsens its variability term,
+which NSE does not charge for, so the NSE gain is about four times the KGE gain.
 
 Colour: palette slots 0 and 1, validated in palette.py (normal-vision dE 33.6, protan 24.5,
 deutan 31.6, all past the >= 15 / >= 8 thresholds). Identity never rests on colour alone: both
@@ -33,7 +39,7 @@ def main(cell):
 
     fig, ax = plt.subplots(figsize=(6.2, 4.4))
     for name, color in SERIES.items():
-        v = np.sort(df.loc[df.variant == name, "kge"].dropna().to_numpy())
+        v = np.sort(df.loc[df.variant == name, "nse"].dropna().to_numpy())
         ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2, zorder=3,
                 label=f"{name}   median {np.median(v):.3f}")
         ax.plot([np.median(v)], [0.5], "o", ms=7, color=color, markeredgecolor="white",
@@ -42,7 +48,7 @@ def main(cell):
 
     ax.set_xlim(-0.2, 1.0)
     ax.set_ylim(0, 1)
-    ax.set_xlabel("KGE, Kling-Gupta efficiency", color=INK, fontsize=LABEL)
+    ax.set_xlabel("NSE, Nash-Sutcliffe efficiency", color=INK, fontsize=LABEL)
     ax.set_ylabel("fraction of basins at or below", color=INK, fontsize=LABEL)
     ax.set_title(f"{CELL_TITLE[cell]}: skill before and after the correction",
                  color=INK, fontsize=TITLE, loc="left", pad=8)
@@ -52,7 +58,8 @@ def main(cell):
     bottom = caption(fig, f"{info['n_basins']} basins, {CELL_BLURB[cell]}, "
                           f"{info['n_folds']} folds, {info['n_seeds']} seeds, test period "
                           f"{info['test_period']}.  {settings_note(fold_settings(df))}, chosen by "
-                          f"cross-validation that never reads the basin being corrected.", 96)
+                          f"cross-validation to maximise KGE, never reading the basin being "
+                          f"corrected; the distribution shown is NSE.", 96)
     fig.tight_layout(rect=(0, bottom, 1, 1))
     out = f"{HERE}/{cell}_cdf.png"
     fig.savefig(out, dpi=200, facecolor="white")

@@ -150,6 +150,9 @@ Median KGE over the pooled 531 basins, and every other measure, before and after
 |---|---|---|
 | median NSE | 0.6756 | **0.7357** |
 | median KGE | 0.6931 | **0.7093** |
+| KGE's r (correlation) | 0.8595 | **0.8870** |
+| KGE's beta (bias ratio) | 1.0748 | **0.9800** |
+| KGE's alpha (variability ratio) | 0.9158 | 0.9021 (worse) |
 | median RMSE (mm/day) | 1.299 | **1.174** |
 | median overall bias | +7.5% | **−2.0%** |
 | bias, top 10% of flows | −9.6% | −12.0% (worse) |
@@ -162,10 +165,17 @@ Read honestly:
   and lowest flow bands all improve; overall bias flips from biased high to nearly balanced.
 - **The exception is the top 10% of flows, which gets worse.** The correction trades a little
   high-flow accuracy for a large reduction in day-to-day error everywhere else.
+- **NSE gains about four times what KGE does, and the components say why.** The correction
+  improves KGE's correlation and bias terms but slightly worsens its variability term: the LSTM
+  is already under-dispersed (alpha < 1), and shrinking toward a weighted mean of neighbours
+  damps variance further. KGE charges for that; NSE does not. Since the settings are selected
+  to maximise KGE, they are tuned against the measure the method gains least on — deliberate,
+  but worth knowing when reading the two numbers side by side.
 - **The pooled median and the paired per-basin gain are different statistics.** Pairing each
-  basin's corrected score against its own raw score gives a median gain of **+0.027 KGE**,
-  bootstrap 95% CI [+0.022, +0.035] — entirely positive. 62% of basins improve, and 100 of 531
-  are hurt by more than 0.05 KGE: the gain is a net, not a guarantee.
+  basin's corrected score against its own raw score gives a median gain of **+0.050 NSE**
+  (bootstrap 95% CI [+0.043, +0.057], 78% of basins improve, 49 hurt by more than 0.05) and
+  **+0.027 KGE** (CI [+0.022, +0.035], 62% improve, 100 hurt by more than 0.05). Entirely
+  positive on both, but a net rather than a guarantee.
 - **Two folds go slightly backwards** (0 and 4) on the pooled median. That is what selecting on
   the training basins costs when a fold's held-out geometry differs from its training geometry;
   it is reported rather than tuned away.
