@@ -20,6 +20,66 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-19 — Five random starts of the all-basins model, and clearing out the settings-comparison side files
+
+**What I ran** — The all-basins model — trained on every one of the 531 basins, so its test-year
+predictions are only out of sample in time, not in space — finished its second batch of random
+starts, bringing that side of the project up to five random starts, matching what the
+basins-held-out side already had. The five starts' day-by-day predictions were averaged per
+basin, and the same neighbour correction used elsewhere was applied: each basin's prediction
+corrected using errors borrowed from all 530 other basins' gauges, with its own gauge masked out
+so it can never be a donor to itself. Settings (how many gauges to borrow from, how sharply to
+favour closer ones, how much of the borrowed error to apply) were chosen the same way as the
+basins-held-out side: search inside six of the seven basin groups at a time, holding the seventh
+out as neither a search target nor a donor. Training commit `8e6cc2e`; pipeline run from repo
+commit `46d0771`.
+
+Also, since the basins-held-out side's comparison of the three ways to choose those settings
+(Kling-Gupta efficiency, Nash-Sutcliffe efficiency, or the model's own training measure) had been
+left as an open question, it was settled: Kling-Gupta efficiency stays the standing choice. The
+two alternative-settings versions of the basins-held-out correction
+(`runs/lstm/ungauged_corrected_nse/` and `_nse_star/`) were deleted to avoid confusion about
+which is the reported result; nothing about how those alternatives are computed changed, so they
+can be regenerated later if the question is reopened.
+
+**What came out**
+
+Median across the 531 basins, before correction and after:
+
+| | uncorrected | corrected |
+|---|---|---|
+| NSE | 0.764 | 0.817 |
+| KGE | 0.788 | 0.825 |
+| RMSE (mm/day) | 1.119 | 0.998 |
+| overall bias | +7.2% | +0.0% |
+| bias, top 10% of flows | −6.9% | −8.4% |
+| bias, middle 30–90% of flows | +16.8% | +6.6% |
+| bias, bottom 30% of flows | +55.2% | +28.4% |
+
+The five random starts individually scored a median Kling-Gupta efficiency between 0.771 and
+0.781 — the correction's gain of 0.037 is more than three times that spread, so this is a real
+improvement, not noise from which random start happened to be averaged in.
+
+Two of the seven basin groups picked a notably wider search than the rest: group 3 picked 21
+nearby gauges to borrow from (the rest picked 3), and group 6 picked a gentler distance weighting
+(p = 1.5 against 3 elsewhere) — both still within the grid's range, so nothing was cut off.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- The figures (`figures/gauged_*.png`) and `figures/metrics_gauged.csv` / `tuning_gauged.csv` now
+  reflect this five-start run; nothing else needs regenerating on the all-basins side.
+- The basins-held-out side (ungauged) is still on three random starts. Two more have finished
+  training, but only for two of the seven basin groups (fold 0 and fold 1) — the rest are still
+  training, and one delivered run (fold 2's fourth start) failed partway through and was not
+  used. Import the remaining random starts once every basin group has five, rather than mixing
+  group-by-group start counts.
+- README/METHOD numbers for the all-basins side should be refreshed from this run once reviewed.
+
+---
+
 ## 2026-09-19 — A third way to choose the correction's settings, and cleaning up how the search picks
 
 **What I ran** — The neighbour correction has three settings chosen per data split by searching

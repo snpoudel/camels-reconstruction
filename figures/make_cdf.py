@@ -44,7 +44,7 @@ def main(cell):
         for name, color in SERIES.items():
             v = np.sort(df.loc[df.variant == name, col].dropna().to_numpy())
             ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2, zorder=3,
-                    label=f"{name}   median {np.median(v):.3f}")
+                    label=f"{name}   median {np.median(v):.2f}")
             ax.plot([np.median(v)], [0.5], "o", ms=7, color=color, markeredgecolor="white",
                     markeredgewidth=1.6, zorder=4)
         ax.axhline(0.5, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=1)

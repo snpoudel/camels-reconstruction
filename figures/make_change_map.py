@@ -100,7 +100,7 @@ def main(cell):
 
         n_worse = int((g < 0).sum())
         n_off = int((np.abs(g) > cap).sum())
-        lines.append(f"{label.split(',')[0]}: median {np.median(g):+.3f}, "
+        lines.append(f"{label.split(',')[0]}: median {np.median(g):+.2f}, "
                      f"{len(gain) - n_worse}/{len(gain)} improved, cap {cap:.2f}, "
                      f"{n_off} beyond it")
 

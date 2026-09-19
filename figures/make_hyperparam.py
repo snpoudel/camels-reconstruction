@@ -114,7 +114,7 @@ def main(cell):
                           f"Each line holds the other two constants at that fold's optimum; "
                           f"markers are the selected values: {', '.join(spans)}.  $\\lambda$ = 0 "
                           f"is the uncorrected model.  The surface itself spans only "
-                          f"{df.score.max() - df.score.min():.3f} KGE -- a wide region scores "
+                          f"{df.score.max() - df.score.min():.2f} KGE -- a wide region scores "
                           f"nearly the same.  No basin is read here to choose the settings "
                           f"applied to it.", 118)
     fig.tight_layout(rect=(0.02, bottom, 1, 0.94))
