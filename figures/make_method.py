@@ -1,6 +1,6 @@
 """The neighbour-residual correction: five steps, each with its equation and a picture.
 
-    python figures/make_method_figure.py    # -> figures/method.png, figures/method.svg
+    python figures/make_method.py    # -> figures/method.png, figures/method.svg
 
 Every step box carries the arithmetic on top and a sketch of the same neighbourhood underneath,
 so the notation can be read straight off the picture: step 1 names the basins (q_1, q_2, q_j at
@@ -18,8 +18,8 @@ figure's own: blue is a gauged basin in every step panel, orange is the ungauged
 
 Nothing here is measured. It is a method diagram: the sketches are schematic (step 5's
 hydrograph is an analytic curve, not a run), and the only numbers on the page -- the search
-grid for K, p and lambda -- are imported from `src.correct` so they cannot drift from the code.
-For the same method on real data see `analysis/tune.py` and `runs/recon_ungauged_metrics.csv`.
+grid for K, p and lambda -- are imported from `src/parameter_tuning.py` so they cannot drift
+from the code. For the same method on real data see `figures/ungauged_hyperparameters.png`.
 
 No footnotes: the distance floor, the epsilon that keeps the logs finite, and the
 renormalisation over donors that reported are all in METHOD.md and belong in the caption.
@@ -31,7 +31,7 @@ nothing complains. Keep the run clean.
 
 Colour: `figures/palette.py` -- slot-0 blue for the uncorrected LSTM and for gauged basins,
 slot-1 orange for the ungauged target and the corrected prediction, matching what
-`make_cdf_figure.py` and `make_boxplot_figure.py` use for "vanilla" vs "vanilla + correction".
+`make_cdf.py` and `make_boxplot.py` use for "LSTM" vs "LSTM + correction".
 Two hues only; ink and grey carry everything else.
 """
 import os
@@ -48,9 +48,10 @@ from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
 matplotlib.rcParams["svg.fonttype"] = "path"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
-from figures.palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from src.correct import K_GRID, LAM_GRID, P_GRID  # noqa: E402
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
+from palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from parameter_tuning import K_GRID, LAM_GRID, P_GRID  # noqa: E402
 
 FIG_W, FIG_H = 11.0, 5.05
 MARGIN, GAP = 0.32, 0.34

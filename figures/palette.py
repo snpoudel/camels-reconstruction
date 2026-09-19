@@ -1,29 +1,70 @@
-"""The one palette every figure in this branch uses, and the check that it is safe.
+"""The one palette and figure style every figure here uses, and the check that it is safe.
 
 Slot order is fixed and never cycled, so a series keeps its colour across figures:
 
-    slot 0  #2a78d6  blue    the uncorrected literature-standard LSTM ("vanilla")
-    slot 1  #eb6834  orange  the same LSTM after the neighbour-residual correction
+    slot 0  #2a78d6  blue    the uncorrected model ("LSTM")
+    slot 1  #eb6834  orange  the same model after the neighbour-residual correction
     slot 2  #1baf7a  teal    reserved -- a third series, if a figure ever needs one
 
-Ink, not colour, carries text:
+Ink, not colour, carries text:  INK #16191c   MUTE #5d6a73   GRID #dfe3e6
 
-    INK  #16191c   MUTE #5d6a73   GRID #dfe3e6
+Everything else here exists so the figures agree with each other: one type scale, one axis
+treatment, one caption block, one pair of series names, one pair of cell titles. Import them
+rather than re-deciding per figure.
 
 Run this file to re-validate:  python figures/palette.py
 It reports OKLab dE (x100) between every simultaneous pair under normal vision and under
-simulated protanopia and deuteranopia (Vienot et al. 1999). Thresholds follow the project's
-convention: normal-vision dE >= 15 and CVD dE >= 8 pass; 6-8 is legal only with a second,
-non-colour encoding; below that, re-step or facet.
+simulated protanopia and deuteranopia (Vienot et al. 1999). Normal-vision dE >= 15 and CVD
+dE >= 8 pass; 6-8 is legal only with a second, non-colour encoding; below that, re-step.
 """
+import textwrap
+
 import numpy as np
 
 BLUE, ORANGE, TEAL = "#2a78d6", "#eb6834", "#1baf7a"
 COLORS = [BLUE, ORANGE, TEAL]
 INK, MUTE, GRID = "#16191c", "#5d6a73", "#dfe3e6"
 
-# Series identity used across this branch's figures.
+# Series identity, used across every figure. The names are the `variant` values in
+# figures/metrics_*.csv, so a figure never invents its own wording for a series.
 RAW, CORRECTED = BLUE, ORANGE
+SERIES = {"LSTM": RAW, "LSTM + correction": CORRECTED}
+
+CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
+CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone dark",
+              "ungauged": "basins held out of training entirely"}
+
+# One type scale, in points.
+TITLE, PANEL, LABEL, TICK, CAPTION = 11.5, 10.5, 10, 9, 8.5
+
+
+def style(ax):
+    """Recessive grid and axes: the data carries the ink, the frame does not."""
+    ax.grid(True, color=GRID, lw=0.7, zorder=0)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(MUTE)
+        ax.spines[side].set_linewidth(0.8)
+    ax.tick_params(colors=MUTE, labelsize=TICK, length=3)
+
+
+def caption(fig, text, width=120):
+    """The caption block, in the same place at the same size on every figure. Returns the
+    bottom margin to leave for it, for the caller's `tight_layout(rect=...)`."""
+    lines = textwrap.wrap(text, width)
+    fig.text(0.012, 0.014, textwrap.fill(text, width), fontsize=CAPTION, color=MUTE, va="bottom")
+    return 0.035 + 0.021 * len(lines)
+
+
+def settings_note(params):
+    """How a caption states the selected settings: spelled out when there are few, summarised
+    when every fold has its own."""
+    if len(params) < 4:
+        return "; ".join(rf"fold {f}: K={int(k)}, $\lambda$={lam:g}, p={p:g}"
+                         for f, k, lam, p in params)
+    return r"K, $\lambda$ and p selected per fold"
 
 
 def _srgb_to_linear(c):
@@ -67,7 +108,7 @@ def delta_e(h1, h2, vision="normal"):
     return float(np.linalg.norm(_oklab(a) - _oklab(b)) * 100)
 
 
-def report(colors=(BLUE, ORANGE), names=("vanilla", "corrected")):
+def report(colors=(BLUE, ORANGE), names=("LSTM", "corrected")):
     print(f"pairs among {len(colors)} simultaneous series")
     worst = {}
     for i in range(len(colors)):
@@ -87,5 +128,5 @@ def report(colors=(BLUE, ORANGE), names=("vanilla", "corrected")):
 if __name__ == "__main__":
     two = report()
     print()
-    three = report(COLORS, ("vanilla", "corrected", "reserved"))
+    three = report(COLORS, ("LSTM", "corrected", "reserved"))
     print(f"\noverall: {'PASS' if two and three else 'REVIEW'}")
