@@ -16,7 +16,7 @@ in time).
 | Path | Contents |
 |---|---|
 | `src/residual_postprocessing.py` | The correction, and where its inputs live on disk |
-| `src/parameter_tuning.py` | K × λ × p grids, the CV surfaces, the tie-break |
+| `src/parameter_tuning.py` | K x lambda x p grids, the CV surfaces, three selection objectives |
 | `src/01_lstm_gauged_correction.py` | Gauged pipeline → `runs/<model>/gauged_corrected/` |
 | `src/02_lstm_ungauged_correction.py` | Ungauged pipeline → `runs/<model>/ungauged_corrected/` |
 | `src/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |

@@ -108,35 +108,60 @@ correction — which is what §6 measures.
 
 **No search ever reads a basin it will go on to correct.** Every basin is some fold's test set,
 so even searching another fold's held-out basins would tune the pooled result on itself. The
-search runs on the cross-validation pool in §3's table and maximises median KGE.
+search runs on the cross-validation pool in §3's table.
 
 `figures/ungauged_hyperparameters.png` draws the surface: one line per fold, a profile through
-that fold's own optimum. The per-fold optima are K in [3, 11], λ in [0.55, 0.80], p in [1.5, 3],
-and the entire surface — every K, every λ, every p, every fold — spans **0.074 KGE**. The
-correction works across a wide region, so cross-validating inside it is cheap insurance rather
-than a load-bearing step. The one genuinely bad corner is K = 1 with large λ: a single
-over-trusted neighbour.
+that fold's own optimum. Selecting on KGE, the per-fold optima are K in [3, 27], λ in
+[0.55, 0.85], p in [1.5, 3], and the entire surface — every K, every λ, every p, every fold —
+spans **0.074 KGE**. The correction works across a wide region. The one genuinely bad corner is
+K = 1 with large λ: a single over-trusted neighbour.
 
-**NSE or KGE as the objective barely matters, and it was measured rather than assumed.**
-Running the whole pipeline under each and comparing basin by basin: selecting on NSE does not
-measurably improve NSE (paired median +0.0011, 95% CI [−0.0000, +0.0026]), costs 0.003 KGE and
-about a percentage point of high-flow bias, and gains about 0.003 mm/day of RMSE. Every
-difference sits far inside the model's own seed-to-seed spread. What does change is how
-complicated the answer is: selecting on KGE picks K = 3–11, selecting on NSE picks K = 9–27 to
-reach the same place. KGE stays the default. `--select-on nse` reproduces the comparison, and
-`EXPERIMENTS.md` has the full table.
+**The grid's own bounds were tested, not assumed, and the two constants behave differently.**
+K runs odd 1–39: several folds select near that ceiling under NSE and NSE* (below), but the
+cross-validation score and the held-out score move together there and both flatten out — a
+fold's held-out loss under NSE* keeps improving in step with its CV score all the way to K = 39,
+never diverging. That is a flat plateau, not a truncated search, so K stays uncapped at 39.
+p runs 1–3, and extending it is different: at high p, weight concentrates on the single nearest
+donor, so the cross-validation surface keeps climbing indefinitely (checked to p = 5) while the
+held-out score for the pinned fold gets *worse* at every step (one fold: p = 3 → 0.7248 held-out
+KGE, p = 4 → 0.7200, p = 5 → 0.7184, while its own cross-validation score rose the whole time).
+That is overfitting to the cross-validation pool, not information the grid was cutting off, so
+p's ceiling stays at 3.
 
-**Ties break toward the simplest triple.** The raw argmax over a flat region is noise in the
-fourth decimal dressed up as a choice, so `parameter_tuning.pick` takes, among every (K, λ, p)
-within `TOLERANCE = 0.001` of the maximum, the smallest K, then λ, then p. K and λ are simpler
-when smaller for the same reason — K is how much of the donor network the correction leans on,
-λ how far it shrinks toward the uncorrected model (λ = 0 *is* the uncorrected model).
+**Selection takes the raw argmax — no tie-break.** An earlier version broke ties toward the
+simplest (K, λ, p) within a tolerance of the true maximum, on the theory that the flat surface
+made the argmax noise. Measured on held-out basins, that tie-break *cost* rather than saved:
+raw argmax scores 0.7117 median KGE against 0.7093 with the tie-break in place. It is gone.
 
-p is not that kind of knob and is never fixed to a constant. Holding K and λ at their optimum,
-p alone swings the score by 0.01–0.04, ten to forty times `TOLERANCE`, because it sets how
-concentrated the weight is on the nearest donor versus spread across all K (the effective donor
-count roughly halves every time p doubles). Smaller p is still preferred *within* genuinely tied
-cells, but the grid keeps searching it, because it is doing real work.
+**How the 455 cross-validation basins are combined into one number was also tested.** The
+default pools every basin from every one of the six inner leave-one-group-out rotations and
+takes one median. The textbook alternative — median within each of the six groups, then the
+arithmetic mean of those six numbers — was compared on held-out basins: every one of the 7
+folds picked *different* settings under the two rules, yet the outcome was statistically
+identical (paired median +0.0001 KGE, 95% CI [−0.0001, +0.0009], crossing zero). The simpler
+pooled median stays.
+
+**NSE and KGE as the selection objective now give genuinely different results.** With the
+tie-break gone and the grid settled, selecting on NSE instead of KGE is no longer a wash: paired
+against each other on the same held-out basins, NSE-selection gains **+0.0025 NSE** (95% CI
+[+0.0006, +0.0037]) but costs **−0.0051 KGE** ([−0.0074, −0.0023]), −0.004 mm/day RMSE
+improvement reversed, and 1.5 percentage points more high-flow bias — a real trade, not noise,
+unlike the earlier (tie-break, narrower-grid) measurement that found no difference. KGE stays
+the default because the two are genuinely different bets and KGE's correlation and bias terms
+matter to this project; `--select-on nse` reproduces the comparison.
+
+**A third objective, matching the LSTM's own training loss, was added and beats both.**
+`nse_star` selects on the basin-normalised squared-error loss the LSTM itself was trained to
+minimise (Kratzert et al. 2019's NSE\*: squared error divided by each basin's *training-period*
+flow standard deviation, pooled and averaged rather than taking a per-basin median, since that
+loss's own outlier behaviour is already controlled by the per-basin normalisation). Paired
+against the other two on held-out basins, NSE\*-selection beats NSE-selection on *both* NSE
+(+0.0012, CI [+0.0003, +0.0021]) and KGE (+0.0025, CI [+0.0001, +0.0036]) at once — not a
+trade — while giving up a little KGE against KGE-selection itself (−0.0023, CI
+[−0.0041, −0.0004]). Small, but every one of those intervals excludes zero. `--select-on
+nse_star` runs it; the model's predictions must carry a `sigma` array (the training-period flow
+std of each basin) alongside the hydrograph for this objective to be available, which
+`src/lstm/common.py:seed_mean` now writes automatically.
 
 ## 6. What it buys
 
@@ -145,28 +170,28 @@ All 531 basins, 7 folds, 3 seeds averaged per fold, K/λ/p selected per fold to 
 | fold | LSTM | + correction | gain | K, λ, p |
 |---|---|---|---|---|
 | 0 | 0.7169 | 0.7137 | −0.0032 | 3, 0.65, 1.5 |
-| 1 | 0.7120 | 0.7229 | +0.0110 | 7, 0.80, 2 |
-| 2 | 0.6627 | 0.6829 | +0.0202 | 5, 0.80, 2 |
+| 1 | 0.7120 | 0.7240 | +0.0120 | 7, 0.85, 3 |
+| 2 | 0.6627 | 0.6764 | +0.0136 | 7, 0.85, 2 |
 | 3 | 0.6800 | 0.7156 | +0.0356 | 5, 0.55, 2 |
-| 4 | 0.6930 | 0.6784 | −0.0146 | 11, 0.60, 3 |
+| 4 | 0.6930 | 0.6750 | −0.0180 | 27, 0.60, 3 |
 | 5 | 0.6979 | 0.7346 | +0.0367 | 3, 0.55, 3 |
-| 6 | 0.6833 | 0.7253 | +0.0420 | 3, 0.60, 3 |
-| **all 531** | **0.6931** | **0.7093** | **+0.0162** | — |
+| 6 | 0.6833 | 0.7248 | +0.0415 | 5, 0.60, 3 |
+| **all 531** | **0.6931** | **0.7117** | **+0.0186** | — |
 
 Median KGE over the pooled 531 basins, and every other measure, before and after:
 
 | | LSTM | + correction |
 |---|---|---|
-| median NSE | 0.6756 | **0.7357** |
-| median KGE | 0.6931 | **0.7093** |
+| median NSE | 0.6756 | **0.7354** |
+| median KGE | 0.6931 | **0.7117** |
 | KGE's r (correlation) | 0.8595 | **0.8870** |
-| KGE's beta (bias ratio) | 1.0748 | **0.9800** |
-| KGE's alpha (variability ratio) | 0.9158 | 0.9021 (worse) |
-| median RMSE (mm/day) | 1.299 | **1.174** |
+| KGE's beta (bias ratio) | 1.0748 | **0.9803** |
+| KGE's alpha (variability ratio) | 0.9158 | 0.9031 (worse) |
+| median RMSE (mm/day) | 1.299 | **1.165** |
 | median overall bias | +7.5% | **−2.0%** |
 | bias, top 10% of flows | −9.6% | −12.0% (worse) |
 | bias, middle 30–90% | +21.4% | **+9.4%** |
-| bias, bottom 30% | +73.4% | **+35.8%** |
+| bias, bottom 30% | +73.4% | **+35.5%** |
 
 Read honestly:
 

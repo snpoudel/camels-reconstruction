@@ -318,7 +318,20 @@ def seed_mean(run_dirs, out_npz, cache_dir="data/cache"):
         m[[idx[b] for b in list(p["basins"])]] = p["test"]
         mats.append(m)
         test_t = p["test_t"]
+    # The training-period flow std this model's loss normalised by, published alongside the
+    # predictions so the post-processing can select on the same objective without importing
+    # anything from here -- and so a model trained elsewhere can state its own. It must be the
+    # sigma `prepare` actually built, warm-up trim included, or it is a different constant than
+    # the one the loss divided by.
+    seq_len = json.load(open(f"{run_dirs[0]}/config.json"))["seq_len"]
+    Q = np.load(f"{cache_dir}/Q.npy")
+    dates = np.load(f"{cache_dir}/dates.npy")
+    lo, hi = (np.datetime64(d) for d in TRAIN_PERIOD)
+    idx = np.flatnonzero((dates >= lo) & (dates <= hi))
+    tr0, tr1 = max(idx[0], seq_len - 1), idx[-1] + 1
+    sigma = np.nanstd(Q[:, tr0:tr1], axis=1)
+
     os.makedirs(os.path.dirname(out_npz), exist_ok=True)
     np.savez_compressed(out_npz, pred=np.mean(mats, axis=0), test_t=test_t,
-                        basins=np.array(basins), n_seeds=len(mats))
+                        basins=np.array(basins), n_seeds=len(mats), sigma=sigma)
     print(f"-> {out_npz}   {len(mats)} seeds averaged")

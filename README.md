@@ -26,17 +26,21 @@ the results.
 | **ungauged** | the basin was never in training — out of sample in space and time | that fold's 455 training basins |
 | **gauged** | the basin's gauge stops reporting for the test years — out of sample in time | all 530 other basins, self masked |
 
-Ungauged, 531 CAMELS-US basins, 7 folds, 3 seeds: **median KGE 0.693 → 0.709**, median NSE
-0.676 → 0.736. The published benchmark for this setting is median NSE 0.693 (Kratzert et al.
+Ungauged, 531 CAMELS-US basins, 7 folds, 3 seeds: **median KGE 0.693 → 0.712**, median NSE
+0.676 → 0.735. The published benchmark for this setting is median NSE 0.693 (Kratzert et al.
 2019, WRR 55, 11344 — same 531 gauge IDs, same train/test windows, a 10-member ensemble).
 The gauged cell is pending its all-basins model.
+
+K, λ and p are selected by cross-validation on three possible objectives -- KGE (default), NSE,
+or NSE* (the basin-normalised loss the LSTM itself was trained on, `--select-on nse_star`),
+measured against each other rather than assumed; see METHOD.md 5.
 
 ## Layout
 
 | path | contents |
 |---|---|
 | `src/residual_postprocessing.py` | the correction itself, and where its inputs live on disk |
-| `src/parameter_tuning.py` | the K × λ × p search, and the tie-break that picks from it |
+| `src/parameter_tuning.py` | the K x lambda x p search: three selection objectives (KGE, NSE, NSE*) |
 | `src/01_lstm_gauged_correction.py` | correct the gauged cell → `runs/lstm/gauged_corrected/` |
 | `src/02_lstm_ungauged_correction.py` | correct the ungauged cell → `runs/lstm/ungauged_corrected/` |
 | `src/lstm/common.py` | the LSTM: cache, folds, model, training, prediction |

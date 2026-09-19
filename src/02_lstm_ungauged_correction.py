@@ -15,7 +15,8 @@ held-out basin is read during selection, of this fold or of any other.
     reads   runs/<model>/ungauged/_mean/fold{f}.npz
     writes  runs/<model>/ungauged_corrected/{predictions.npz, params.csv, tuning.csv}
 
---select-on picks what the search maximises, kge (default) or nse; a non-default objective
+--select-on picks what the search maximises: kge (default), nse, or nse_star -- the
+basin-normalised loss the LSTM itself was trained on. A non-default objective
 writes to ungauged_corrected_<objective>/ so both can sit side by side.
 """
 import argparse
@@ -29,7 +30,7 @@ from parameter_tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # 
 
 from residual_postprocessing import (basin_ids, correct, distance_matrix,  # noqa: E402
                                      fold_labels, load_mean, observed,
-                                     save_corrected)
+                                     save_corrected, train_sigma)
 
 
 def main():
@@ -49,19 +50,28 @@ def main():
 
     # Each fold has its own model, so a fold's donors and its held-out basins must both be
     # predicted by that same model -- hence one matrix per fold rather than one global one.
-    pred, n_seeds, test_t = {}, {}, None
+    pred, n_seeds, test_t, sigma = {}, {}, None, None
     for f in folds:
         pred[f], t, n_seeds[f] = load_mean(f"{mean_dir}/fold{f}.npz")
         assert test_t is None or np.array_equal(t, test_t), "folds cover different test periods"
         test_t = t
+        if a.select_on == "nse_star":
+            sigma = train_sigma(f"{mean_dir}/fold{f}.npz")
     obs = observed(test_t)
     print(f"folds present: {folds}, {len(test_t)} test days")
 
     pool = {f: np.flatnonzero(labels != f) for f in folds}
-    surfaces = run_jobs([make_job(f, pred[f], obs, dist, pool[f], groups=labels,
+    surfaces = run_jobs([make_job(f, pred[f], obs, sigma, dist, pool[f], groups=labels,
                                   objective=a.select_on) for f in folds], workers=a.workers)
-    score = SCORERS[a.select_on]
-    picked = {f: pick(surfaces[f]) for f in folds}
+    picked = {f: pick(surfaces[f], a.select_on) for f in folds}
+
+    obj = SCORERS[a.select_on]
+
+    def report(sim, o, rows):
+        """The objective's own number for a set of basins, in the direction it is read: a loss
+        is reported positive and falling, not as the negated score the search maximises."""
+        v = obj.aggregate(obj.score(sim, o, None if sigma is None else sigma[rows]))
+        return -v if obj.is_loss else v
 
     raw = np.full((len(basin_ids()), len(test_t)), np.nan, np.float32)
     corrected = np.full(raw.shape, np.nan)  # float64: what the correction's arithmetic returns
@@ -72,25 +82,24 @@ def main():
         raw[held] = pred[f][held]
         corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]],
                                   dist[np.ix_(held, pool[f])], k, lam, p)
-        before = np.nanmedian(score(raw[held], obs[held]))
-        after = np.nanmedian(score(corrected[held], obs[held]))
+        before = report(raw[held], obs[held], held)
+        after = report(corrected[held], obs[held], held)
         params.append(dict(fold=f, k=k, lam=lam, p=p, n_basins=len(held), n_donors=len(pool[f]),
                            n_seeds=n_seeds[f], select_on=a.select_on,
                            score_before=before, score_after=after))
         print(f"  fold {f} ({n_seeds[f]} seeds, {len(held)} basins)  K={k:>2} lambda={lam:.2f} "
-              f"p={p:.2g}   {a.select_on.upper()} {before:.4f} -> {after:.4f} "
+              f"p={p:.2g}   {obj.label} {before:.4f} -> {after:.4f} "
               f"({after - before:+.4f})")
 
     done = np.flatnonzero(np.isfinite(raw).any(1))
-    before = np.nanmedian(score(raw[done], obs[done]))
-    after = np.nanmedian(score(corrected[done], obs[done]))
+    before, after = report(raw[done], obs[done], done), report(corrected[done], obs[done], done)
     print()
-    print(f"{len(done)} held-out basins pooled: {a.select_on.upper()} {before:.4f} -> {after:.4f} "
+    print(f"{len(done)} held-out basins pooled: {obj.label} {before:.4f} -> {after:.4f} "
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
     save_corrected(f"runs/{a.model}/ungauged_corrected{suffix}", raw, corrected, test_t, params,
-                   surface_rows(surfaces, picked))
+                   surface_rows(surfaces, picked, a.select_on))
 
 
 if __name__ == "__main__":

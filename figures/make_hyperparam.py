@@ -10,10 +10,9 @@ own record reaches the settings applied to it -- and no basin on this figure is 
 as a result.
 
 One line per fold. Each is a profile through that fold's own optimum: a panel sweeps one
-constant with the other two held at that fold's best, and the marker sits on the selected point
--- the simplest setting within the tie-break tolerance of the true maximum, which is what the
-pipeline actually applies. Reading across the lines is the point: the optima cluster in a narrow
-region and the curves are flat around them, which is why that simplification is safe.
+constant with the other two held at that fold's best, and the marker sits on the cell the
+cross-validation scored highest, which is what the pipeline applies. Reading across the lines
+is the point: the optima cluster in a narrow region and the curves are flat around them.
 
 Folds are replicates of one procedure, not different things being compared, so they share one
 hue rather than getting a categorical palette; no line needs to be told apart from another.

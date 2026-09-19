@@ -25,7 +25,8 @@ under.
     reads   runs/<model>/gauged/_mean/predictions.npz
     writes  runs/<model>/gauged_corrected/{predictions.npz, params.csv, tuning.csv}
 
---select-on picks what the search maximises, kge (default) or nse; a non-default objective
+--select-on picks what the search maximises: kge (default), nse, or nse_star -- the
+basin-normalised loss the LSTM itself was trained on. A non-default objective
 writes to gauged_corrected_<objective>/ so both can sit side by side.
 """
 import argparse
@@ -38,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from parameter_tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # noqa: E402
 
 from residual_postprocessing import (correct, distance_matrix, fold_labels,  # noqa: E402
-                                     load_mean, observed, save_corrected)
+                                     load_mean, observed, save_corrected, train_sigma)
 
 
 def main():
@@ -53,6 +54,7 @@ def main():
         raise SystemExit(f"{mean_npz} not found -- run src/lstm/01_lstm_gauged.py")
 
     pred, test_t, n_seeds = load_mean(mean_npz)
+    sigma = train_sigma(mean_npz) if a.select_on == "nse_star" else None
     obs = observed(test_t)
     labels = fold_labels()
     dist = distance_matrix()
@@ -60,10 +62,17 @@ def main():
     print(f"{len(pred)} basins, {n_seeds} seeds, {len(test_t)} test days")
 
     # Group g is dropped from its own search: it appears neither as a CV target nor as a donor.
-    surfaces = run_jobs([make_job(g, pred, obs, dist, np.flatnonzero(labels != g),
+    surfaces = run_jobs([make_job(g, pred, obs, sigma, dist, np.flatnonzero(labels != g),
                                   objective=a.select_on) for g in groups], workers=a.workers)
-    score = SCORERS[a.select_on]
-    picked = {g: pick(surfaces[g]) for g in groups}
+    picked = {g: pick(surfaces[g], a.select_on) for g in groups}
+
+    obj = SCORERS[a.select_on]
+
+    def report(sim, o, rows):
+        """The objective's own number for a set of basins, in the direction it is read: a loss
+        is reported positive and falling, not as the negated score the search maximises."""
+        v = obj.aggregate(obj.score(sim, o, None if sigma is None else sigma[rows]))
+        return -v if obj.is_loss else v
 
     raw = pred.copy()
     corrected = np.full(pred.shape, np.nan)  # float64: what the correction's arithmetic returns
@@ -74,23 +83,24 @@ def main():
         d = dist[target].copy()
         d[np.arange(len(target)), target] = np.inf  # a basin can never be its own donor
         corrected[target] = correct(pred[target], pred, obs, d, k, lam, p)
-        before = np.nanmedian(score(raw[target], obs[target]))
-        after = np.nanmedian(score(corrected[target], obs[target]))
+        before = report(raw[target], obs[target], target)
+        after = report(corrected[target], obs[target], target)
         params.append(dict(fold=g, k=k, lam=lam, p=p, n_basins=len(target),
                            n_donors=len(pred) - 1, n_seeds=n_seeds,
                            select_on=a.select_on, score_before=before, score_after=after))
         print(f"  group {g} ({len(target)} basins)  K={k:>2} lambda={lam:.2f} p={p:.2g}   "
-              f"{a.select_on.upper()} {before:.4f} -> {after:.4f} ({after - before:+.4f})")
+              f"{obj.label} {before:.4f} -> {after:.4f} ({after - before:+.4f})")
 
-    before = np.nanmedian(score(raw, obs))
-    after = np.nanmedian(score(corrected, obs))
+    everything = np.arange(len(pred))
+    before = report(raw, obs, everything)
+    after = report(corrected, obs, everything)
     print()
-    print(f"{len(pred)} basins pooled: {a.select_on.upper()} {before:.4f} -> {after:.4f} "
+    print(f"{len(pred)} basins pooled: {obj.label} {before:.4f} -> {after:.4f} "
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
     save_corrected(f"runs/{a.model}/gauged_corrected{suffix}", raw, corrected, test_t, params,
-                   surface_rows(surfaces, picked))
+                   surface_rows(surfaces, picked, a.select_on))
 
 
 if __name__ == "__main__":

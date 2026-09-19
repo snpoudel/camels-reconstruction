@@ -143,6 +143,19 @@ def load_mean(npz_path):
     return p["pred"], p["test_t"], int(p["n_seeds"])
 
 
+def train_sigma(npz_path):
+    """[n] training-period flow std, the denominator of the model's own training loss.
+
+    Published by whatever produced the predictions, not recomputed here: a model trained on a
+    different window normalises by a different sigma, and only it knows which.
+    """
+    p = np.load(npz_path, allow_pickle=True)
+    if "sigma" not in p:
+        raise SystemExit(f"{npz_path} predates the sigma it needs for NSE* selection -- "
+                         f"rebuild it with src/lstm/0*.py --mean-only (seconds, no retraining)")
+    return p["sigma"]
+
+
 def test_period_label(test_t, cache_dir=CACHE_DIR):
     dates = np.load(f"{cache_dir}/dates.npy")[test_t]
     return f"{str(dates[0])[:4]}-{str(dates[-1])[:4]}"
