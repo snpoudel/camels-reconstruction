@@ -117,6 +117,15 @@ correction works across a wide region, so cross-validating inside it is cheap in
 than a load-bearing step. The one genuinely bad corner is K = 1 with large λ: a single
 over-trusted neighbour.
 
+**NSE or KGE as the objective barely matters, and it was measured rather than assumed.**
+Running the whole pipeline under each and comparing basin by basin: selecting on NSE does not
+measurably improve NSE (paired median +0.0011, 95% CI [−0.0000, +0.0026]), costs 0.003 KGE and
+about a percentage point of high-flow bias, and gains about 0.003 mm/day of RMSE. Every
+difference sits far inside the model's own seed-to-seed spread. What does change is how
+complicated the answer is: selecting on KGE picks K = 3–11, selecting on NSE picks K = 9–27 to
+reach the same place. KGE stays the default. `--select-on nse` reproduces the comparison, and
+`EXPERIMENTS.md` has the full table.
+
 **Ties break toward the simplest triple.** The raw argmax over a flat region is noise in the
 fourth decimal dressed up as a choice, so `parameter_tuning.pick` takes, among every (K, λ, p)
 within `TOLERANCE = 0.001` of the maximum, the smallest K, then λ, then p. K and λ are simpler

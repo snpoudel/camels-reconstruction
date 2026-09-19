@@ -20,6 +20,91 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-18 — Does it matter whether the correction's settings are chosen on NSE or on KGE?
+
+**What I ran** — The correction has three settings: how many nearby gauges to borrow error
+from (K), how steeply to favour closer gauges over farther ones (p), and what fraction of the
+borrowed error to actually apply (lambda). They are picked per split by searching inside that
+split's training basins only. Until now that search maximised one skill score, Kling-Gupta
+efficiency (KGE) — a score that separately tracks how well predicted flow correlates with
+measured flow, how well its day-to-day swings match the real swings, and how well its long-term
+average matches. The question was whether choosing them on Nash-Sutcliffe efficiency (NSE)
+instead — a score where 1.0 is a perfect match to measured flow, 0.0 is no better than always
+predicting the long-term average, and negative is worse than that — would give a better
+correction, because the correction gains far more on NSE than on KGE and was being tuned against
+the measure it helps least.
+
+The option to choose either was added back (`--select-on`), and the whole correction was run
+twice over the same predictions: 531 basins the model never saw during training, 7 splits,
+3 random starts of the model averaged day-by-day per basin before scoring. Nothing was
+retrained; both runs correct the identical hydrographs, so this is a like-for-like comparison of
+the two choices and nothing else. Commit `34feecf`.
+
+**What came out**
+
+Median across the 531 basins. "Bias" is how far off the total water volume is over a period,
+in percent, where zero is best and the sign says which way; the three flow-band rows split that
+by how high the river actually was on the day, so "top 10%" is the model's error on the days
+the river really was high. RMSE is the typical size of the daily error in millimetres of flow
+per day — lower is better.
+
+| | uncorrected model | settings chosen on KGE | settings chosen on NSE |
+|---|---|---|---|
+| NSE | 0.6756 | 0.7357 | 0.7405 |
+| KGE | 0.6931 | 0.7093 | 0.7065 |
+| RMSE (mm/day) | 1.299 | 1.174 | 1.163 |
+| overall bias | +7.5% | −2.0% | −3.4% |
+| bias, top 10% of flows | −9.6% | −12.0% | −13.9% |
+| bias, middle 30–90% | +21.4% | +9.4% | +8.7% |
+| bias, bottom 30% | +73.4% | +35.8% | +35.6% |
+
+Both choices produce a correction that is far better than no correction at all, and they land in
+essentially the same place as each other. Comparing them basin by basin — the sensitive test,
+since both corrected the same hydrographs:
+
+| | NSE-chosen minus KGE-chosen | |
+|---|---|---|
+| NSE | +0.0011, 95% range [−0.0000, +0.0026] | **cannot be told apart** |
+| KGE | −0.0032, [−0.0049, −0.0012] | KGE-chosen better |
+| RMSE | −0.003 mm/day, [−0.0054, −0.0001] | NSE-chosen better, barely |
+| overall bias | −1.0 percentage point | KGE-chosen better (closer to zero) |
+| bias, top 10% | −1.1 points | KGE-chosen better |
+| bias, middle 30–90% | −0.8 points | NSE-chosen better |
+| bias, bottom 30% | −0.8 points | NSE-chosen better, barely |
+
+The headline is the first row: **choosing the settings on NSE does not measurably improve NSE.**
+Every difference between the two choices sits in the third decimal place of a skill score or
+around one percentage point of bias, against a seed-to-seed spread in the underlying model of
+roughly 0.06 KGE within a single split (that split's three random starts scored 0.646, 0.688 and
+0.703). The two choices are not distinguishable at the resolution this experiment has.
+
+What does differ is how complicated the chosen settings are. Choosing on KGE picks 3 to 11 donor
+gauges per split; choosing on NSE picks 9 to 27 — two to three times as many — to arrive at the
+same place. That is the flat-surface finding from earlier sessions showing up again from a new
+angle: a wide range of settings scores nearly the same, so the search is cheap insurance rather
+than a load-bearing step.
+
+Separately, and worth recording because it was a real error caught in flight: the per-split
+progress line printed by the ungauged correction script said "KGE" while printing whichever
+score the search had maximised. The saved files were always correct; only the terminal text was
+wrong. This is the same mislabelling logged against the old correction script on 2026-09-18, in
+new code, and it is now fixed.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- The default is unchanged (settings chosen on KGE) and there is now a measurement behind that
+  rather than a preference. `--select-on nse` reproduces the comparison; its output is kept
+  separately in `runs/lstm/ungauged_corrected_nse/`, so nothing needs re-running to look again.
+- The figures still show the KGE-chosen run. If the review concludes the reporting convention
+  should change, only the default in the two correction scripts moves; the figures follow.
+- The all-basins model (no basins held out) is still training. When it lands in
+  `runs/lstm/gauged/seed*/`, `src/01_lstm_gauged_correction.py` fills in the gauged half of every
+  figure, and this same NSE-versus-KGE question should be asked once for that cell too rather
+  than assumed to carry over.
+
 ## 2026-09-18 — KGE-only reporting going forward, tie-break rerun, and a simpler donor figure
 
 **What I ran** — Follow-on to the tie-break commit from last session (`319f860`): when several
