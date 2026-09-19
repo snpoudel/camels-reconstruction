@@ -29,8 +29,8 @@ sys.path.insert(0, HERE)
 from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
 from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, RAW, TITLE  # noqa: E402
 from palette import caption, style  # noqa: E402
-from residual_postprocessing import BASINS_CSV, basin_ids, distance_matrix, fold_labels  # noqa: E402
-from residual_postprocessing import idw_weights  # noqa: E402
+from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # noqa: E402
+                                     fold_labels, idw_weights)
 
 
 def main(cell):

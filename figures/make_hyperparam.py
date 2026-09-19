@@ -99,7 +99,8 @@ def main(cell):
         spans.append(f"{label} = {v[0]:g}" if len(set(v)) == 1
                      else f"{label} in [{min(v):g}, {max(v):g}]")
     bottom = caption(fig, f"{len(labels)} fold{'s' if len(labels) > 1 else ''}, "
-                          f"{int(df.n_basins.iloc[0])} cross-validation basins each ({CV_POOL[cell]}).  "
+                          f"{int(df.n_basins.iloc[0])} cross-validation basins each "
+                          f"({CV_POOL[cell]}).  "
                           f"Each line holds the other two constants at that fold's optimum; "
                           f"markers are the selected values: {', '.join(spans)}.  $\\lambda$ = 0 "
                           f"is the uncorrected model.  The axis is zoomed to the surface's full "

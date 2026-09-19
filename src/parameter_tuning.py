@@ -22,7 +22,13 @@ from collections import namedtuple
 import numpy as np
 
 from residual_postprocessing import (EPS, apply_shrinkage, idw_weights, kge_per_basin,
-                                     neighbour_residual)
+                                     neighbour_residual, nse_per_basin)
+
+# What the search maximises. KGE and NSE disagree about this correction by more than a
+# relabelling: it improves KGE's correlation and bias terms but slightly worsens its
+# variability term, which NSE does not charge for -- so which one selects the settings is a
+# real choice, measured in EXPERIMENTS.md rather than assumed.
+SCORERS = {"kge": kge_per_basin, "nse": nse_per_basin}
 
 # Odd K from 1 to 39. The surface is flat enough near its optimum that stepping by 2 cannot
 # jump over it, and folds do select across the whole range once seed-averaging has de-noised
@@ -39,25 +45,26 @@ P_GRID = (1.0, 1.5, 2.0, 3.0)
 # simplified away. See METHOD.md.
 TOLERANCE = 0.001
 
-Job = namedtuple("Job", "label pred obs dist groups")
+Job = namedtuple("Job", "label pred obs dist groups objective")
 """One fold's or group's search. `pred`/`obs` are the CV pool's rows, `dist` the pool's own
-distance matrix with an infinite diagonal, `groups` the pool's fold labels (thinned) or None."""
+distance matrix with an infinite diagonal, `groups` the pool's fold labels (thinned) or None,
+`objective` the key in `SCORERS` the search maximises."""
 
 
-def _score_grid(pred_t, obs_t, pred_d, obs_d, dist, eps):
-    """{(k, lam, p): [n_target] KGE} for one target/donor split."""
+def _score_grid(pred_t, obs_t, pred_d, obs_d, dist, eps, score):
+    """{(k, lam, p): [n_target] score} for one target/donor split."""
     out = {}
     for k in K_GRID:
         for p in P_GRID:
             R = neighbour_residual(pred_d, obs_d, idw_weights(dist, k, p), eps)
             for lam in LAM_GRID:
-                out[(int(k), float(lam), float(p))] = kge_per_basin(
+                out[(int(k), float(lam), float(p))] = score(
                     apply_shrinkage(pred_t, R, lam, eps), obs_t)
     return out
 
 
 def _surface(job, eps=EPS):
-    """{(k, lam, p): [n_pool] KGE}, every pool basin scored exactly once."""
+    """{(k, lam, p): [n_pool] score}, every pool basin scored exactly once."""
     n = len(job.pred)
     if job.groups is None:
         splits = [(np.arange(n), np.arange(n))]          # self masked by the infinite diagonal
@@ -67,7 +74,7 @@ def _surface(job, eps=EPS):
     out = {}
     for tgt, don in splits:
         part = _score_grid(job.pred[tgt], job.obs[tgt], job.pred[don], job.obs[don],
-                           job.dist[np.ix_(tgt, don)], eps)
+                           job.dist[np.ix_(tgt, don)], eps, SCORERS[job.objective])
         for key, vals in part.items():
             out.setdefault(key, np.full(n, np.nan))[tgt] = vals
     return job.label, out
@@ -80,7 +87,7 @@ def _init_worker():
     threadpool_limits(1)
 
 
-def make_job(label, pred, obs, dist, rows, groups=None):
+def make_job(label, pred, obs, dist, rows, groups=None, objective="kge"):
     """One label's search, over `rows` -- the basins it is allowed to learn from.
 
     `groups`, when given, are those basins' fold labels and the search is leave-one-group-out
@@ -91,7 +98,8 @@ def make_job(label, pred, obs, dist, rows, groups=None):
     # Without this a basin's nearest neighbour is itself at zero distance, the correction
     # collapses to the identity, and the search would return lambda = 0.
     np.fill_diagonal(d, np.inf)
-    return Job(label, pred[rows], obs[rows], d, None if groups is None else groups[rows])
+    return Job(label, pred[rows], obs[rows], d, None if groups is None else groups[rows],
+               objective)
 
 
 def run_jobs(jobs, workers=None):
@@ -104,7 +112,7 @@ def run_jobs(jobs, workers=None):
 
 
 def pick(surf, tolerance=TOLERANCE):
-    """The (K, lambda, p) maximising median KGE -- or, if another cell scores within
+    """The (K, lambda, p) maximising the median selection score -- or, if another cell is within
     `tolerance`, the simplest cell that does: smallest K, then lambda, then p.
 
     Smaller is simpler by the same logic for K and lambda: K is how much of the donor network

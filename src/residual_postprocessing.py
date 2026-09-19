@@ -69,6 +69,17 @@ def correct(sim_target, sim_donor, obs_donor, dist_km, k, lam, p, eps=EPS):
     return apply_shrinkage(sim_target, neighbour_residual(sim_donor, obs_donor, W, eps), lam, eps)
 
 
+def nse_per_basin(sim, obs):
+    """[n] Nash-Sutcliffe efficiency, vectorised over basins."""
+    sim = np.clip(sim, 0, None)
+    m = np.isfinite(obs)
+    o, s, n = np.where(m, obs, 0.0), np.where(m, sim, 0.0), m.sum(1)
+    mu = o.sum(1) / np.maximum(n, 1)
+    den = ((o - mu[:, None]) ** 2 * m).sum(1)
+    return np.where((n > 1) & (den > 0),
+                    1 - ((s - o) ** 2 * m).sum(1) / np.maximum(den, 1e-12), np.nan)
+
+
 def kge_per_basin(sim, obs):
     """[n] Kling-Gupta efficiency, vectorised over basins -- selection calls this thousands of
     times, so it cannot be a Python loop.

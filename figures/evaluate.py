@@ -127,7 +127,8 @@ def evaluate(cell, model):
           f"test {test_period_label(p['test_t'])}")
     print(f"  median KGE  {med['LSTM']:.4f} -> {med['LSTM + correction']:.4f} "
           f"({med['LSTM + correction'] - med['LSTM']:+.4f})")
-    print("  per-seed median KGE: " + ", ".join(f"{d} {v:.3f}" for d, v in seed_spread(cell, model)))
+    print("  per-seed median KGE: "
+          + ", ".join(f"{d} {v:.3f}" for d, v in seed_spread(cell, model)))
     return dict(n_basins=len(scored), n_seeds=int(params.n_seeds.max()),
                 n_folds=int(params.index.nunique()), test_period=test_period_label(p["test_t"]))
 
@@ -138,8 +139,8 @@ def main():
     ap.add_argument("--model", default="lstm")
     a = ap.parse_args()
 
-    cells = [a.cell] if a.cell else [c for c in CELLS
-                                     if os.path.exists(f"runs/{a.model}/{c}_corrected/predictions.npz")]
+    corrected = f"runs/{a.model}/{{}}_corrected/predictions.npz"
+    cells = [a.cell] if a.cell else [c for c in CELLS if os.path.exists(corrected.format(c))]
     if not cells:
         raise SystemExit(f"nothing corrected under runs/{a.model}/ yet")
 
