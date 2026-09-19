@@ -75,13 +75,17 @@ def main():
 
     raw = np.full((len(basin_ids()), len(test_t)), np.nan, np.float32)
     corrected = np.full(raw.shape, np.nan)  # float64: what the correction's arithmetic returns
+    nearest = np.full(raw.shape, np.nan)
     params = []
     for f in folds:
         k, lam, p = picked[f]
         held = np.flatnonzero(labels == f)
         raw[held] = pred[f][held]
-        corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]],
-                                  dist[np.ix_(held, pool[f])], k, lam, p)
+        d = dist[np.ix_(held, pool[f])]
+        corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, k, lam, p)
+        # The parameter-free reference: one donor, all of its error. p is irrelevant at K=1,
+        # since the single surviving weight normalises to 1 whatever the exponent.
+        nearest[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, 1, 1.0, 1.0)
         before = report(raw[held], obs[held], held)
         after = report(corrected[held], obs[held], held)
         params.append(dict(fold=f, k=k, lam=lam, p=p, n_basins=len(held), n_donors=len(pool[f]),
@@ -98,8 +102,8 @@ def main():
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
-    save_corrected(f"runs/{a.model}/ungauged_corrected{suffix}", raw, corrected, test_t, params,
-                   surface_rows(surfaces, picked, a.select_on))
+    save_corrected(f"runs/{a.model}/ungauged_corrected{suffix}", raw, corrected, nearest, test_t,
+                   params, surface_rows(surfaces, picked, a.select_on))
 
 
 if __name__ == "__main__":

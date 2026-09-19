@@ -14,7 +14,7 @@ fraction lam of it.
 
 Nothing here is trained and nothing is fitted to the basins being corrected. The weights come
 from coordinates alone, and the target basin's own discharge is never read. K, lam and p are
-selected in `parameter_tuning.py`. See METHOD.md for the derivation and the evidence.
+selected in `parameter_tuning.py`. See manuscript.md for the method and the evidence.
 """
 import json
 
@@ -165,13 +165,13 @@ def cache_basins(cache_dir=CACHE_DIR):
     return list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
 
 
-def save_corrected(out_dir, raw, corrected, test_t, params, tuning):
-    """One cell's finished correction: hydrographs before and after, the chosen settings, and
-    the surface they were chosen on."""
+def save_corrected(out_dir, raw, corrected, nearest, test_t, params, tuning):
+    """One cell's finished correction: hydrographs before and after, the parameter-free
+    nearest-gauge reference, the chosen settings, and the surface they were chosen on."""
     import os
     os.makedirs(out_dir, exist_ok=True)
     np.savez_compressed(f"{out_dir}/predictions.npz", raw=raw, corrected=corrected,
-                        test_t=test_t, basins=np.array(basin_ids()))
+                        nearest=nearest, test_t=test_t, basins=np.array(basin_ids()))
     pd.DataFrame(params).to_csv(f"{out_dir}/params.csv", index=False)
     pd.DataFrame(tuning).to_csv(f"{out_dir}/tuning.csv", index=False)
     print(f"-> {out_dir}/predictions.npz, params.csv, tuning.csv")

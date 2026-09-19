@@ -76,6 +76,7 @@ def main():
 
     raw = pred.copy()
     corrected = np.full(pred.shape, np.nan)  # float64: what the correction's arithmetic returns
+    nearest = np.full(pred.shape, np.nan)
     params = []
     for g in groups:
         k, lam, p = picked[g]
@@ -83,6 +84,9 @@ def main():
         d = dist[target].copy()
         d[np.arange(len(target)), target] = np.inf  # a basin can never be its own donor
         corrected[target] = correct(pred[target], pred, obs, d, k, lam, p)
+        # The parameter-free reference: one donor, all of its error. p is irrelevant at K=1,
+        # since the single surviving weight normalises to 1 whatever the exponent.
+        nearest[target] = correct(pred[target], pred, obs, d, 1, 1.0, 1.0)
         before = report(raw[target], obs[target], target)
         after = report(corrected[target], obs[target], target)
         params.append(dict(fold=g, k=k, lam=lam, p=p, n_basins=len(target),
@@ -99,8 +103,8 @@ def main():
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
-    save_corrected(f"runs/{a.model}/gauged_corrected{suffix}", raw, corrected, test_t, params,
-                   surface_rows(surfaces, picked, a.select_on))
+    save_corrected(f"runs/{a.model}/gauged_corrected{suffix}", raw, corrected, nearest, test_t,
+                   params, surface_rows(surfaces, picked, a.select_on))
 
 
 if __name__ == "__main__":

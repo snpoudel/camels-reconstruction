@@ -17,7 +17,7 @@ Print one fenced block:
   immediately knows what's happening: "Handover from a previous
   session — continuing: <the goal, like an experiment title>".
 - **Recent** — 2-4 bullets, what just happened. Point at a commit hash
-  or `EXPERIMENTS.md` entry instead of re-explaining it.
+  or `experiments_log.md` entry instead of re-explaining it.
 - **Next** — 1-3 bullets, the concrete next step(s), in order.
 
 If something is actually running right now, add its literal command as
@@ -36,5 +36,5 @@ cut it down.
 ## What this is not
 
 - Not `/todos`: that's for you, now, in this chat.
-- Not `EXPERIMENTS.md`: that's permanent results history. This never
+- Not `experiments_log.md`: that's permanent results history. This never
   touches disk unless the user says to save it.

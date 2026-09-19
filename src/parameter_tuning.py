@@ -57,7 +57,7 @@ Objective = namedtuple("Objective", "score aggregate is_loss label")
 """How a surface is turned into one number, and which direction is better."""
 
 # What the search maximises. The three disagree about this correction by more than a
-# relabelling -- see METHOD.md 5 and EXPERIMENTS.md, where each was measured rather than
+# relabelling -- see manuscript.md 2.6 and experiments_log.md, where each was measured rather than
 # assumed.
 SCORERS = {
     "kge": Objective(_kge, np.nanmedian, False, "KGE"),
@@ -162,7 +162,7 @@ def pick(surf, objective="kge"):
     best, on the theory that the surface is flat enough near its optimum for the argmax to be
     noise. Measured on held-out basins, it cost rather than bought: KGE 0.7117 -> 0.7093, and
     on the NSE* objective 0.7410 -> 0.7322 NSE. It also needed a different constant per
-    objective, since the three do not share a scale. See EXPERIMENTS.md.
+    objective, since the three do not share a scale. See experiments_log.md.
     """
     obj = SCORERS[objective]
     scored = {c: obj.aggregate(v) for c, v in surf.items()}

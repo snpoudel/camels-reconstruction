@@ -32,6 +32,11 @@ INK, MUTE, GRID = "#16191c", "#5d6a73", "#dfe3e6"
 RAW, CORRECTED = BLUE, ORANGE
 SERIES = {"LSTM": RAW, "LSTM + correction": CORRECTED}
 
+# The parameter-free reference -- one donor, all of its error, nothing selected. Only the CDF
+# figure draws it, so `SERIES` above stays a pair and the figures that unpack it keep working.
+BENCHMARK = "nearest gauge only"
+SERIES_CDF = {"LSTM": RAW, BENCHMARK: TEAL, "LSTM + correction": CORRECTED}
+
 CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
 CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone dark",
               "ungauged": "basins held out of training entirely"}

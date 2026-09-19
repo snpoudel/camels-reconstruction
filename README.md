@@ -16,8 +16,8 @@ q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
 ```
 
 K, λ and p are cross-validated per fold, never on a basin they will go on to correct. The
-target basin's own discharge is never read. `METHOD.md` has the derivation, the leak audit and
-the results.
+target basin's own discharge is never read. `manuscript.md` is the paper: method, evaluation and
+results.
 
 ## Two cells
 
@@ -29,11 +29,16 @@ the results.
 Ungauged, 531 CAMELS-US basins, 7 folds, 3 seeds: **median KGE 0.693 → 0.712**, median NSE
 0.676 → 0.735. The published benchmark for this setting is median NSE 0.693 (Kratzert et al.
 2019, WRR 55, 11344 — same 531 gauge IDs, same train/test windows, a 10-member ensemble).
-The gauged cell is pending its all-basins model.
+Gauged, the same basins with 5 seeds: **median KGE 0.788 → 0.825**, median NSE 0.764 → 0.817.
+
+Both cells also carry a parameter-free reference — the single nearest gauge's error applied in
+full, K = 1 and λ = 1, nothing selected. It scores *below* the uncorrected model in both cells
+(ungauged KGE 0.669, gauged 0.785), which is what separates "the neighbours know something"
+from "the correction works".
 
 K, λ and p are selected by cross-validation on three possible objectives -- KGE (default), NSE,
 or NSE* (the basin-normalised loss the LSTM itself was trained on, `--select-on nse_star`),
-measured against each other rather than assumed; see METHOD.md 5.
+measured against each other rather than assumed; see manuscript.md 2.6.
 
 ## Layout
 
@@ -75,8 +80,9 @@ python figures/evaluate.py
 python figures/make_cdf.py --cell ungauged
 python figures/make_boxplot.py --cell ungauged
 python figures/make_hyperparam.py --cell ungauged
-python figures/make_donor_map.py --cell ungauged
 python figures/make_change_map.py --cell ungauged
+python figures/make_donor_map.py        # ungauged only, by design
+python figures/make_error_structure.py  # ungauged only: the premise, before any correction
 python figures/make_method.py
 ```
 

@@ -7,6 +7,12 @@ Two empirical cumulative distributions, NSE on top and KGE below, across basins.
 contributes one point -- the score of its seed-mean hydrograph -- so a curve lying to the right
 is winning at every quantile it is right of, not merely on average.
 
+A third line is the parameter-free reference: the single nearest gauge's error applied in full,
+no K, lambda or p chosen. It lands to the LEFT of the uncorrected model, which is the point --
+the neighbour signal is real (see the error-structure figure) but believing one gauge completely
+destroys more than it repairs. What separates the two is pooling and shrinkage, not the
+existence of spatial structure.
+
 The settings on the page were chosen to maximise KGE (`figures/evaluate.py`'s default), so the
 NSE panel is a deliberate cross-metric view and the caption says so. The two panels disagree by
 more than their axes alone: the correction improves KGE's correlation and bias terms but
@@ -29,8 +35,8 @@ import numpy as np  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
-from palette import CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE, SERIES, TITLE  # noqa: E402
-from palette import caption, settings_note, style  # noqa: E402
+from palette import BENCHMARK, CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE  # noqa: E402
+from palette import SERIES_CDF, TITLE, caption, settings_note, style  # noqa: E402
 
 PANELS = [("nse", "NSE, Nash-Sutcliffe efficiency"), ("kge", "KGE, Kling-Gupta efficiency")]
 
@@ -41,7 +47,7 @@ def main(cell):
 
     fig, axes = plt.subplots(2, 1, figsize=(6.2, 7.6), sharex=True)
     for ax, (col, xlabel) in zip(axes, PANELS):
-        for name, color in SERIES.items():
+        for name, color in SERIES_CDF.items():
             v = np.sort(df.loc[df.variant == name, col].dropna().to_numpy())
             ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2, zorder=3,
                     label=f"{name}   median {np.median(v):.2f}")
@@ -61,7 +67,9 @@ def main(cell):
                           f"{info['n_folds']} folds, {info['n_seeds']} seeds, test period "
                           f"{info['test_period']}.  {settings_note(fold_settings(df))}, chosen by "
                           f"cross-validation to maximise KGE, never reading the basin being "
-                          f"corrected.  Top: NSE.  Bottom: KGE.", 96)
+                          f"corrected.  \"{BENCHMARK}\" is the parameter-free reference: the "
+                          f"single closest gauge's error applied in full, nothing selected.  "
+                          f"Top: NSE.  Bottom: KGE.", 96)
     fig.tight_layout(rect=(0, bottom, 1, 1))
     out = f"{HERE}/{cell}_cdf.png"
     fig.savefig(out, dpi=200, facecolor="white")

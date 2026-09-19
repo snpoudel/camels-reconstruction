@@ -9,6 +9,8 @@ Reads the finished corrections out of runs/ and writes, into this folder:
                          bias split by how high the river actually was
     tuning_<cell>.csv    the cross-validation surface the settings were chosen on
     run_info.json        test window, seed and basin counts, for the figure captions
+    error_structure.csv  whether the model's errors are spatially structured at all, by gauge
+                         separation -- the premise the correction rests on
 
 Nothing downstream of here touches runs/, so a figure can never disagree with the numbers.
 """
@@ -22,11 +24,17 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
-from residual_postprocessing import (basin_ids, fold_labels, kge_per_basin,  # noqa: E402
-                                     observed, test_period_label)
+from residual_postprocessing import (CACHE_DIR, EPS, basin_ids, distance_matrix,  # noqa: E402
+                                     fold_labels, kge_per_basin, observed, test_period_label)
 
 CELLS = ("gauged", "ungauged")
-VARIANTS = {"raw": "LSTM", "corrected": "LSTM + correction"}
+# "nearest" is the parameter-free reference the correction scripts save alongside their own
+# output: the single nearest gauge's error, applied in full. Only the CDF figure draws it.
+VARIANTS = {"raw": "LSTM", "nearest": "nearest gauge only", "corrected": "LSTM + correction"}
+
+# The error-structure analysis: pairs binned to 25 km out to 1000 km, and a 31-day circular
+# window on the day-of-year climatology that deseasonalising removes.
+DIST_BIN_KM, DIST_MAX_KM, CLIM_WINDOW = 25, 1000, 31
 
 
 def read_metrics(cell):
@@ -42,6 +50,11 @@ def read_tuning(cell):
 def read_info(cell=None):
     info = json.load(open(f"{HERE}/run_info.json"))
     return info[cell] if cell else info
+
+
+def read_error_structure():
+    """Residual correlation against gauge separation, the premise figure's one table."""
+    return pd.read_csv(f"{HERE}/error_structure.csv")
 
 
 def fold_settings(df):
@@ -126,11 +139,81 @@ def evaluate(cell, model):
     print(f"\n{cell}: {len(scored)} basins, {int(params.n_seeds.max())} seeds, "
           f"test {test_period_label(p['test_t'])}")
     print(f"  median KGE  {med['LSTM']:.4f} -> {med['LSTM + correction']:.4f} "
-          f"({med['LSTM + correction'] - med['LSTM']:+.4f})")
+          f"({med['LSTM + correction'] - med['LSTM']:+.4f})"
+          f"   nearest gauge only {med['nearest gauge only']:.4f}")
     print("  per-seed median KGE: "
           + ", ".join(f"{d} {v:.3f}" for d, v in seed_spread(cell, model)))
     return dict(n_basins=len(scored), n_seeds=int(params.n_seeds.max()),
                 n_folds=int(params.index.nunique()), test_period=test_period_label(p["test_t"]))
+
+
+def _deseason(x, doy):
+    """`x` with its own day-of-year climatology removed, smoothed circularly over CLIM_WINDOW.
+
+    Both sides of every correlation below get this, so what survives is day-to-day agreement
+    rather than the seasonal cycle two nearby basins would share anyway through their forcings.
+    """
+    m = np.isfinite(x)
+    onehot = np.zeros((x.shape[1], 366))
+    onehot[np.arange(x.shape[1]), doy] = 1.0
+    total, count = np.where(m, x, 0.0) @ onehot, m.astype(float) @ onehot
+    clim = np.divide(total, count, out=np.zeros_like(total), where=count > 0)
+    pad = CLIM_WINDOW // 2
+    wrapped = np.concatenate([clim[:, -pad:], clim, clim[:, :pad]], 1)
+    smooth = np.apply_along_axis(np.convolve, 1, wrapped, np.ones(CLIM_WINDOW) / CLIM_WINDOW,
+                                 "valid")
+    return x - smooth[:, doy]
+
+
+def _corr_rows(x):
+    """[n, n] correlation between every pair of rows.
+
+    The 0.01% of days a gauge did not report are filled at that basin's own mean, a zero
+    deviation: pairwise-complete correlations over 140k pairs would cost minutes to move the
+    fourth decimal.
+    """
+    m = np.isfinite(x)
+    a = np.where(m, x - (np.where(m, x, 0.0).sum(1) / np.maximum(m.sum(1), 1))[:, None], 0.0)
+    norm = np.sqrt((a ** 2).sum(1))
+    return (a @ a.T) / np.outer(norm, norm)
+
+
+def error_structure(model):
+    """Are the model's errors spatially structured? The premise the correction rests on.
+
+    How two basins' daily residuals correlate, against how far apart their gauges are, asked of
+    the log residual the correction transfers and asked twice -- once raw, once with the
+    seasonal cycle removed from both sides. Coordinates and residuals only: no K, lambda or p
+    enters this, so what it establishes is a property of the model's errors rather than of the
+    correction built on them.
+
+    Ungauged only: these are the out-of-sample residuals of the model that held each basin out,
+    which is the error the reconstruction problem actually faces.
+    """
+    p = np.load(f"runs/{model}/ungauged_corrected/predictions.npz", allow_pickle=True)
+    obs = observed(p["test_t"])
+    res = np.log(np.clip(p["raw"], 0, None) + EPS) - np.log(obs + EPS)
+    doy = pd.to_datetime(np.load(f"{CACHE_DIR}/dates.npy")[p["test_t"]]).dayofyear.to_numpy() - 1
+    dist = distance_matrix()
+
+    iu = np.triu_indices(len(dist), 1)
+    d, c, cd = dist[iu], _corr_rows(res)[iu], _corr_rows(_deseason(res, doy))[iu]
+    binned = []
+    for lo in np.arange(0, DIST_MAX_KM, DIST_BIN_KM):
+        sel = (d >= lo) & (d < lo + DIST_BIN_KM)
+        if sel.sum() < 50:  # too few pairs to read a median off
+            continue
+        binned.append(dict(dist_lo=lo, dist_hi=lo + DIST_BIN_KM, dist_mid=lo + DIST_BIN_KM / 2,
+                           n_pairs=int(sel.sum()),
+                           r_med=np.median(c[sel]), r_q25=np.quantile(c[sel], 0.25),
+                           r_q75=np.quantile(c[sel], 0.75), r_med_deseason=np.median(cd[sel]),
+                           r_q25_deseason=np.quantile(cd[sel], 0.25),
+                           r_q75_deseason=np.quantile(cd[sel], 0.75)))
+    df = pd.DataFrame(binned)
+    df.to_csv(f"{HERE}/error_structure.csv", index=False)
+    near = df.iloc[0]
+    print(f"\nerror structure: pairs under {int(near.dist_hi)} km correlate {near.r_med:.3f}, "
+          f"{near.r_med_deseason:.3f} deseasonalised; {int(df.n_pairs.sum())} pairs binned")
 
 
 def main():
@@ -150,7 +233,9 @@ def main():
         info[cell] = evaluate(cell, a.model)
     info["model"] = a.model
     json.dump(info, open(info_path, "w"), indent=1)
-    print(f"\n-> {HERE}/metrics_*.csv, tuning_*.csv, run_info.json")
+    if "ungauged" in cells:
+        error_structure(a.model)
+    print(f"\n-> {HERE}/metrics_*.csv, tuning_*.csv, error_structure.csv, run_info.json")
 
 
 if __name__ == "__main__":

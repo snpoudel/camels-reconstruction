@@ -4,8 +4,8 @@ A residual post-processing correction for streamflow prediction: a model's daily
 nearest gauges are used to correct its prediction at a basin whose own gauge is missing. One
 inverse-distance-weighted step, nothing trained, no GPU. The project is about **the correction**
 — the LSTM is only what produced the predictions, and the same pipeline runs on any model's
-output dropped into `runs/<model>/`. See `README.md` for the method summary and `METHOD.md` for
-the derivation, the leak audit and the results.
+output dropped into `runs/<model>/`. See `README.md` for the method summary and `manuscript.md`
+for the paper itself.
 
 Two cells: **ungauged** (basin never in training — out of sample in space and time) and
 **gauged** (basin trained on, but its gauge stops reporting for the test years — out of sample
@@ -43,7 +43,7 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
 
 ## Workflow
 
-- Read `EXPERIMENTS.md` (top entry) at the start of a session — it's the repo's memory across
+- Read `experiments_log.md` (top entry) at the start of a session — it's the repo's memory across
   sessions, so it should tell you what was last run and what's next without chat history.
 - If you notice a request that's part of a repeating pattern, or that a hook, subagent, or
   skill would handle better than doing it ad hoc, say so and suggest creating one. Build it
@@ -63,11 +63,11 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
   and confirming both the selected (K, λ, p) and the corrected hydrographs are bit-identical,
   with a positive control that destroys a *donor* and confirms the output does move.
 - Hyperparameters in `src/lstm/common.py` are literature-sourced (Kratzert et al. 2019); don't
-  retune without noting the source and reason in `METHOD.md`.
+  retune without noting the source and reason in `experiments_log.md`.
 - Prefer editing existing scripts over adding new ones; each script has one clear purpose.
 - Figures read only `figures/*.csv` and `run_info.json`, never `runs/` — so a figure cannot
   disagree with the reported numbers. Style lives in `figures/palette.py`, not per figure.
 - After a training/eval run completes, use the `log-experiment` skill to record it in
-  `EXPERIMENTS.md` rather than describing results only in chat.
+  `experiments_log.md` rather than describing results only in chat.
 - Write short, concise code and short scripts; don't make too many small functions. Avoid
   over-engineering and keep it simple.

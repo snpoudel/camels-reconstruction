@@ -22,7 +22,7 @@ grid for K, p and lambda -- are imported from `src/parameter_tuning.py` so they 
 from the code. For the same method on real data see `figures/ungauged_hyperparameters.png`.
 
 No footnotes: the distance floor, the epsilon that keeps the logs finite, and the
-renormalisation over donors that reported are all in METHOD.md and belong in the caption.
+renormalisation over donors that reported are all in manuscript.md and belong in the caption.
 Carrying them on the figure made it busier than the five steps it exists to show.
 
 `check_fit` measures every string against the box it sits in and prints a WARN if one spills,
