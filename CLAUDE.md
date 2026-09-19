@@ -69,6 +69,5 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
   disagree with the reported numbers. Style lives in `figures/palette.py`, not per figure.
 - After a training/eval run completes, use the `log-experiment` skill to record it in
   `EXPERIMENTS.md` rather than describing results only in chat.
-- This file is gitignored (see `.gitignore`) — treat it as local working notes.
 - Write short, concise code and short scripts; don't make too many small functions. Avoid
   over-engineering and keep it simple.
