@@ -76,6 +76,7 @@ python figures/make_cdf.py --cell ungauged
 python figures/make_boxplot.py --cell ungauged
 python figures/make_hyperparam.py --cell ungauged
 python figures/make_donor_map.py --cell ungauged
+python figures/make_change_map.py --cell ungauged
 python figures/make_method.py
 ```
 
