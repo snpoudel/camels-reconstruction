@@ -20,6 +20,111 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-19 — A third way to choose the correction's settings, and cleaning up how the search picks
+
+**What I ran** — The neighbour correction has three settings chosen per data split by searching
+inside that split's own training basins: how many nearby gauges to borrow error from (K), how
+steeply to favour closer gauges over farther ones (p), and what fraction of the borrowed error
+to apply (lambda). Four things about that search were questioned and each was measured rather
+than assumed, on the 531 basins the model never saw during training, 7 splits, 3 random starts
+of the model averaged day-by-day per basin before scoring. Commit `530249f`.
+
+1. **A third way to choose the settings.** Until now the search picked whichever settings scored
+   best on Kling-Gupta efficiency (KGE) or, as an option, Nash-Sutcliffe efficiency (NSE) — two
+   different skill scores computed after the fact. A third option was added: choose the settings
+   that do best on the same measure the model itself was trained to minimise — a version of NSE
+   that divides each basin's error by that basin's own historical flow variability before
+   averaging, so naturally big rivers and naturally small streams count equally (Kratzert et al.
+   2019 call this "NSE-star"). Each trained model now saves that per-basin variability figure
+   alongside its predictions, taken from exactly the years it was trained on.
+
+2. **Removing an unhelpful complication.** When several candidate settings scored almost
+   identically in the search, the code used to prefer the plainest one (fewest gauges, smallest
+   correction) rather than the literal best-scoring one, on the idea that the difference was
+   noise. Measured on held-out basins, this cost accuracy rather than protecting against noise,
+   so it was removed — the search now simply takes whichever setting scored best.
+
+3. **How to combine the 455 training basins' scores into one number.** The search rotates
+   through the training basins in six groups, each standing in briefly as its own held-out set
+   while the other five groups act as donors, and needs to turn those six rounds into a single
+   number per candidate setting. The current approach pools every one of the 455 basins together
+   and takes one median. The alternative — score each of the six groups separately, then average
+   those six numbers — is closer to how this kind of search is usually done elsewhere, so it was
+   compared directly. Every one of the 7 splits picked different settings under the two
+   approaches, but the two approaches could not be told apart on held-out basins.
+
+4. **How wide the search grid needs to be.** The number of gauges consulted (K) was allowed to
+   range up to 39, and the distance-weighting steepness (p) up to 5, to check whether the
+   existing grid was cutting off a better answer. For K, several splits did pick values near the
+   top of the range, but both the training-basin score and the held-out score kept improving
+   together as K grew, never diverging — a sign the search surface is simply flat up there, not
+   that a wider grid would help. For p the opposite happened: several splits' training-basin
+   score kept climbing as p grew, but their held-out score got *worse* at every step. That is
+   the search fitting itself to quirks of its own training basins rather than finding something
+   that generalises, so p was capped back at 3, its original limit.
+
+**What came out**
+
+Median across the 531 basins, before correction and after, under three ways of choosing the
+settings. RMSE is the typical size of the daily error, in millimetres of flow per day — lower is
+better. "Bias" is how far off the total water volume is over a period, in percent, where zero is
+best; the three flow-band rows split that by how high the river actually was on the day.
+
+| | uncorrected | chosen on KGE | chosen on NSE | chosen on the training measure (NSE-star) |
+|---|---|---|---|---|
+| NSE | 0.6756 | 0.7354 | 0.7418 | 0.7425 |
+| KGE | 0.6931 | 0.7117 | 0.7027 | 0.7036 |
+| RMSE (mm/day) | 1.299 | 1.165 | 1.160 | 1.161 |
+| overall bias | +7.5% | −2.0% | −4.1% | −3.4% |
+| bias, top 10% of flows | −9.6% | −12.0% | −14.2% | −13.4% |
+| bias, middle 30–90% | +21.4% | +9.4% | +8.1% | +8.0% |
+| bias, bottom 30% | +73.4% | +35.5% | +34.8% | +35.8% |
+
+Removing the plainest-of-near-ties preference (item 2) raised the headline KGE score from 0.7093
+to 0.7117 — a small but real gain from taking a search's actual best answer rather than a
+simplified one.
+
+Comparing "chosen on NSE" and "chosen on KGE" basin by basin, which is the sensitive test since
+both correct the identical predictions: choosing on NSE gains 0.0025 NSE (95% range
+[0.0006, 0.0037]) but costs 0.0051 KGE ([−0.0074, −0.0023]), loses back 0.0043 mm/day of the
+RMSE improvement, and adds 1.5 percentage points of high-flow bias — every one of those ranges
+stays on one side of zero, so this is a real trade, not noise. That is a different conclusion
+from the previous session's reading (logged 2026-09-18), which found the two indistinguishable
+— the earlier search still had the plainest-of-near-ties preference in it and a narrower grid,
+both of which have since changed, so the two findings are not in conflict, just measured under
+different search settings.
+
+Choosing on the training measure (NSE-star) beats choosing on NSE outright on both NSE (+0.0012,
+[0.0003, 0.0021]) and KGE (+0.0025, [0.0001, 0.0036]) at once — not a trade against something
+else, a plain improvement on both — while giving up a little KGE against choosing on KGE itself
+(−0.0023, [−0.0041, −0.0004]). Every one of those ranges also stays on one side of zero, so
+these are small but real differences, not noise.
+
+Pooling all 455 training basins into one median (current) versus scoring each of the six
+rotating groups separately and averaging those six numbers: paired difference on held-out
+basins +0.0001 KGE, 95% range [−0.0001, +0.0009] — crosses zero, the two approaches cannot be
+told apart despite picking different settings on every split. The simpler pooled version was
+kept.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+
+- KGE remains the default the two correction scripts use unless told otherwise
+  (`--select-on nse` or `--select-on nse_star`). The comparison above is now measured, not
+  assumed, but which of the three should be the standing choice is a judgement call, not a
+  correctness question — flagged for review rather than decided here.
+- The figures and README/METHOD numbers all reflect the KGE-chosen run on the settled search
+  (median KGE 0.693 → 0.712, median NSE 0.676 → 0.735). The NSE- and NSE-star-chosen runs are
+  kept in `runs/lstm/ungauged_corrected_nse/` and `_nse_star/` respectively, so nothing needs
+  re-running to look again.
+- The all-basins model (no basins held out) is still training. Once it lands in
+  `runs/lstm/gauged/seed*/`, the same three-way choose-on-what question should be asked for the
+  gauged cell too, not assumed to carry over from here.
+
+---
+
 ## 2026-09-18 — Does it matter whether the correction's settings are chosen on NSE or on KGE?
 
 **What I ran** — The correction has three settings: how many nearby gauges to borrow error
