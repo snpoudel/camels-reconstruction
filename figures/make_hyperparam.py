@@ -87,7 +87,7 @@ def main(cell):
         # did) makes ordinary sampling noise look like a dramatic shape. 0.6 keeps the profiles
         # readable while still showing them clearly above the uncorrected floor.
         pad = 0.06 * (df.score.max() - df.score.min())
-        ax.set_ylim(0.6, df.score.max() + pad)
+        ax.set_ylim(0.7, df.score.max() + pad)
         style(ax)
     axes[1].tick_params(labelleft=False)
     axes[2].tick_params(labelleft=False)
@@ -105,9 +105,9 @@ def main(cell):
                           f"({CV_POOL[cell]}).  "
                           f"Each line holds the other two constants at that fold's optimum; "
                           f"markers are the selected values: {', '.join(spans)}.  $\\lambda$ = 0 "
-                          f"is the uncorrected model.  The axis is zoomed to the surface's full "
-                          f"span of {df.score.max() - df.score.min():.3f} KGE -- a wide region "
-                          f"scores nearly the same.  No basin is read here to choose the settings "
+                          f"is the uncorrected model.  The surface itself spans only "
+                          f"{df.score.max() - df.score.min():.3f} KGE -- a wide region scores "
+                          f"nearly the same.  No basin is read here to choose the settings "
                           f"applied to it.", 118)
     fig.tight_layout(rect=(0.02, bottom, 1, 0.94))
     out = f"{HERE}/{cell}_hyperparameters.png"

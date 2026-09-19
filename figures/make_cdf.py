@@ -48,7 +48,7 @@ def main(cell):
             ax.plot([np.median(v)], [0.5], "o", ms=7, color=color, markeredgecolor="white",
                     markeredgewidth=1.6, zorder=4)
         ax.axhline(0.5, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=1)
-        ax.set_xlim(-0.2, 1.0)
+        ax.set_xlim(0, 1.0)
         ax.set_ylim(0, 1)
         ax.set_xlabel(xlabel, color=INK, fontsize=LABEL)
         ax.set_ylabel("fraction of basins at or below", color=INK, fontsize=LABEL)
