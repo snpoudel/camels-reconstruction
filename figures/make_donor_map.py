@@ -88,7 +88,7 @@ def main(cell):
                  color=INK, fontsize=TITLE, loc="left", pad=8)
     ax.legend(frameon=False, loc="lower left", fontsize=LABEL - 1.5, labelcolor=INK,
               handletextpad=0.4, borderpad=0.2, markerscale=2.2)
-    style(ax)
+    style(ax, grid=False)
 
     group = "Fold" if cell == "ungauged" else "Group"
     pool = (f"that fold's {len(donor)} training basins" if cell == "ungauged"

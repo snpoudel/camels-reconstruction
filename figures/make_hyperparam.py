@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from evaluate import read_info, read_tuning  # noqa: E402
-from palette import CELL_TITLE, CORRECTED, INK, LABEL, PANEL, TITLE  # noqa: E402
+from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, PANEL, TITLE  # noqa: E402
 from palette import caption, style  # noqa: E402
 
 # What the cross-validation pool is, per cell -- not the same thing as the basins being
@@ -46,7 +46,8 @@ def main(cell):
     info = read_info(cell)
     labels = sorted(df.label.unique())
     single = len(labels) == 1
-    lw, alpha = (2.2, 1.0) if single else (1.5, 0.75)
+    lw, alpha = (1.6, 1.0) if single else (1.0, 0.75)
+    ms = 5
 
     fig, axes = plt.subplots(1, 3, figsize=(8.4, 4.4), sharey=True)
     optima = {col: [] for col, _, _ in AXES}
@@ -62,15 +63,21 @@ def main(cell):
             grid = sorted(df[col].unique())
             ax.plot([grid.index(v) for v in sub[col]], sub.score, color=CORRECTED, lw=lw,
                     alpha=alpha, zorder=3)
-            ax.plot([grid.index(best[col])], [best.score], "o", ms=7, color=CORRECTED,
-                    markeredgecolor="white", markeredgewidth=1.5, zorder=5)
+            ax.plot([grid.index(best[col])], [best.score], "o", ms=ms, color=CORRECTED,
+                    markeredgecolor="white", markeredgewidth=1.2, zorder=5)
             optima[col].append(best[col])
 
     for ax, (col, xlabel, title) in zip(axes, AXES):
         grid = sorted(df[col].unique())
-        step = max(1, -(-len(grid) // 6))  # at most ~6 labels in a narrow panel
-        ax.set_xticks(range(len(grid)))
-        ax.set_xticklabels([f"{v:g}" if i % step == 0 else "" for i, v in enumerate(grid)])
+        step = max(1, -(-len(grid) // 6))  # at most ~6 labelled, gridded positions
+        major = list(range(0, len(grid), step))
+        minor = [i for i in range(len(grid)) if i not in major]
+        # Every sampled value still gets a tick mark (major or minor); only the major ones
+        # carry a label and a gridline, so the panel isn't a wall of vertical lines.
+        ax.set_xticks(major)
+        ax.set_xticklabels([f"{grid[i]:g}" for i in major])
+        if minor:
+            ax.set_xticks(minor, minor=True)
         ax.set_xlabel(xlabel, color=INK, fontsize=LABEL)
         # Panel letter in the bottom-left corner, in axis fractions so it sits inside the
         # plot regardless of the y-limits below.
@@ -79,8 +86,8 @@ def main(cell):
         if ax is axes[0]:  # one legend for the figure: all three panels draw the same two things
             ax.plot([], [], color=CORRECTED, lw=lw, alpha=alpha,
                     label="profile" if single else "per-fold profile")
-            ax.plot([], [], "o", ms=7, color=CORRECTED, markeredgecolor="white",
-                    markeredgewidth=1.5, label="selected")
+            ax.plot([], [], "o", ms=ms, color=CORRECTED, markeredgecolor="white",
+                    markeredgewidth=1.2, label="selected")
             ax.legend(frameon=False, loc="lower right", fontsize=LABEL - 2, labelcolor=INK)
         # Floor at 0.6 rather than the tight span of the surface: the surface itself only
         # spans a few hundredths of KGE, and zooming all the way to it (as an earlier version
@@ -89,6 +96,7 @@ def main(cell):
         pad = 0.06 * (df.score.max() - df.score.min())
         ax.set_ylim(0.7, df.score.max() + pad)
         style(ax)
+        ax.tick_params(which="minor", colors=MUTE, length=2)  # tick mark only, no gridline
     axes[1].tick_params(labelleft=False)
     axes[2].tick_params(labelleft=False)
     axes[0].set_ylabel("Median cross-validation KGE", color=INK, fontsize=LABEL)

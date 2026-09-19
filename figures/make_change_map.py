@@ -91,7 +91,7 @@ def main(cell):
         ax.set_aspect(1 / np.cos(np.radians(lat.mean())))
         ax.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)
         ax.set_ylabel("latitude (°N)", color=INK, fontsize=LABEL)
-        style(ax)
+        style(ax, grid=False)
 
         cb = fig.colorbar(sc, ax=ax, extend="both", pad=0.02, fraction=0.046)
         cb.set_label(f"change in {label.split(',')[0]}", color=INK, fontsize=LABEL - 1)

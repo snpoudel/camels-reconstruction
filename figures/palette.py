@@ -40,9 +40,19 @@ CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone d
 TITLE, PANEL, LABEL, TICK, CAPTION = 11.5, 10.5, 10, 9, 8.5
 
 
-def style(ax):
-    """Recessive grid and axes: the data carries the ink, the frame does not."""
-    ax.grid(True, color=GRID, lw=0.7, zorder=0)
+def style(ax, grid=True):
+    """Recessive grid and axes: the data carries the ink, the frame does not.
+
+    `grid=False` for the map figures -- lat/lon gridlines compete with the state outline and
+    the data points for the same thin grey ink; the axis ticks alone are enough to read
+    coordinates off. Tick marks are unaffected either way.
+    """
+    # Two calls, not one with `visible=grid`: matplotlib re-enables the grid whenever any
+    # line-property kwarg is passed alongside visible=False, regardless of its value.
+    if grid:
+        ax.grid(True, color=GRID, lw=0.7, zorder=0)
+    else:
+        ax.grid(False)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
