@@ -24,7 +24,7 @@ in time).
 | `src/lstm/02_lstm_ungauged.py` | Train per (fold, seed) → `runs/lstm/ungauged/` |
 | `figures/evaluate.py` | Metrics → `figures/metrics_*.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
-| `data/` | `camels531.csv`, fold assignment (tracked); `raw/`, `cache/` (gitignored) |
+| `data/` | `camels531.csv`, fold assignment, US state outlines (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/` | Per-model predictions and corrections (gitignored) |
 
 Everything runs as `python <path>.py` — no packages, no `python -m`. The digit-prefixed scripts

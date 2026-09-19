@@ -48,7 +48,7 @@ measured against each other rather than assumed; see METHOD.md 5.
 | `src/lstm/02_lstm_ungauged.py` | train one run per (fold, seed) |
 | `figures/evaluate.py` | score the corrections into the CSVs the figures read |
 | `figures/make_*.py` | one script per figure; `palette.py` holds the shared style |
-| `data/` | `camels531.csv` and the fold assignment (tracked); `raw/`, `cache/` (gitignored) |
+| `data/` | `camels531.csv`, fold assignment, US state outlines for the map figures (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/<model>/` | predictions and corrections, per model family (gitignored) |
 
 Everything is run as `python <path>.py` — no packages, no `-m`. The post-processing never

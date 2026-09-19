@@ -17,6 +17,8 @@ It reports OKLab dE (x100) between every simultaneous pair under normal vision a
 simulated protanopia and deuteranopia (Vienot et al. 1999). Normal-vision dE >= 15 and CVD
 dE >= 8 pass; 6-8 is legal only with a second, non-colour encoding; below that, re-step.
 """
+import json
+import os
 import textwrap
 
 import numpy as np
@@ -48,6 +50,30 @@ def style(ax):
         ax.spines[side].set_color(MUTE)
         ax.spines[side].set_linewidth(0.8)
     ax.tick_params(colors=MUTE, labelsize=TICK, length=3)
+
+
+# CONUS + DC state boundaries, trimmed from a public-domain simplified GeoJSON
+# (PublicaMundi/MappingAPI) to the 49 features CAMELS-US basins ever fall inside -- no Alaska,
+# Hawaii or Puerto Rico. 59 KB, tracked alongside data/camels531.csv rather than fetched at
+# plot time, so a figure never depends on network access.
+US_STATES_GEOJSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "data", "us_states_conus.geojson")
+
+
+def draw_us_outline(ax, color=GRID, lw=0.7, zorder=1):
+    """State boundaries, drawn dim and behind the data -- geographic context, not a series.
+
+    Reads GeoJSON with the standard library only (no geopandas/shapely dependency for one
+    background layer); handles the Polygon and MultiPolygon geometries the states need.
+    """
+    states = json.load(open(US_STATES_GEOJSON))
+    for feature in states["features"]:
+        geom = feature["geometry"]
+        rings = geom["coordinates"] if geom["type"] == "Polygon" else \
+            [ring for poly in geom["coordinates"] for ring in poly]
+        for ring in rings:
+            xy = np.asarray(ring)
+            ax.plot(xy[:, 0], xy[:, 1], color=color, lw=lw, zorder=zorder)
 
 
 def caption(fig, text, width=120):

@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
 from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
 from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, RAW, TITLE  # noqa: E402
-from palette import caption, style  # noqa: E402
+from palette import caption, draw_us_outline, style  # noqa: E402
 from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # noqa: E402
                                      fold_labels, idw_weights)
 
@@ -66,6 +66,7 @@ def main(cell):
     # Shaped to the CONUS aspect the `set_aspect` below enforces, so the axes fill the
     # figure instead of floating in a band of white.
     fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    draw_us_outline(ax)
     # Thicker and darker than the default MUTE grid ink, so the donor links read clearly
     # against the basin points rather than disappearing into the background.
     ax.add_collection(LineCollection(segs, colors=INK, linewidths=1.1, zorder=2,
