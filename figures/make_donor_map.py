@@ -11,9 +11,9 @@ The gauged cell isn't drawn here: there every basin draws from the same all-othe
 so a per-fold donor map doesn't show anything the ungauged one doesn't already -- one picture is
 enough.
 
-Colour: palette slots 0 and 1 (blue = donor gauges, orange = the basins being corrected),
-validated in palette.py. The donor links are neutral ink, not a third series, and both point
-series are named in the legend, so nothing rests on colour alone.
+Colour: palette slots 0 and 1 (blue = donor gauges, vermillion = the basins being corrected).
+The donor links are neutral ink, not a third series, and both point series are named in the
+legend and drawn at different marker sizes, so nothing rests on colour alone.
 """
 import os
 import sys
@@ -67,9 +67,11 @@ def main():
     fig, ax = plt.subplots(figsize=(8.0, 5.2))
     draw_us_outline(ax)
     # Thicker and darker than the default MUTE grid ink, so the donor links read clearly
-    # against the basin points rather than disappearing into the background.
-    ax.add_collection(LineCollection(segs, colors=INK, linewidths=1.1, zorder=2,
-                                     alpha=0.20 + 0.55 * (w / w.max())))
+    # against the basin points rather than disappearing into the background. The alpha floor
+    # matters more than the ceiling: it is the weakest links that were vanishing, and they are
+    # the ones that show how far the neighbourhood actually reaches.
+    ax.add_collection(LineCollection(segs, colors=INK, linewidths=1.35, zorder=2,
+                                     alpha=0.40 + 0.50 * (w / w.max())))
     ax.scatter(lon[donor], lat[donor], s=16, color=RAW, alpha=0.75, lw=0.5,
               edgecolor="white", zorder=3, label=f"donor gauges ({len(donor)})")
     ax.scatter(lon[target], lat[target], s=34, color=CORRECTED, lw=0.8, zorder=4,

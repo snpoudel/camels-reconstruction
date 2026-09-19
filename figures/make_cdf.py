@@ -19,9 +19,9 @@ more than their axes alone: the correction improves KGE's correlation and bias t
 slightly worsens its variability term, which NSE does not charge for, so the NSE gain runs
 larger than the KGE gain.
 
-Colour: palette slots 0 and 1, validated in palette.py (normal-vision dE 33.6, protan 24.5,
-deutan 31.6, all past the >= 15 / >= 8 thresholds). Identity never rests on colour alone: both
-series are named in the legend and separated in position.
+Colour: the only figure drawing three series at once, so it uses all three Okabe-Ito slots from
+palette.py. Identity never rests on colour alone: each series is named in the legend with its
+median, and the curves are separated in position.
 """
 import argparse
 import os

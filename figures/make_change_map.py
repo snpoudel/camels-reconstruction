@@ -10,10 +10,10 @@ from every other figure here: those compare two named series (identity, categori
 this shows one continuous quantity with a sign (polarity, diverging colour), so it earns its own
 two-hue-plus-neutral palette rather than a generic diverging map.
 
-The two hues are the project's own BLUE and ORANGE -- the same pair every other figure uses for
-"LSTM" and "LSTM + correction" -- through a neutral grey at zero. Orange already means "the
-correction" on every other page in this set, so an orange basin here reads as "the correction
-helped here" instead of introducing an unrelated hue for the same idea.
+The two hues are the project's own blue and vermillion -- the same pair every other figure uses
+for "LSTM" and "LSTM + correction" -- through a neutral grey at zero. Vermillion already means
+"the correction" on every other page in this set, so a vermillion basin here reads as "the
+correction helped here" instead of introducing an unrelated hue for the same idea.
 
 Two things matter more than the hue choice for actually being able to read this map, and both
 were wrong in an earlier version:
@@ -47,14 +47,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
 from evaluate import read_info, read_metrics  # noqa: E402
-from palette import BLUE, CELL_TITLE, INK, LABEL, MUTE, ORANGE, SERIES, TITLE  # noqa: E402
+from palette import CELL_TITLE, DIVERGING, INK, LABEL, MUTE, SERIES, TITLE  # noqa: E402
 from palette import caption, draw_us_outline, style  # noqa: E402
 from residual_postprocessing import BASINS_CSV  # noqa: E402
-
-# A visibly grey zero, not this project's near-white GRID (that reads as "empty" on a map, and
-# a marker filled with it is nearly invisible against the page).
-DIVERGE_ZERO = "#b6bec4"
-CHANGE_CMAP = mcolors.LinearSegmentedColormap.from_list("change", [BLUE, DIVERGE_ZERO, ORANGE])
 
 # The 85th percentile of |change|, not the 98th: see module docstring. ~15% of basins land
 # beyond it and show at the pole colour; that trade is what makes the typical basin readable.
@@ -85,7 +80,7 @@ def main(cell):
 
         draw_us_outline(ax)
         order = np.argsort(np.abs(g))  # draw the biggest changes last, on top
-        sc = ax.scatter(lon[order], lat[order], c=g[order], cmap=CHANGE_CMAP, norm=norm, s=36,
+        sc = ax.scatter(lon[order], lat[order], c=g[order], cmap=DIVERGING, norm=norm, s=36,
                         edgecolor=MUTE, linewidth=0.5, zorder=3)
 
         ax.set_aspect(1 / np.cos(np.radians(lat.mean())))

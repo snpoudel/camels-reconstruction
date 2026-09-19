@@ -32,9 +32,10 @@ CELLS = ("gauged", "ungauged")
 # output: the single nearest gauge's error, applied in full. Only the CDF figure draws it.
 VARIANTS = {"raw": "LSTM", "nearest": "nearest gauge only", "corrected": "LSTM + correction"}
 
-# The error-structure analysis: pairs binned to 25 km out to 1000 km, and a 31-day circular
-# window on the day-of-year climatology that deseasonalising removes.
-DIST_BIN_KM, DIST_MAX_KM, CLIM_WINDOW = 25, 1000, 31
+# The error-structure analysis: pairs out to 1000 km, a 31-day circular window on the
+# day-of-year climatology that deseasonalising removes, and the LOESS bandwidth the trend
+# through the pair cloud is fitted with.
+DIST_MAX_KM, CLIM_WINDOW, LOESS_KM = 1000, 31, 60
 
 
 def read_metrics(cell):
@@ -53,8 +54,10 @@ def read_info(cell=None):
 
 
 def read_error_structure():
-    """Residual correlation against gauge separation, the premise figure's one table."""
-    return pd.read_csv(f"{HERE}/error_structure.csv")
+    """The premise figure's two tables: (one row per basin pair, the fitted trend through
+    them)."""
+    return (pd.read_csv(f"{HERE}/error_structure.csv"),
+            pd.read_csv(f"{HERE}/error_structure_fit.csv"))
 
 
 def fold_settings(df):
@@ -178,6 +181,44 @@ def _corr_rows(x):
     return (a @ a.T) / np.outer(norm, norm)
 
 
+def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
+    """Robust locally weighted regression (Cleveland 1979) evaluated on `grid`.
+
+    A fixed bandwidth in kilometres, not the usual nearest-neighbour span: pairs are very
+    unevenly spread along the distance axis -- a few hundred under 25 km against thousands
+    beyond 800 km -- so a span that adapts to point density would reach hundreds of kilometres
+    out at the short-range end and flatten the very drop the figure is about.
+
+    The robustness iterations matter here rather than being a formality. Pair correlations are
+    left-skewed: a minority of pairs correlate poorly or negatively, and a plain local mean is
+    dragged well below the typical pair by them (0.48 against a median of 0.51 at short range).
+    Bisquare reweighting discounts that tail, so the line tracks the bulk of the cloud.
+    """
+    def fit(weights):
+        out = np.empty(len(grid))
+        for i, x0 in enumerate(grid):
+            w = np.clip(1 - (np.abs(x - x0) / bandwidth) ** 3, 0, None) ** 3 * weights
+            sw = w.sum()
+            if sw <= 0:
+                out[i] = np.nan
+                continue
+            mx, my = (w * x).sum() / sw, (w * y).sum() / sw
+            sxx = (w * (x - mx) ** 2).sum()
+            slope = (w * (x - mx) * (y - my)).sum() / sxx if sxx > 0 else 0.0
+            out[i] = my + slope * (x0 - mx)
+        return out
+
+    robust, curve = np.ones(len(x)), None
+    for _ in range(iterations + 1):
+        curve = fit(robust)
+        # Residuals are taken against the curve interpolated back to the points: fitting at all
+        # 39k of them directly would be quadratic for no visible gain.
+        resid = y - np.interp(x, grid, curve)
+        s = np.median(np.abs(resid))
+        robust = np.clip(1 - (resid / (6 * s)) ** 2, 0, None) ** 2 if s > 0 else robust
+    return curve
+
+
 def error_structure(model):
     """Are the model's errors spatially structured? The premise the correction rests on.
 
@@ -198,22 +239,23 @@ def error_structure(model):
 
     iu = np.triu_indices(len(dist), 1)
     d, c, cd = dist[iu], _corr_rows(res)[iu], _corr_rows(_deseason(res, doy))[iu]
-    binned = []
-    for lo in np.arange(0, DIST_MAX_KM, DIST_BIN_KM):
-        sel = (d >= lo) & (d < lo + DIST_BIN_KM)
-        if sel.sum() < 50:  # too few pairs to read a median off
-            continue
-        binned.append(dict(dist_lo=lo, dist_hi=lo + DIST_BIN_KM, dist_mid=lo + DIST_BIN_KM / 2,
-                           n_pairs=int(sel.sum()),
-                           r_med=np.median(c[sel]), r_q25=np.quantile(c[sel], 0.25),
-                           r_q75=np.quantile(c[sel], 0.75), r_med_deseason=np.median(cd[sel]),
-                           r_q25_deseason=np.quantile(cd[sel], 0.25),
-                           r_q75_deseason=np.quantile(cd[sel], 0.75)))
-    df = pd.DataFrame(binned)
-    df.to_csv(f"{HERE}/error_structure.csv", index=False)
-    near = df.iloc[0]
-    print(f"\nerror structure: pairs under {int(near.dist_hi)} km correlate {near.r_med:.3f}, "
-          f"{near.r_med_deseason:.3f} deseasonalised; {int(df.n_pairs.sum())} pairs binned")
+    keep = d < DIST_MAX_KM
+    d, c, cd = d[keep], c[keep], cd[keep]
+    pd.DataFrame({"dist_km": d, "r": c, "r_deseason": cd}).to_csv(
+        f"{HERE}/error_structure.csv", index=False, float_format="%.5g")
+
+    # The curve starts at 10 km, not at the closest pair: a local linear fit against a kernel
+    # truncated by the x = 0 boundary extrapolates the steep decay and curls upward, which is an
+    # artefact of the fit rather than anything in the data.
+    grid = np.linspace(10, DIST_MAX_KM, 160)
+    fit, fit_d = _loess(d, c, grid), _loess(d, cd, grid)
+    pd.DataFrame({"dist_km": grid, "r_fit": fit, "r_fit_deseason": fit_d}).to_csv(
+        f"{HERE}/error_structure_fit.csv", index=False, float_format="%.5g")
+
+    print(f"\nerror structure: {len(d)} basin pairs within {DIST_MAX_KM} km")
+    for at in (25, 100, 500, 900):
+        print(f"  fitted correlation at {at:4d} km {np.interp(at, grid, fit):.3f}, "
+              f"{np.interp(at, grid, fit_d):.3f} deseasonalised")
 
 
 def main():

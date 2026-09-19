@@ -2,20 +2,19 @@
 
     python figures/make_error_structure.py
 
-How two basins' daily log residuals correlate, against how far apart their gauges are. Nothing
-here knows what the correction is: the figure is built from residuals and gauge coordinates
-alone, with no K, lambda or p in it, so it establishes a property of the model's errors rather
-than a property of this pipeline.
+One dot per PAIR of basins: how their two daily residual series correlate over the whole
+evaluation period, against how far apart the two gauges are. Distance is the x axis, not time --
+each pair's 15 years have already been collapsed into a single correlation before it reaches
+this plot. The line is a LOESS fit through the cloud, drawn because 39,285 overplotted dots show
+the trend poorly on their own; the dots stay so the reader can see what the fit is summarising
+and how wide the spread around it really is.
 
-Drawn twice, on the raw residual and with each series' day-of-year climatology removed. The
-second line carries the argument: two nearby basins share a seasonal cycle through their
-forcings whether or not the model errs together, so only the deseasonalised agreement is
-evidence of day-to-day information worth borrowing.
+Nothing here knows what the correction is: the figure is built from residuals and gauge
+coordinates alone, with no K, lambda or p in it, so it establishes a property of the model's
+errors rather than a property of this pipeline.
 
-Colour: ink for both lines, the deseasonalised one dashed. These are two views of one quantity
-rather than two series, so they are separated by line style instead of taking a palette slot --
-blue and orange mean uncorrected/corrected everywhere, and teal is the CDF figure's
-nearest-gauge reference.
+Colour: grey for the pairs, the palette's first series colour for the fit -- the cloud is
+evidence, the line is the claim, and the ink follows that.
 """
 import os
 import sys
@@ -23,50 +22,57 @@ import sys
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from evaluate import read_error_structure, read_info  # noqa: E402
-from palette import INK, LABEL, MUTE, TITLE, caption, style  # noqa: E402
+from evaluate import LOESS_KM, read_error_structure, read_info  # noqa: E402
+from palette import INK, LABEL, MUTE, NEUTRAL, RAW, TITLE, caption, style  # noqa: E402
 
-SERIES = [("", "solid", "daily log residual"),
-          ("_deseason", (0, (5, 2)), "seasonal cycle removed")]
+# The axis is cut here rather than at the cloud's true floor, which keeps the decay legible at
+# the cost of a few hundred strongly anticorrelated pairs. The caption reports how many, so the
+# trim is stated rather than silent.
+Y_FLOOR = -0.4
 
 
 def main():
-    dist = read_error_structure()
+    pairs, fit = read_error_structure()
     info = read_info("ungauged")
 
-    fig, ax = plt.subplots(figsize=(6.6, 4.6))
-    for suffix, dash, label in SERIES:
-        ax.fill_between(dist.dist_mid, dist[f"r_q25{suffix}"], dist[f"r_q75{suffix}"],
-                        color=INK, alpha=0.10, lw=0, zorder=2)
-        ax.plot(dist.dist_mid, dist[f"r_med{suffix}"], color=INK, lw=2, ls=dash, zorder=3,
-                label=f"{label}   {dist[f'r_med{suffix}'].iloc[0]:.2f} at the closest bin")
-    ax.axhline(0, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=1)
-    ax.set_xlim(0, dist.dist_hi.max())
-    ax.set_xlabel("distance between gauges (km)", color=INK, fontsize=LABEL)
-    ax.set_ylabel("correlation of daily residuals", color=INK, fontsize=LABEL)
-    ax.legend(frameon=False, loc="upper right", fontsize=LABEL - 1, labelcolor=INK)
-    style(ax)
-    ax.set_title("Ungauged basins: the model's errors are spatially structured",
-                 color=INK, fontsize=TITLE, loc="left", pad=8)
+    fig, ax = plt.subplots(figsize=(6.8, 4.8))
+    ax.scatter(pairs.dist_km, pairs.r, s=5, color=NEUTRAL, alpha=0.10, linewidths=0, zorder=2,
+               rasterized=True, label="one basin pair")
+    ax.plot(fit.dist_km, fit.r_fit, color=RAW, lw=2.4, zorder=4, label="LOESS fit")
+    ax.axhline(0, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=3)
 
-    n_pairs = int(dist.n_pairs.sum())
-    bin_km = int(dist.dist_hi.iloc[0] - dist.dist_lo.iloc[0])
+    ax.set_xlim(0, fit.dist_km.max())
+    ax.set_ylim(Y_FLOOR, 0.9)
+    ax.set_xlabel("distance between gauge pair (km)", color=INK, fontsize=LABEL)
+    ax.set_ylabel("correlation of daily residuals", color=INK, fontsize=LABEL)
+    leg = ax.legend(frameon=False, loc="upper right", fontsize=LABEL - 1, labelcolor=INK,
+                    handletextpad=0.6, borderpad=0.2)
+    leg.legend_handles[0].set_alpha(0.8)  # the cloud's own alpha is unreadable at legend size
+    leg.legend_handles[0].set_sizes([26])
+    style(ax)
+    ax.set_title("Spatial structure of model's error", color=INK, fontsize=TITLE, loc="left",
+                 pad=8)
+
     bottom = caption(fig, f"{info['n_basins']} basins held out of training entirely, "
                           f"{info['n_folds']} folds, {info['n_seeds']} seeds, test period "
                           f"{info['test_period']}.  The residual is the same log quantity the "
                           f"correction transfers, log(sim + eps) - log(obs + eps), from the "
-                          f"model that held each basin out.  {n_pairs} basin pairs within "
-                          f"{int(dist.dist_hi.max())} km, binned every {bin_km} km: median with "
-                          f"the interquartile range.  Deseasonalising removes each series' own "
-                          f"day-of-year climatology, smoothed over 31 days, from both sides "
-                          f"before correlating.", 100)
+                          f"model that held each basin out.  Every pair of gauges within "
+                          f"{int(fit.dist_km.max())} km contributes one dot, its correlation "
+                          f"taken over the whole test period -- {len(pairs):,} pairs in all, of "
+                          f"which {int((pairs.r < Y_FLOOR).sum())} fall below the axis.  Pairs "
+                          f"are far denser at long range than short, so the fit is a LOESS with "
+                          f"a fixed {LOESS_KM} km bandwidth rather than a fixed share of the "
+                          f"points, which would over-smooth exactly where the decay is "
+                          f"steepest.", 100)
     fig.tight_layout(rect=(0, bottom, 1, 1))
     out = f"{HERE}/ungauged_error_structure.png"
     fig.savefig(out, dpi=200, facecolor="white")
-    print(f"-> {out}   {n_pairs} pairs")
+    print(f"-> {out}   {len(pairs)} pairs")
 
 
 if __name__ == "__main__":

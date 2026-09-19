@@ -286,19 +286,26 @@ regional model's errors at nearby basins are not independent. We test it on the 
 correction actually transfers, `log(q_sim + ε) − log(q_obs + ε)`, computed from each basin's
 out-of-sample prediction — the model that held that basin out — over the full evaluation period.
 
-Errors are strongly shared between close gauges and the sharing decays with distance
-(Figure 1a). For basin pairs less than 25 km apart the median correlation between daily
-residuals is 0.51; it falls to 0.23 by 100 km, 0.08 by 500 km, and 0.04 by 900 km. The
-information is therefore local, which is what justifies both weighting donors by distance and
-keeping the donor count small: beyond a few hundred kilometres a donor carries almost nothing
-about the target's error today.
+Errors are strongly shared between close gauges, and the sharing decays with distance
+(Figure 1). Every pair of gauges within 1000 km contributes one correlation — 39,285 pairs in
+all — and a locally weighted regression through them falls from 0.45 at a separation of 25 km
+to 0.25 at 100 km, 0.08 at 500 km and 0.05 at 900 km. The information is therefore local, which
+is what justifies both weighting donors by distance and keeping the donor count small: beyond a
+few hundred kilometres a donor carries almost nothing about the target's error today.
+
+The spread around that trend is wide — individual pairs at any separation range from strongly
+correlated to mildly anticorrelated — so the decay describes the typical pair rather than a
+reliable property of every pair. That is itself informative: it is the reason the correction
+pools several donors and applies only a fraction of what they suggest, rather than trusting any
+single neighbour.
 
 This agreement is not merely the seasonal cycle that two neighbouring basins share through their
 forcings. Removing each series' day-of-year climatology before correlating — a 31-day circular
-smoothing of the mean residual for each calendar day — leaves the short-range correlation almost
-unchanged, at 0.49 against 0.51 (Figure 1a, second line). What neighbouring gauges reveal is
-day-to-day information about the model's error, not a seasonal pattern the model already
-recovers from its own inputs.
+smoothing of the mean residual for each calendar day — leaves the fitted curve almost unchanged
+at short range, 0.44 against 0.45 at 25 km, while lowering it further out (0.06 against 0.08 at
+500 km). What neighbouring gauges reveal at the distances the correction actually draws from is
+therefore day-to-day information about the model's error, not a seasonal pattern the model
+already recovers from its own inputs.
 
 This analysis uses nothing but the model's residuals and the gauge coordinates: no part of the
 correction enters it. What it establishes is therefore a property of the regional model's errors
@@ -306,11 +313,14 @@ rather than of any particular way of exploiting them — at a basin with no gaug
 error is unobservable, but a quantity substantially correlated with it is measurable at the
 gauges nearby. The rest of the paper asks how much of that error can be recovered in practice.
 
-**Figure 1.** *Model errors are spatially structured.* Correlation between pairs of basins'
-daily log residuals against the great-circle distance between their gauges, over 39,285 pairs
-within 1000 km, binned every 25 km; the line is the median and the band the interquartile range.
-Drawn on the raw residual and after removing each series' day-of-year climatology, smoothed over
-31 days, from both sides. (`figures/ungauged_error_structure.png`)
+**Figure 1.** *Model errors are spatially structured.* Each grey dot is one pair of basins: the
+correlation between their two daily log-residual series over the whole evaluation period,
+against the great-circle distance between their gauges. All 39,285 pairs within 1000 km are
+shown, so the horizontal axis is gauge separation rather than time. The line is a robust
+locally weighted regression (Cleveland, 1979) through the cloud, using a fixed 60 km bandwidth
+rather than a fixed share of the points, because pairs are far denser at long range than at
+short and a density-adaptive span would over-smooth precisely where the decay is steepest.
+(`figures/ungauged_error_structure.png`)
 
 ## 4. Discussion
 
@@ -335,6 +345,9 @@ W10513.
 Blöschl, G., Sivapalan, M., Wagener, T., Viglione, A., Savenije, H. (Eds.) (2013). *Runoff
 Prediction in Ungauged Basins: Synthesis across Processes, Places and Scales*. Cambridge
 University Press.
+
+Cleveland, W. S. (1979). Robust locally weighted regression and smoothing scatterplots.
+*Journal of the American Statistical Association*, 74(368), 829–836.
 
 Feng, D., Liu, J., Lawson, K., Shen, C. (2022). Differentiable, learnable, regionalized
 process-based models with multiphysical outputs can approach state-of-the-art hydrologic
