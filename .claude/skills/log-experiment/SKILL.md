@@ -1,6 +1,6 @@
 ---
 name: log-experiment
-description: Record a completed experiment run in EXPERIMENTS.md — what was run, what came out, in plain language — and keep it usable as the project's memory across sessions: a new session should read the top entry and know where things stand. Use after a training batch finishes and `python -m src.evaluate` has written runs/metrics.csv, or when the user says "log this", "write this up", or "add this to the experiment log".
+description: Record a completed experiment run in EXPERIMENTS.md — what was run, what came out, in plain language — and keep it usable as the project's memory across sessions: a new session should read the top entry and know where things stand. Use after a training batch finishes and `python figures/evaluate.py` has written the metrics CSVs, or when the user says "log this", "write this up", or "add this to the experiment log".
 ---
 
 # Log an experiment
@@ -12,11 +12,11 @@ someone with no other context.
 ## 1. Gather the facts — don't guess
 
 ```bash
-ls -d runs/*/ | wc -l                       # how many runs
-cat runs/*/config.json                      # arch, fold, seed, every hyperparameter
-python -m src.evaluate                      # runs/metrics.csv — per-start, spread only
-python figures/make_results_figure.py       # runs/metrics_ensemble.csv — headline numbers
-grep -c . runs/metrics.csv                  # sanity: rows present
+ls -d runs/lstm/*/*/ | wc -l                # how many runs
+cat runs/lstm/*/*/config.json               # arch, fold, seed, every hyperparameter
+python figures/evaluate.py                  # figures/metrics_<cell>.csv — headline numbers,
+                                            #   and prints the per-seed spread
+cat runs/lstm/*_corrected/params.csv        # the selected K, lambda, p per fold
 tail -3 logs/*.log                          # wall-clock per run
 git log --oneline -1                        # commit the runs came from
 ```
@@ -24,7 +24,7 @@ git log --oneline -1                        # commit the runs came from
 Every score quoted is the ensemble-mean hydrograph (average the starts'
 day-by-day predictions per basin, then compute NSE/KGE once) — the project's
 only headline convention, matching CLAUDE.md and how the Kratzert 0.693
-reference number is built. `summarise()`'s per-start medians read lower and
+reference number is built. The per-seed medians `figures/evaluate.py` prints read lower and
 are for step 2 only; never quote them as a result. Don't recompute either by
 hand.
 
