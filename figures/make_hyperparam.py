@@ -36,9 +36,9 @@ from palette import caption, style  # noqa: E402
 CV_POOL = {"ungauged": "the fold's own training basins",
            "gauged": "every basin outside the group being corrected"}
 
-AXES = [("k", "K, donor gauges consulted", "(a)  gauges consulted"),
-        ("lam", r"$\lambda$, fraction of donor error applied", "(b)  error believed"),
-        ("p", "p, inverse-distance exponent", "(c)  distance weighting")]
+AXES = [("k", "K, donor gauges consulted", "(a)"),
+        ("lam", r"$\lambda$, fraction of donor error applied", "(b)"),
+        ("p", "p, inverse-distance exponent", "(c)")]
 
 
 def main(cell):
@@ -72,23 +72,26 @@ def main(cell):
         ax.set_xticks(range(len(grid)))
         ax.set_xticklabels([f"{v:g}" if i % step == 0 else "" for i, v in enumerate(grid)])
         ax.set_xlabel(xlabel, color=INK, fontsize=LABEL)
-        ax.set_title(title, color=INK, fontsize=PANEL, loc="left", pad=8)
+        # Panel letter in the bottom-left corner, in axis fractions so it sits inside the
+        # plot regardless of the y-limits below.
+        ax.text(0.03, 0.05, title, color=INK, fontsize=PANEL, transform=ax.transAxes,
+               ha="left", va="bottom")
         if ax is axes[0]:  # one legend for the figure: all three panels draw the same two things
             ax.plot([], [], color=CORRECTED, lw=lw, alpha=alpha,
                     label="profile" if single else "per-fold profile")
             ax.plot([], [], "o", ms=7, color=CORRECTED, markeredgecolor="white",
                     markeredgewidth=1.5, label="selected")
             ax.legend(frameon=False, loc="lower right", fontsize=LABEL - 2, labelcolor=INK)
-        # Scaled to the data, not to [0, 1]: the whole surface spans a few hundredths of KGE,
-        # and on a full-height axis the profiles collapse to flat lines with no readable shape.
-        # The caption carries the span so the zoom cannot be mistaken for a large effect, and
-        # panel (b) includes lambda = 0 -- the uncorrected model -- as an in-panel anchor.
+        # Floor at 0.6 rather than the tight span of the surface: the surface itself only
+        # spans a few hundredths of KGE, and zooming all the way to it (as an earlier version
+        # did) makes ordinary sampling noise look like a dramatic shape. 0.6 keeps the profiles
+        # readable while still showing them clearly above the uncorrected floor.
         pad = 0.06 * (df.score.max() - df.score.min())
-        ax.set_ylim(df.score.min() - pad, df.score.max() + pad)
+        ax.set_ylim(0.6, df.score.max() + pad)
         style(ax)
     axes[1].tick_params(labelleft=False)
     axes[2].tick_params(labelleft=False)
-    axes[0].set_ylabel("median KGE over cross-validation groups", color=INK, fontsize=LABEL)
+    axes[0].set_ylabel("Median cross-validation KGE", color=INK, fontsize=LABEL)
 
     fig.suptitle(f"{CELL_TITLE[cell]}: cross-validation for K, $\\lambda$ and p",
                  fontsize=TITLE, color=INK, x=0.012, ha="left", y=0.98)

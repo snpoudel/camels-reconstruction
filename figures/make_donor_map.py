@@ -36,7 +36,10 @@ from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # 
 def main(cell):
     df = read_metrics(cell)
     info = read_info(cell)
-    fold, k, lam, p = fold_settings(df)[0]
+    # Pick the fold/group whose K is closest to 5: few enough donor lines to read individually,
+    # many enough to look like a real neighbourhood rather than a single nearest-neighbour lookup.
+    settings = fold_settings(df)
+    fold, k, lam, p = min(settings, key=lambda s: (abs(s[1] - 5), s[0]))
 
     labels, dist = fold_labels(), distance_matrix()
     target = np.flatnonzero(labels == fold)
@@ -63,16 +66,19 @@ def main(cell):
     # Shaped to the CONUS aspect the `set_aspect` below enforces, so the axes fill the
     # figure instead of floating in a band of white.
     fig, ax = plt.subplots(figsize=(8.0, 5.2))
-    ax.add_collection(LineCollection(segs, colors=MUTE, linewidths=0.5, zorder=2,
-                                     alpha=0.10 + 0.45 * (w / w.max())))
+    # Thicker and darker than the default MUTE grid ink, so the donor links read clearly
+    # against the basin points rather than disappearing into the background.
+    ax.add_collection(LineCollection(segs, colors=INK, linewidths=1.1, zorder=2,
+                                     alpha=0.20 + 0.55 * (w / w.max())))
     # In the gauged cell every basin is a donor for every other, so the blue points are not
     # "the donor pool" -- they are simply the basins not being corrected in this group.
     shown = np.setdiff1d(donor, target)
-    ax.scatter(lon[shown], lat[shown], s=5, color=RAW, alpha=0.55, lw=0, zorder=3,
-               label=(f"donor gauges ({len(shown)})" if cell == "ungauged"
-                      else f"other basins ({len(shown)})"))
-    ax.scatter(lon[target], lat[target], s=13, color=CORRECTED, lw=0.4, zorder=4,
-               edgecolor="white", label=f"basins being corrected ({len(target)})")
+    ax.scatter(lon[shown], lat[shown], s=16, color=RAW, alpha=0.75, lw=0.5,
+              edgecolor="white", zorder=3,
+              label=(f"donor gauges ({len(shown)})" if cell == "ungauged"
+                     else f"other basins ({len(shown)})"))
+    ax.scatter(lon[target], lat[target], s=34, color=CORRECTED, lw=0.8, zorder=4,
+              edgecolor="white", label=f"basins being corrected ({len(target)})")
 
     ax.set_aspect(1 / np.cos(np.radians(lat.mean())))
     ax.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)

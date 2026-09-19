@@ -1,11 +1,11 @@
-"""Where the correction acts: six error measures, before and after.
+"""Where the correction acts: four bias measures, before and after.
 
     python figures/make_boxplot.py --cell ungauged
     python figures/make_boxplot.py --cell gauged
 
-A single skill score hides where a correction does its work. These six say it: overall skill
-(KGE), typical error size (RMSE), water balance (percent bias), and then bias split by how high
-the river actually was that day -- top 10%, middle 30-90%, bottom 30%.
+Overall skill lives in the CDF figure (NSE and KGE); this one is about water balance -- overall
+percent bias, then bias split by how high the river actually was that day: top 10%,
+middle 30-90%, bottom 30%.
 
 The flow bands are cut on the OBSERVED flow (Yilmaz et al. 2008), so "high-flow bias" is the
 model's error on the days the river really was high, not on the days it predicted high. For the
@@ -34,8 +34,6 @@ from palette import CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE, PANEL, SERIES, TIT
 from palette import caption, settings_note, style  # noqa: E402
 
 PANELS = [
-    ("kge", "KGE, Kling-Gupta efficiency", False),
-    ("rmse", "RMSE (mm day$^{-1}$)", False),
     ("pbias", "overall bias (%)", True),
     ("bias_high", "bias, top 10% of flows (%)", True),
     ("bias_mid", "bias, middle 30-90% of flows (%)", True),
@@ -48,7 +46,7 @@ def main(cell):
     info = read_info(cell)
     series = {name: df[df.variant == name] for name in SERIES}
 
-    fig, axes = plt.subplots(2, 3, figsize=(11.5, 6.4))
+    fig, axes = plt.subplots(2, 2, figsize=(8.2, 6.8))
     rng = np.random.default_rng(0)  # fixed, so the jitter is reproducible
 
     for ax, (col, title, centred) in zip(axes.ravel(), PANELS):
@@ -91,7 +89,7 @@ def main(cell):
                             for n in [int((v < lo - pad).sum() + (v > hi + pad).sum())]],
                            fontsize=LABEL - 1, color=INK)
 
-    fig.suptitle(f"{CELL_TITLE[cell]}: what the correction changes, measure by measure",
+    fig.suptitle(f"{CELL_TITLE[cell]}: bias before and after the correction",
                  fontsize=TITLE, color=INK, x=0.012, ha="left", y=0.995)
     bottom = caption(fig, f"{info['n_basins']} basins, {CELL_BLURB[cell]}, {info['n_folds']} "
                           f"folds, {info['n_seeds']} seeds, test period {info['test_period']}.  "
