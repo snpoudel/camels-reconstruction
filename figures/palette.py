@@ -45,7 +45,7 @@ RAW, CORRECTED = BLUE, ORANGE
 
 # What each runs/<model>/ tree is called in a caption or legend. Falls back to the model name
 # capitalised, so a new model needs no entry here to work -- only to read better than "Hybrid".
-MODEL_LABEL = {"lstm": "LSTM"}
+MODEL_LABEL = {"lstm": "LSTM", "hbv": "HBV"}
 
 # The parameter-free reference -- one donor, all of its error, nothing selected. Only the CDF
 # figure draws it, so `series_pair` below stays a pair and the figures that unpack it keep

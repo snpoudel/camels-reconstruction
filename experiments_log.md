@@ -20,6 +20,145 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-20 — Adding HBV, a locally-calibrated model with no LSTM in it, to the correction pipeline
+
+**What I ran** — The entry just below this one checked whether the spatially structured error
+pattern this project's correction relies on survives outside a regionally-trained LSTM, using
+published LSTM simulations. The natural next question: does it also show up in a model family
+many hydrology groups actually use in practice -- a traditional, physically-based rainfall-runoff
+model, calibrated one basin at a time, with no machine learning in it at all? If so, that would
+mean the correction is worth trying for those users too, not just for LSTM users.
+
+HBV is exactly that kind of model, and published simulations already exist: the CAMELS benchmark
+models data set (Kratzert et al., collected alongside "Benchmarking a Catchment-Aware LSTM for
+Large-Scale Hydrological Modeling", HydroShare 10.4211/hs.474ecc37e7db45baa425cdb4fc1b61e1) has,
+for every one of this project's 531 basins, the "upper bound" HBV simulation from Seibert et al.
+(2018) -- the day-by-day average of 100 HBV models, each independently calibrated to that one
+basin's own measured flow and nothing else, for a ten-year window (1 Oct 1989 to 30 Sep 1999)
+held back from the years the models were calibrated on (1999-2008).
+
+Because every basin's HBV model saw only its own record, there's no basin HBV was never trained
+on at all, so unlike the earlier hybrid-model check there is only the discontinued-gauge case here
+(a basin's own gauge presumed to have gone dark, corrected from its neighbours) and no
+never-trained-on case. That's the "gauged" cell this project already has a full pipeline for. HBV
+was wired into it the same way the hybrid model was: `src/hbv/prepare.py` reads the published
+NetCDFs and writes `runs/hbv/gauged/_mean/predictions.npz`, then the same scripts every other
+model uses ran unchanged -- `src/01_lstm_gauged_correction.py --model hbv` (the settings search,
+holding each of 7 basin groups out of its own search), `figures/evaluate.py --model hbv`, and the
+five gauged figures (skill curves, a map of where the correction helps or hurts, the
+cross-validation surface, bias by flow level, and the spatial error-structure check). Observed
+flow was always looked up from this project's own cached record, never from HBV's NetCDFs, so
+every model in this project is scored against the exact same measurements. Repo commit `e10aeb5`.
+
+**What came out** — First, the same spatial-structure check as the LSTM comparison: HBV's errors
+at nearby basins track each other closely, more so than either LSTM version checked before it --
+
+| distance between gauges | this project's regional LSTM | Kratzert et al. regional LSTM | Kratzert et al. single-basin LSTM | HBV (locally calibrated) |
+|---|---|---|---|---|
+| 25 km | 0.53 | 0.47 | 0.57 | 0.68 |
+| 100 km | 0.28 | 0.23 | 0.36 | 0.47 |
+| 500 km | 0.11 | 0.06 | 0.14 | 0.28 |
+| 900 km | 0.06 | 0.03 | 0.07 | 0.20 |
+
+Then the correction itself, median across all 531 basins (Nash-Sutcliffe and Kling-Gupta
+efficiency both measure how closely predicted daily flow tracks measured flow -- 1.0 a perfect
+match, 0.0 no better than always predicting the long-term average, negative worse than that; KGE
+additionally separates out correlation, bias and variability):
+
+| | HBV, uncorrected | HBV + correction | nearest gauge only (no calibration at all) |
+|---|---|---|---|
+| NSE | 0.68 | 0.76 | 0.59 |
+| KGE | 0.68 | 0.77 | 0.69 |
+
+The correction moved 418 of 531 basins' KGE in the right direction and 395 of 531 basins' NSE.
+It also cut two long-standing HBV biases roughly in half or more: HBV underpredicts the highest
+10% of flows by a median of 20% before correction, 10% after; and overpredicts the lowest 30% of
+flows by a startling median of 77% before correction, 21% after. The settings chosen per basin
+group (how many neighbouring gauges to borrow from, how sharply to favour closer ones, how much
+of the borrowed error to apply) landed in a similar range to the LSTM and hybrid cases: 3-7
+donor gauges, applying 75-90% of the borrowed error.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next** — This is a second, independent line of evidence (after the single-basin-LSTM
+check above) that the correction's premise -- and its benefit -- isn't specific to LSTMs or to
+regional training. Between the two checks, HBV is the stronger result for the manuscript's
+argument that this generalises to what many organisations already run: it's a real,
+already-in-use model family, calibrated the way most users actually calibrate it (one basin at a
+time, no cross-basin information at all), and the correction still recovers a similar-sized gain
+to what the regional LSTM saw. Worth deciding: (1) whether to add an HBV panel alongside the LSTM
+and hybrid results in the main figures, or keep it in a supplementary "generalises across model
+families" section; (2) whether to also pull in the other benchmark models already sitting in the
+same downloaded files (SAC-SMA, VIC, mHM, FUSE) for a broader sweep, now that the download and
+`src/hbv/prepare.py` pattern exist to copy; (3) the raw downloaded archives
+(`data/raw/kratzert/never-paper.tar.gz`, 5.4 GB, and `data/raw/camels_benchmarks/`, 120 MB) are
+still on disk and gitignored -- worth deciding whether to keep them around for (2) or delete them.
+
+---
+
+## 2026-09-20 — Checking whether the spatial error pattern needs a regionally-trained model, using Kratzert et al.'s published simulations
+
+**What I ran** — The paper's opening result (Figure 1) is that a regionally-trained model's daily
+errors at nearby river gauges rise and fall together, and fall off the further apart two gauges
+are — the pattern the neighbour-borrowing correction relies on. An obvious question a reviewer
+would ask: does that pattern only show up because the model was trained on many basins at once,
+or would it appear even in a model trained on one basin by itself, with no way to learn anything
+about any other basin? Training a one-basin-at-a-time model ourselves would mean 531 separate
+trainings, which isn't what this project is about, so instead this reused published simulations
+from Kratzert et al.'s 2024 paper "Never train an LSTM on a single basin" (Zenodo record
+11247607, a 5.4 GB archive of model runs), which already trained both kinds of model on
+CAMELS-US: one regional model (trained on all 531 basins at once) and, separately, one model per
+basin (trained on that basin's own record only), each as a 10-model ensemble. Only their finished
+day-by-day simulated and measured flow was used — nothing here was trained, and none of it
+touches this project's own correction, model runs, or tracked figures/metrics files; it produced
+one standalone comparison figure
+(`figures/make_error_structure_kratzert.py` → `figures/gauged_error_structure_Kratzert.png`).
+
+529 of the 531 basins in this project's basin list appear in both of Kratzert et al.'s
+experiments. For each of the two model types, the 10 ensemble members' simulated flow was
+averaged day by day (the same way this project averages its own repeated random starts), then the
+same measure Figure 1 uses was computed: for every pair of those 529 basins, how well their daily
+errors (in a log scale, the same one the correction transfers) track each other over Kratzert et
+al.'s ten-year test period (1989–1999), plotted against how far apart the two gauges are, with a
+smoothed trend line through the cloud of pairs (39,072 pairs within 1000 km, same cutoff and
+smoothing width as Figure 1). Repo commit `e10aeb5`.
+
+**What came out** — The smoothed correlation at four representative distances, alongside this
+project's own regional LSTM (Figure 1) for reference:
+
+| distance between gauges | this project's regional LSTM | Kratzert et al. regional LSTM | Kratzert et al. single-basin LSTM |
+|---|---|---|---|
+| 25 km | 0.53 | 0.47 | 0.57 |
+| 100 km | 0.28 | 0.23 | 0.36 |
+| 500 km | 0.11 | 0.06 | 0.14 |
+| 900 km | 0.06 | 0.03 | 0.07 |
+
+The single-basin models were not simply performing as well as the regional one and happening to
+share its error pattern by coincidence: checked on one sample basin, the regional model's ten
+random starts scored 0.82–0.88 on the Nash-Sutcliffe efficiency (a 1.0–to-negative score of how
+closely predicted daily flow tracks measured flow, 1.0 a perfect match, 0.0 no better than always
+guessing the long-term average), while that same basin's single-basin models scored lower,
+0.80–0.82 — consistent with Kratzert et al.'s own published finding that single-basin training
+underperforms. So the single-basin models are the weaker models, exactly as expected, but their
+errors at nearby gauges track each other *more* closely than the regional model's do, not less.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next** — The manuscript's §3.1 framing ("Model errors are spatially structured") credits
+the pattern to regional training; this result says the pattern isn't unique to it, so that framing
+needs a second look before submission. Worth deciding: (1) whether to report this Kratzert
+comparison as a limitation/caveat alongside Figure 1, since the raw meteorological inputs
+(precipitation, temperature) nearby basins share are a plausible alternative source of correlated
+error that has nothing to do with how the model was trained; (2) whether it's worth a quick check
+of whether the *forcing data itself* is spatially structured in the same way, which would confirm
+or rule out that explanation; (3) whichever way this lands, note that it doesn't undermine the
+correction itself — the correction only needs the pattern to exist, not for regional training to
+be its cause — so the fix is to the explanation in the text, not to the method.
+
+---
+
 ## 2026-09-19 — First look at the hybrid model, as a secondary check on the LSTM result
 
 **What I ran** — A separate, non-LSTM model ("hybrid") had already been run outside this repo, on
