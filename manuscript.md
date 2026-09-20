@@ -5,103 +5,104 @@
 ## Abstract
 
 Regional deep-learning models are now the most accurate tool for predicting daily streamflow in
-basins without their own gauge, but because a single set of weights is shared across hundreds of
-catchments, the errors those models make are not independent from one basin to the next. We test
-whether that shared structure can be exploited after the fact: at a basin being reconstructed,
-the concurrent errors of its nearest gauges are combined into a single distance-weighted signal
-and a fraction of it is removed from the prediction. The step trains nothing, reads no forcing
-data, never reads the target basin's own discharge, and runs in milliseconds on any model's
-output. We evaluate it over 531 CAMELS-US basins in two reconstruction settings — basins never
-seen in training, and basins whose gauge stops reporting for the evaluation period — using a
-long short-term memory (LSTM) network as the primary model and a differentiable process-based
-model as a transfer test. *[Quantitative findings and conclusions to be written once results are
-final.]*
+basins without their own gauge. Yet hydrological models' errors, whatever the model, tend to be
+shared across nearby basins rather than independent from one to the next. We test whether that
+shared structure can be exploited after the fact. At a basin being reconstructed, the concurrent
+errors of its nearest gauges are combined into a single distance-weighted signal, and a fraction
+of it is removed from the prediction. The step trains nothing, reads no forcing data, never reads
+the target basin's own discharge, and runs in milliseconds on any model's output. We evaluate it
+over 531 CAMELS-US basins in two reconstruction settings: basins never seen in training, and
+basins whose gauge stops reporting for the evaluation period. The primary model is a long
+short-term memory (LSTM) network; a differentiable process-based model serves as a transfer test.
+*[Quantitative findings and conclusions to be written once results are final.]*
 
 ## 1. Introduction
 
 Most of the world's river reaches have never been gauged, and many that were are no longer.
 Predicting streamflow at such locations — the Predictions in Ungauged Basins (PUB) problem
 (Sivapalan et al., 2003; Hrachowitz et al., 2013; Blöschl et al., 2013) — remains one of the
-defining challenges of the discipline, and it is not an academic one. Design floods, water
-allocation, reservoir operation, environmental flow standards, and climate impact assessments
-all require daily flow records at places where no record exists. The need is growing rather than
-shrinking: operational gauge networks have been contracting for decades across much of the world
-(Hannah et al., 2011), so the set of sites where a record is wanted but unavailable expands at
-both ends — new sites that were never instrumented, and old sites whose instruments were retired.
+discipline's defining challenges, and not an academic one. Design floods, water allocation,
+reservoir operation, environmental flow standards, and climate impact assessments all require
+daily flow records at places where no record exists. The need is growing rather than shrinking.
+Operational gauge networks have been contracting for decades across much of the world (Hannah et
+al., 2011), so the set of sites where a record is wanted but unavailable keeps expanding at both
+ends: new sites that were never instrumented, and old sites whose instruments were retired.
 
 This paper concerns **reconstruction** rather than forecasting: estimating daily flow over a
 historical period at a site that lacks its own observations, while neighbouring gauges in the
-same region do have observations for that period. Two practically distinct cases fall under this
-heading and we treat both. In the **ungauged** case the site has no record at all and the model
+same region have observations for that period. Two practically distinct cases fall under this
+heading, and we treat both. In the **ungauged** case the site has no record at all and the model
 has never seen it. In the **discontinued-gauge** case the site was monitored long enough to
 contribute to model training, but its gauge stopped reporting and the years of interest must be
-filled in. The two differ in what the model knows and in how dense the surrounding network is,
-and, as we show, they are not interchangeable.
+filled in. The two differ in what the model knows and in how dense the surrounding network is;
+as we show, they are not interchangeable.
 
 The current state of the art for both cases is a regional deep-learning model. Long short-term
 memory (LSTM) networks trained jointly on hundreds of catchments outperform locally calibrated
-conceptual models, and — more surprisingly — a regional LSTM applied to basins held out of its
-own training outperforms conceptual models calibrated *at those very basins* (Kratzert et al.,
-2018, 2019a, 2019b; Nearing et al., 2021). Differentiable, physics-informed models, in which a
+conceptual models, and, more surprisingly, a regional LSTM applied to basins held out of its own
+training outperforms conceptual models calibrated *at those very basins* (Kratzert et al., 2018,
+2019a, 2019b; Nearing et al., 2021). Differentiable, physics-informed models, in which a
 process-based structure is trained end-to-end with neural components supplying its parameters or
 fluxes, now reach comparable accuracy while retaining interpretable internal states, and follow
 closely behind on ungauged-basin benchmarks (Feng et al., 2022, 2023; Shen et al., 2023; Höge et
 al., 2022).
 
-What these approaches share is precisely what creates the opportunity we pursue here: they are
-*regional* models. One set of weights is fitted across the whole sample, so whatever the model
-systematically misunderstands — a snow regime, an arid runoff threshold, a karst aquifer, a
-biased precipitation product — it misunderstands in a spatially coherent way. Model skill is well
-known to vary regionally rather than randomly, which implies that on any given day the residuals
-at nearby basins are not independent draws but partial observations of a common, locally shared
-error. At an ungauged site the model's own error is invisible, but at its gauged neighbours it is
-directly measurable.
+Hydrological model errors, of whatever kind, tend to be spatially structured rather than
+independent from basin to basin. A snow regime a model misjudges, an arid runoff threshold it
+gets wrong, a karst aquifer it cannot represent, a biased precipitation product shared by every
+basin in a region: each leaves a footprint that nearby basins inherit together, whatever the
+model and however it was fitted. Model skill is well known to vary regionally rather than
+randomly, so on any given day the residuals at nearby basins are not independent draws but
+partial observations of a common, locally shared error. That shared error is exactly the
+opportunity this paper pursues. At an ungauged site the model's own error is invisible, but at
+its gauged neighbours it is directly measurable.
 
 Donor catchments have long been central to ungauged-basin prediction, but they are conventionally
 used *before* or *inside* the model rather than after it. Regionalization transfers calibrated
 parameters from donors chosen by spatial proximity, physical similarity, or regression on
 catchment attributes (Merz and Blöschl, 2004; Parajka et al., 2005; Oudin et al., 2008).
-Record-extension and transfer methods work on the hydrograph itself — regression against a
-reference gauge (Hirsch, 1982), selection of that reference by map correlation (Archfield and
-Vogel, 2010), or transfer of flow-duration-curve percentiles from donors to the target (the QPPQ
-family). In all of these, the donor supplies the *prediction*, or the parameters that generate
-it. Comparatively little attention has gone to the complementary idea: letting the donor supply
-the *error*.
+Record-extension and transfer methods instead work on the hydrograph itself, whether through
+regression against a reference gauge (Hirsch, 1982), selection of that reference by map
+correlation (Archfield and Vogel, 2010), or transfer of flow-duration-curve percentiles from
+donors to the target (the QPPQ family). In all of these, the donor supplies the *prediction*, or
+the parameters that generate it. Comparatively little attention has gone to the complementary
+idea: letting the donor supply the *error*.
 
 That idea is routine in streamflow forecasting, where autoregressive updating and residual error
 models exploit the persistence of a model's own recent errors at the target gauge before issuing
 the next forecast (e.g., Liu et al., 2012). It does not carry over to reconstruction at an
 ungauged site, because there the target's own errors are never observed — not now, not
-yesterday, not ever. The only error information that exists is at other gauges. If a regional
-model's residuals are spatially structured, then a correction built from concurrent neighbour
-residuals should remove part of the regional component of the error without retraining, without
-additional data, and without ever reading the target's own record.
+yesterday, not ever. The only error information that exists is at other gauges. If a model's
+residuals are spatially structured, a correction built from concurrent neighbour residuals should
+remove part of that shared error without retraining, without additional data, and without ever
+reading the target's own record.
 
 We therefore ask:
 
 1. **Do the daily errors of a regional model carry spatial structure** that neighbouring gauges
-   can reveal — enough to be worth acting on, and beyond the seasonality both basins already
-   share through their forcings?
+   can reveal, enough to be worth acting on and beyond the seasonality both basins already share
+   through their forcings?
 2. **In the ungauged case, does a distance-weighted correction of concurrent neighbour residuals
-   improve reconstruction** — on which measures, by how much, and at what cost?
+   improve reconstruction**, on which measures, by how much, and at what cost?
 3. **Does the benefit persist in the discontinued-gauge case**, where the basin was seen during
    training and its surrounding network is denser?
-4. **Is the correction model-agnostic** — does it transfer to the output of a differentiable,
+4. **Is the correction model-agnostic?** Does it transfer to the output of a differentiable,
    process-based model, or is it repairing something peculiar to the LSTM?
 
-Our expectations are specific enough to be wrong. Because the correction targets the regionally
-shared component of the error, we expect gains concentrated in the correlation and bias terms of
-model skill and largest where the model is regionally biased; because shrinking a prediction
-toward a neighbourhood consensus reduces its variance, we expect a penalty in the variability
-term, the model already being under-dispersed; because its donor network is denser, we expect the
-discontinued-gauge case to gain at least as much as the ungauged one; and because the step reads
-only finished hydrographs and gauge coordinates, we expect it to transfer across model families.
+Our expectations are specific enough to be wrong. Because the correction targets the component of
+the error that neighbouring basins share, we expect gains concentrated in the correlation and
+bias terms of model skill, largest where that shared component is largest. Because shrinking a
+prediction toward a neighbourhood consensus reduces its variance, we expect a penalty in the
+variability term, the model already being under-dispersed. Because its donor network is denser,
+we expect the discontinued-gauge case to gain at least as much as the ungauged one. And because
+the step reads only finished hydrographs and gauge coordinates, we expect it to transfer across
+model families.
 
 **Scope.** The correction reads concurrent discharge at neighbouring gauges, which a strict PUB
 benchmark does not permit. This is therefore a method for *gauged regions containing ungauged
-sites*, not for regions without any observations, and the appropriate comparison — the one we
-make throughout — is against the same model's uncorrected output, not against published PUB
-scores obtained without any concurrent discharge.
+sites*, not for regions without any observations. The appropriate comparison, and the one we make
+throughout, is against the same model's uncorrected output, not against published PUB scores
+obtained without any concurrent discharge.
 
 ## 2. Methods
 
@@ -199,7 +200,7 @@ neighbourhood dilute the signal rather than reinforcing it.
 and p = 2 the classic Shepard form; larger p concentrates weight on the nearest donors. K and p
 are not independent, and the interaction matters for reading the selected values. K sets the
 size of the pool, but p decides how much of that pool is really used: because the selected p
-exceeds 1 in every fold, the effective number of donors — the participation ratio 1/Σⱼwᵢⱼ² —
+exceeds 1 in every fold, the effective number of donors (the participation ratio 1/Σⱼwᵢⱼ²)
 remains small even where K is large. A selected K of 27 therefore does not mean the correction
 averages 27 gauges; it means 27 gauges are eligible and the nearest few dominate the weighted
 mean. Reported K values should be read as a pool size, not as a count of gauges heard.
@@ -214,17 +215,17 @@ how much the neighbourhood actually knows.
 ### 2.6 Selecting K, λ and p without leakage
 
 The three settings are chosen by grid search over K odd from 1 to 39, λ from 0 to 1 in steps of
-0.05, and p in {1, 1.5, 2, 3} — 1,680 combinations — scored by cross-validation and selected at
+0.05, and p in {1, 1.5, 2, 3} (1,680 combinations), scored by cross-validation and selected at
 the raw maximiser, with no tie-breaking and Kling-Gupta efficiency as the objective. The
 governing constraint is that no search may read a basin it will go on to correct: since every
 basin is some fold's test basin, tuning on any held-out record would tune the reported result on
 itself.
 
-The cross-validation is built to resemble the gauge network each setting will be deployed into,
-which differs between the two settings and so gives two different designs.
+The cross-validation is built to resemble the gauge network each setting will be deployed into.
+That network differs between the two settings, so each gets its own design.
 
-In the **ungauged** setting, the fold's held-out basins are excluded from the search entirely —
-they are neither scored nor available as donors. The search runs inside that fold's 455 training
+In the **ungauged** setting, the fold's held-out basins are excluded from the search entirely.
+They are neither scored nor available as donors. The search runs inside that fold's 455 training
 basins, which retain their original fold labels and therefore fall into six groups. Each group
 in turn is treated as if it were ungauged and corrected using donors drawn only from the other
 five, so every pool basin is scored exactly once per candidate setting. Scoring against five of
@@ -255,8 +256,8 @@ Corrected and uncorrected hydrographs are compared at every basin over the same 
 period using Nash-Sutcliffe efficiency (Nash and Sutcliffe, 1970), Kling-Gupta efficiency
 together with its correlation, variability and bias components (Gupta et al., 2009), root mean
 squared error, overall percent bias, and percent bias within three bands of the *observed* flow
-distribution — the highest 10%, the middle 30–90%, and the lowest 30% — following the
-diagnostic decomposition of Yilmaz et al. (2008). Reporting the components alongside the
+distribution (the highest 10%, the middle 30–90%, and the lowest 30%), following the diagnostic
+decomposition of Yilmaz et al. (2008). Reporting the components alongside the
 composite scores is deliberate: a correction that shifts a prediction toward a neighbourhood
 consensus may improve correlation and bias while damping variability, and only the decomposed
 scores reveal that trade.
@@ -281,49 +282,48 @@ from whether the underlying signal exists.
 
 ### 3.1 Model errors are spatially structured
 
-The correction rests on a premise that can be tested before any correction is applied: that a
-regional model's errors at nearby basins are not independent. We test it on the residual the
-correction actually transfers, `log(q_sim + ε) − log(q_obs + ε)`, computed at every one of the
-531 basins from the single model trained on all of them (§2.3, the discontinued-gauge setting) —
-out of sample in time, over the same held-out evaluation years used throughout, but not out of
-sample in space. We use every trained-on basin here, rather than only the smaller set held out of
-training entirely, because the pattern under test is a property of the regional model itself, not
-of any one basin's training status: testing it across all 531 trained-on basins gives the
-densest, most precise picture of that pattern, and it is exactly this pattern — present
-throughout a region regardless of whether the target's own gauge happened to be in training —
-that licenses transferring it to a genuinely ungauged neighbour (§1).
+The correction rests on a premise testable before any correction is applied: a regional model's
+errors at nearby basins are not independent. We test it on the residual the correction actually
+transfers, `log(q_sim + ε) − log(q_obs + ε)`, computed at every one of the 531 basins from the
+single model trained on all of them (§2.3, the discontinued-gauge setting). This is out of sample
+in time, over the same held-out evaluation years used throughout, but not out of sample in space.
+We use every trained-on basin here, rather than only the smaller set held out of training
+entirely, because the pattern under test is a property of the model itself, not of any one
+basin's training status. Testing it across all 531 trained-on basins gives the densest, most
+precise picture of that pattern, and it is exactly this pattern, present throughout a region
+regardless of whether the target's own gauge happened to be in training, that licenses
+transferring it to a genuinely ungauged neighbour (§1).
 
 Errors are strongly shared between close gauges, and the sharing decays with distance
-(Figure 1). Every pair of gauges within 1000 km contributes one correlation — 39,285 pairs in
-all — and a locally weighted regression through them falls from 0.53 at a separation of 25 km
-to 0.28 at 100 km, 0.11 at 500 km and 0.06 at 900 km. The information is therefore local, which
-is what justifies both weighting donors by distance and keeping the donor count small: beyond a
-few hundred kilometres a donor carries almost nothing about the target's error today.
+(Figure 1). Every pair of gauges within 1000 km contributes one correlation, 39,285 pairs in all,
+and a locally weighted regression through them falls from 0.53 at a separation of 25 km to 0.28
+at 100 km, 0.11 at 500 km and 0.06 at 900 km. The information is therefore local. That is what
+justifies both weighting donors by distance and keeping the donor count small: beyond a few
+hundred kilometres a donor carries almost nothing about the target's error today.
 
-The spread around that trend is wide — individual pairs at any separation range from strongly
-correlated to mildly anticorrelated — so the decay describes the typical pair rather than a
-reliable property of every pair. That is itself informative: it is the reason the correction
-pools several donors and applies only a fraction of what they suggest, rather than trusting any
-single neighbour.
+The spread around that trend is wide. Individual pairs at any separation range from strongly
+correlated to mildly anticorrelated, so the decay describes the typical pair rather than a
+reliable property of every pair. That is itself informative: it is why the correction pools
+several donors and applies only a fraction of what they suggest, rather than trusting any single
+neighbour.
 
 This agreement is not merely the seasonal cycle that two neighbouring basins share through their
-forcings. Removing each series' day-of-year climatology before correlating — a 31-day circular
-smoothing of the mean residual for each calendar day — leaves the fitted curve almost unchanged
-at short range, 0.51 against 0.53 at 25 km, while lowering it further out (0.07 against 0.11 at
-500 km). What neighbouring gauges reveal at the distances the correction actually draws from is
+forcings. Removing each series' day-of-year climatology before correlating (a 31-day circular
+smoothing of the mean residual for each calendar day) leaves the fitted curve almost unchanged at
+short range, 0.51 against 0.53 at 25 km, while lowering it further out: 0.07 against 0.11 at 500
+km. What neighbouring gauges reveal at the distances the correction actually draws from is
 therefore day-to-day information about the model's error, not a seasonal pattern the model
 already recovers from its own inputs.
 
-This analysis uses nothing but the model's residuals and the gauge coordinates: no part of the
-correction enters it. What it establishes is therefore a property of the regional model's errors
-rather than of any particular way of exploiting them — at a basin with no gauge, the model's own
-error is unobservable, but a quantity substantially correlated with it is measurable at the
-gauges nearby. The same check repeated on only the basins held out of training entirely (never
-seen by any model at all) shows the identical pattern, just over a much smaller sample — a
-somewhat weaker correlation at short range (0.45 at 25 km against 0.53) consistent with a
-trained-on basin carrying a little more basin-specific signal than one the model has never seen,
-but the same shape and the same conclusion. The rest of the paper asks how much of that error can
-be recovered in practice.
+This analysis uses nothing but the model's residuals and the gauge coordinates; no part of the
+correction enters it. What it establishes is therefore a property of the model's errors, not of
+any particular way of exploiting them. At a basin with no gauge, the model's own error is
+unobservable, but a quantity substantially correlated with it is measurable at the gauges nearby.
+The same check repeated on only the basins held out of training entirely, never seen by any model
+at all, shows the identical pattern over a much smaller sample: a somewhat weaker correlation at
+short range (0.45 at 25 km against 0.53), consistent with a trained-on basin carrying a little
+more basin-specific signal than one the model has never seen, but the same shape and the same
+conclusion. The rest of the paper asks how much of that error can be recovered in practice.
 
 **Figure 1.** *Model errors are spatially structured.* Each grey dot is one pair of basins: the
 correlation between their two daily log-residual series over the whole evaluation period,
