@@ -20,6 +20,63 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-20 — Filling in the last two random starts for the ungauged LSTM (3 seeds → 5)
+
+**What I ran** — The ungauged cell (a basin never seen during training, held out of a fold at
+both training and test time) had only run three random starts of the LSTM per fold so far, while
+the gauged cell (a basin trained on, whose gauge is then treated as if it had gone dark for the
+test years) already had five. The remaining two starts, for all seven folds, had finished
+training on the Delta cluster and were sitting at `C:\Sandeep\runs\vanilla_fold{0..6}_seed{3,4}`.
+Before using them, I checked they were trained with the same settings as the first three (same
+network size, same train/test windows, same basin list and fold split — only the random seed and
+the git commit they were trained under differ, and that commit is an ancestor of this branch's
+current commit `4a6577a`) and that their prediction files have the same shape and basin ordering
+as the existing ones. They matched, so I copied all 14 into
+`runs/lstm/ungauged/fold{0..6}_seed{3,4}/`, rebuilt the five-start average for each fold
+(`runs/lstm/ungauged/_mean/fold{0..6}.npz`), reran the correction's settings search
+(`src/02_lstm_ungauged_correction.py`, which never lets a fold's held-out basins influence their
+own search), and regenerated the metrics (`figures/evaluate.py`) and every figure that reads the
+ungauged cell (the skill curve, the metrics box plots, the cross-validation surface, the map of
+where the correction helps or hurts, and the donor map).
+
+**What came out** — The headline numbers moved only slightly once the extra two starts were
+averaged in (Nash-Sutcliffe and Kling-Gupta efficiency both measure how closely predicted daily
+flow tracks measured flow — 1.0 a perfect match, 0.0 no better than always predicting the
+long-term average, negative worse than that; KGE additionally separates out correlation, bias and
+variability):
+
+| | 3 starts (previous) | 5 starts (this run) |
+|---|---|---|
+| median NSE, before correction → after | 0.676 → 0.735 | 0.686 → 0.743 |
+| median KGE, before correction → after | 0.693 → 0.712 | 0.700 → 0.716 |
+| nearest gauge only (no fitting at all), NSE / KGE | 0.596 / 0.669 | 0.623 / 0.680 |
+
+The correction's own gain — the after-minus-before difference — barely changed: KGE improved by
+0.016 with five starts against 0.019 with three, and NSE by 0.057 against 0.059. For comparison,
+a single random start's own median KGE, fold by fold, spans roughly 0.03-0.06 from one start to
+the next within the same fold (e.g. fold 0's five starts individually score between 0.646 and
+0.705) — so the shift from adding two more starts to the average is well inside that per-start
+noise, and this is a more stable estimate of the same result, not a different one. The
+cross-validated settings search picked different values for how many neighbouring gauges to
+borrow from (K) in some folds now that it has a less noisy average to search over (for example
+fold 4 moved from 27 donors to 5, fold 6 from 5 to 35), but the range it lands in is unchanged
+from what the project already reports: 3-35 donors, borrowing 40-85% of the neighbours' error.
+`README.md`'s summary line for the ungauged cell was updated to match (3 seeds → 5 seeds, and the
+new NSE/KGE numbers above); `manuscript.md` does not hardcode these numbers so it needed no edit.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next** — The ungauged cell now matches the gauged cell at five random starts each, so
+every LSTM figure in the project is on equal footing. Nothing else is blocked on this; it was
+purely filling in a gap the compute cluster had already closed. Worth a skim of the regenerated
+ungauged figures (`figures/ungauged_cdf.png`, `figures/ungauged_metrics_boxplots.png`,
+`figures/ungauged_hyperparameters.png`, `figures/ungauged_change_map.png`,
+`figures/ungauged_donor_map.png`) to confirm nothing looks visually different from before, since
+the numeric shift is small enough that it shouldn't be.
+
+---
+
 ## 2026-09-20 — Adding HBV, a locally-calibrated model with no LSTM in it, to the correction pipeline
 
 **What I ran** — The entry just below this one checked whether the spatially structured error
