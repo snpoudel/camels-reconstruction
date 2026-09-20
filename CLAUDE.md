@@ -48,6 +48,10 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
 - If you notice a request that's part of a repeating pattern, or that a hook, subagent, or
   skill would handle better than doing it ad hoc, say so and suggest creating one. Build it
   only after I approve.
+- Always confirm with me before running `git commit` or `git push` (or any other action that
+  publishes to GitHub — merging, deleting a branch, opening a PR), even if I approved something
+  similar earlier in the session. I am the sole author of every commit: do not add a
+  Co-Authored-By line or any other AI-attribution trailer.
 
 ## Code hygiene
 
