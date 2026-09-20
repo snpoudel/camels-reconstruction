@@ -20,6 +20,89 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-19 — First look at the hybrid model, as a secondary check on the LSTM result
+
+**What I ran** — A separate, non-LSTM model ("hybrid") had already been run outside this repo, on
+the same 531 basins, and its day-by-day predictions were dropped into `hybrid/` as one file per
+basin, covering 1980–2014. Of those 531 basins, 106 were listed in `hybrid/test_basins.csv` as
+ones the hybrid model never trained on at all — the basins-held-out-entirely case — leaving 425
+that it did train on — the discontinued-gauge case. Unlike the LSTM side of this project, there
+is only one run of this model (no repeated random starts) and only one held-out group (no seven-way
+split), so this is a smaller, secondary check, not a full replacement for the LSTM experiment.
+
+The 1980–1989 test years were pulled out of the hybrid model's predictions and organised into
+this repo's usual layout (`runs/hybrid/...`), and the same neighbour correction used for the LSTM
+was applied to both groups: each of the 425 trained-on basins corrected using errors borrowed
+from the other basins' gauges (its own masked out so it can never be a donor to itself), and each
+of the 106 never-trained-on basins corrected using errors borrowed from the 425 trained-on
+basins' gauges. Settings (how many gauges to borrow from, how sharply to favour closer ones, how
+much of the borrowed error to apply) were chosen the same cross-validated way as the LSTM side,
+with the basins being corrected always left out of that search. Pipeline run from repo commit
+`954afe3`.
+
+Because the held-out 106 basins don't line up with this project's usual seven-way basin grouping,
+a second copy of that grouping was made (`data/basin_list_with_folds_hybrid.csv`) that reassigns
+those 106 to a new group number, leaving the other 425 in their original groups so the settings
+search still holds back one group of trained-on basins at a time the way it always has. A small
+option (`--folds-csv`) was added to the basins-held-out-entirely correction script so it can be
+pointed at this alternate grouping; the everyday-use script needed no change at all, since it
+already treats a basin with no prediction as simply absent from the group scores instead of
+breaking.
+
+**What came out**
+
+Median across each group of basins, before correction and after (Nash-Sutcliffe efficiency and
+Kling-Gupta efficiency both measure how closely predicted daily flow tracks measured flow — 1.0 a
+perfect match, 0.0 no better than always predicting the long-term average, negative worse than
+that):
+
+Discontinued-gauge case, 425 basins:
+
+| | uncorrected | corrected |
+|---|---|---|
+| Nash-Sutcliffe efficiency | 0.682 | 0.746 |
+| Kling-Gupta efficiency | 0.699 | 0.766 |
+| root-mean-square error (mm/day) | 1.179 | 1.028 |
+| overall bias | −4.2% | −2.7% |
+| bias, top 10% of flows | −17.3% | −11.2% |
+| bias, middle 30–90% of flows | +5.9% | +4.9% |
+| bias, bottom 30% of flows | +37.9% | +22.1% |
+
+Basins-held-out-entirely case, 106 basins:
+
+| | uncorrected | corrected |
+|---|---|---|
+| Nash-Sutcliffe efficiency | 0.622 | 0.719 |
+| Kling-Gupta efficiency | 0.650 | 0.680 |
+| root-mean-square error (mm/day) | 1.368 | 1.234 |
+| overall bias | −1.3% | +0.2% |
+| bias, top 10% of flows | −10.9% | −5.4% |
+| bias, middle 30–90% of flows | +13.1% | +9.4% |
+| bias, bottom 30% of flows | +31.7% | +15.8% |
+
+Both groups moved the same direction the LSTM's did: skill up, and the very large bias on the
+lowest 30% of flow days cut roughly in half. There is only one run of this model, so — unlike the
+LSTM entries above — there's no repeated-random-start spread to check the gain against; these
+numbers should be read as one data point, not as a settled estimate of how well the correction
+works on this model.
+
+The fold-isolation check this project always requires after touching the correction code was run
+by hand for both hybrid groups: destroying a basin's own measured record left its selected
+settings and its corrected prediction unchanged bit-for-bit, while destroying a neighbouring
+basin's record (used as a check that the test can actually detect a real change) changed the
+correction as expected.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next** — Figures are saved under `figures/*_hybrid.png` and `figures/*_hybrid.csv`,
+alongside the LSTM's own (unchanged) files, so the two can be compared side by side. If more
+hybrid-model runs (more random starts, more held-out groups) become available later, re-run
+`src/hybrid/prepare.py` followed by both correction scripts and `figures/evaluate.py --model
+hybrid` to refresh them.
+
+---
+
 ## 2026-09-19 — Five random starts of the all-basins model, and clearing out the settings-comparison side files
 
 **What I ran** — The all-basins model — trained on every one of the 531 basins, so its test-year

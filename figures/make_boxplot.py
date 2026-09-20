@@ -30,8 +30,8 @@ import numpy as np  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
-from palette import CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE, PANEL, SERIES, TITLE  # noqa: E402
-from palette import caption, settings_note, style  # noqa: E402
+from palette import CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE, PANEL, TITLE  # noqa: E402
+from palette import caption, model_label, series_pair, settings_note, style  # noqa: E402
 
 PANELS = [
     ("pbias", "overall bias (%)", True),
@@ -41,9 +41,10 @@ PANELS = [
 ]
 
 
-def main(cell):
-    df = read_metrics(cell)
-    info = read_info(cell)
+def main(cell, model):
+    df = read_metrics(cell, model)
+    info = read_info(cell, model)
+    SERIES = series_pair(model)
     series = {name: df[df.variant == name] for name in SERIES}
 
     fig, axes = plt.subplots(2, 2, figsize=(8.2, 6.8))
@@ -89,17 +90,19 @@ def main(cell):
                             for n in [int((v < lo - pad).sum() + (v > hi + pad).sum())]],
                            fontsize=LABEL - 1, color=INK)
 
-    fig.suptitle(f"{CELL_TITLE[cell]}: bias before and after the correction",
+    fig.suptitle(f"{CELL_TITLE[cell]}: bias before and after the correction ({model_label(model)})",
                  fontsize=TITLE, color=INK, x=0.012, ha="left", y=0.995)
     bottom = caption(fig, f"{info['n_basins']} basins, {CELL_BLURB[cell]}, {info['n_folds']} "
                           f"folds, {info['n_seeds']} seeds, test period {info['test_period']}.  "
                           f"Boxes: quartiles and median; whiskers 1.5 IQR, outliers omitted; dots "
                           f"are individual basins, jittered.  (n) under a box is how many of its "
-                          f"basins fall beyond the shown axis.  {settings_note(fold_settings(df))}, "
+                          f"basins fall beyond the shown axis.  "
+                          f"{settings_note(fold_settings(df, model_label(model)))}, "
                           f"chosen by cross-validation that never reads the basin being corrected.",
                      145)
     fig.tight_layout(rect=(0, bottom, 1, 0.975))
-    out = f"{HERE}/{cell}_metrics_boxplots.png"
+    suffix = "" if model == "lstm" else f"_{model}"
+    out = f"{HERE}/{cell}_metrics_boxplots{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
     for col, title, _ in PANELS:
@@ -110,4 +113,6 @@ def main(cell):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=list(CELL_TITLE), default="ungauged")
-    main(ap.parse_args().cell)
+    ap.add_argument("--model", default="lstm")
+    a = ap.parse_args()
+    main(a.cell, a.model)

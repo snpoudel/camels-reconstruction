@@ -39,10 +39,13 @@ def main():
     ap.add_argument("--workers", type=int, default=None, help="processes for the grid search")
     ap.add_argument("--select-on", choices=list(SCORERS), default="kge",
                     help="which score the grid search maximises (default kge)")
+    ap.add_argument("--folds-csv", default=None,
+                    help="override the fold assignment (e.g. a model whose held-out basins "
+                         "aren't the LSTM's own 7-way split)")
     a = ap.parse_args()
     mean_dir = f"runs/{a.model}/ungauged/_mean"
 
-    labels = fold_labels()
+    labels = fold_labels(**({"folds_csv": a.folds_csv} if a.folds_csv else {}))
     dist = distance_matrix()
     folds = [f for f in sorted(set(labels)) if os.path.exists(f"{mean_dir}/fold{f}.npz")]
     if not folds:

@@ -15,6 +15,7 @@ Colour: palette slots 0 and 1 (blue = donor gauges, vermillion = the basins bein
 The donor links are neutral ink, not a third series, and both point series are named in the
 legend and drawn at different marker sizes, so nothing rests on colour alone.
 """
+import argparse
 import os
 import sys
 
@@ -28,24 +29,24 @@ from matplotlib.collections import LineCollection  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
-from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
+from evaluate import fold_settings, folds_csv_for, read_info, read_metrics  # noqa: E402
 from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, RAW, TITLE  # noqa: E402
-from palette import caption, draw_us_outline, style  # noqa: E402
+from palette import caption, draw_us_outline, model_label, style  # noqa: E402
 from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # noqa: E402
                                      fold_labels, idw_weights)
 
 CELL = "ungauged"
 
 
-def main():
-    df = read_metrics(CELL)
-    info = read_info(CELL)
+def main(model):
+    df = read_metrics(CELL, model)
+    info = read_info(CELL, model)
     # Pick the fold whose K is closest to 5: few enough donor lines to read individually, many
     # enough to look like a real neighbourhood rather than a single nearest-neighbour lookup.
-    settings = fold_settings(df)
+    settings = fold_settings(df, model_label(model))
     fold, k, lam, p = min(settings, key=lambda s: (abs(s[1] - 5), s[0]))
 
-    labels, dist = fold_labels(), distance_matrix()
+    labels, dist = fold_labels(folds_csv=folds_csv_for(model)), distance_matrix()
     target = np.flatnonzero(labels == fold)
     donor = np.flatnonzero(labels != fold)          # the fold's own gauged basins
     d = dist[np.ix_(target, donor)]
@@ -80,8 +81,8 @@ def main():
     ax.set_aspect(1 / np.cos(np.radians(lat.mean())))
     ax.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)
     ax.set_ylabel("latitude (°N)", color=INK, fontsize=LABEL)
-    ax.set_title(f"{CELL_TITLE[CELL]}: where the borrowed residuals come from (K = {k})",
-                 color=INK, fontsize=TITLE, loc="left", pad=8)
+    ax.set_title(f"{CELL_TITLE[CELL]}: where the borrowed residuals come from (K = {k}, "
+                 f"{model_label(model)})", color=INK, fontsize=TITLE, loc="left", pad=8)
     ax.legend(frameon=False, loc="lower left", fontsize=LABEL - 1.5, labelcolor=INK,
               handletextpad=0.4, borderpad=0.2, markerscale=2.2)
     style(ax, grid=False)
@@ -95,10 +96,13 @@ def main():
                           f"{info['test_period']}.",
                      118)
     fig.tight_layout(rect=(0, bottom, 1, 1))
-    out = f"{HERE}/{CELL}_donor_map.png"
+    suffix = "" if model == "lstm" else f"_{model}"
+    out = f"{HERE}/{CELL}_donor_map{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   {len(target)} basins, {len(segs)} donor links")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="lstm")
+    main(ap.parse_args().model)

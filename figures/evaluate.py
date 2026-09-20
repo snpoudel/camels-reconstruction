@@ -5,12 +5,13 @@
 
 Reads the finished corrections out of runs/ and writes, into this folder:
 
-    metrics_<cell>.csv   one row per basin x variant: NSE, KGE and its components, RMSE, and
-                         bias split by how high the river actually was
-    tuning_<cell>.csv    the cross-validation surface the settings were chosen on
-    run_info.json        test window, seed and basin counts, for the figure captions
-    error_structure.csv  whether the model's errors are spatially structured at all, by gauge
-                         separation -- the premise the correction rests on
+    metrics_<cell>.csv          one row per basin x variant: NSE, KGE and its components,
+                                RMSE, and bias split by how high the river actually was
+    tuning_<cell>.csv           the cross-validation surface the settings were chosen on
+    run_info.json               test window, seed and basin counts, for the figure captions
+    error_structure_gauged.csv  whether the model's errors are spatially structured at all,
+                                across every trained-on basin, by gauge separation -- the
+                                premise the correction rests on
 
 Nothing downstream of here touches runs/, so a figure can never disagree with the numbers.
 """
@@ -24,13 +25,33 @@ import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
-from residual_postprocessing import (CACHE_DIR, EPS, basin_ids, distance_matrix,  # noqa: E402
-                                     fold_labels, kge_per_basin, observed, test_period_label)
+from palette import BENCHMARK, model_label  # noqa: E402
+from residual_postprocessing import (CACHE_DIR, EPS, FOLDS_CSV, basin_ids,  # noqa: E402
+                                     distance_matrix, fold_labels, kge_per_basin, observed,
+                                     test_period_label)
 
 CELLS = ("gauged", "ungauged")
-# "nearest" is the parameter-free reference the correction scripts save alongside their own
-# output: the single nearest gauge's error, applied in full. Only the CDF figure draws it.
-VARIANTS = {"raw": "LSTM", "nearest": "nearest gauge only", "corrected": "LSTM + correction"}
+
+
+def variants(model):
+    """{key in predictions.npz: display name}. "nearest" is the parameter-free reference the
+    correction scripts save alongside their own output -- only the CDF figure draws it."""
+    name = model_label(model)
+    return {"raw": name, "nearest": BENCHMARK, "corrected": f"{name} + correction"}
+
+
+def _suffix(model):
+    return "" if model == "lstm" else f"_{model}"
+
+
+def folds_csv_for(model):
+    """The fold assignment a model's ungauged correction was run with. 01_lstm_gauged_correction.py
+    always uses the real LSTM 0-6 split regardless of model, but a model whose own held-out set
+    doesn't line up with that split (see src/hybrid/prepare.py) needs the override its
+    02_lstm_ungauged_correction.py --folds-csv run used, or basin-to-fold lookups here would
+    disagree with what's in that model's params.csv."""
+    override = f"{os.path.dirname(FOLDS_CSV)}/basin_list_with_folds_{model}.csv"
+    return override if model != "lstm" and os.path.exists(override) else FOLDS_CSV
 
 # The error-structure analysis: pairs out to 1000 km, a 31-day circular window on the
 # day-of-year climatology that deseasonalising removes, and the LOESS bandwidth the trend
@@ -38,31 +59,39 @@ VARIANTS = {"raw": "LSTM", "nearest": "nearest gauge only", "corrected": "LSTM +
 DIST_MAX_KM, CLIM_WINDOW, LOESS_KM = 1000, 31, 60
 
 
-def read_metrics(cell):
+def read_metrics(cell, model="lstm"):
     """The per-basin scores every figure draws from."""
-    return pd.read_csv(f"{HERE}/metrics_{cell}.csv", dtype={"basin": str})
+    return pd.read_csv(f"{HERE}/metrics_{cell}{_suffix(model)}.csv", dtype={"basin": str})
 
 
-def read_tuning(cell):
+def read_tuning(cell, model="lstm"):
     """The cross-validation surface the settings were chosen on."""
-    return pd.read_csv(f"{HERE}/tuning_{cell}.csv")
+    return pd.read_csv(f"{HERE}/tuning_{cell}{_suffix(model)}.csv")
 
 
-def read_info(cell=None):
-    info = json.load(open(f"{HERE}/run_info.json"))
+def read_info(cell=None, model="lstm"):
+    info = json.load(open(f"{HERE}/run_info.json"))[model]
     return info[cell] if cell else info
 
 
-def read_error_structure():
+def _es_suffix(model, cell):
+    """error_structure's own filename suffix: cell is only spelled out when it isn't the
+    original "ungauged" default, so that file keeps its name for backward compatibility."""
+    parts = ([] if cell == "ungauged" else [cell]) + ([] if model == "lstm" else [model])
+    return "" if not parts else "_" + "_".join(parts)
+
+
+def read_error_structure(model="lstm", cell="gauged"):
     """The premise figure's two tables: (one row per basin pair, the fitted trend through
     them)."""
-    return (pd.read_csv(f"{HERE}/error_structure.csv"),
-            pd.read_csv(f"{HERE}/error_structure_fit.csv"))
+    suffix = _es_suffix(model, cell)
+    return (pd.read_csv(f"{HERE}/error_structure{suffix}.csv"),
+            pd.read_csv(f"{HERE}/error_structure_fit{suffix}.csv"))
 
 
-def fold_settings(df):
+def fold_settings(df, raw_label="LSTM"):
     """[(fold, K, lambda, p)] as selected, one per fold, in fold order."""
-    first = df[df.variant == "LSTM"].groupby("fold")[["k", "lam", "p"]].first()
+    first = df[df.variant == raw_label].groupby("fold")[["k", "lam", "p"]].first()
     return [(int(f), int(r.k), float(r.lam), float(r.p)) for f, r in first.iterrows()]
 
 
@@ -126,24 +155,29 @@ def evaluate(cell, model):
     p = np.load(f"{src}/predictions.npz", allow_pickle=True)
     params = pd.read_csv(f"{src}/params.csv").set_index("fold")
     obs = observed(p["test_t"])
-    ids, labels = np.array(basin_ids()), fold_labels()
+    # 01_lstm_gauged_correction.py always groups by the real LSTM split; only the ungauged
+    # script can have been pointed at a model-specific override (see folds_csv_for).
+    ids = np.array(basin_ids())
+    labels = fold_labels(folds_csv=folds_csv_for(model)) if cell == "ungauged" else fold_labels()
     scored = np.flatnonzero(np.isfinite(p["raw"]).any(1))
+    raw_label, corr_label = model_label(model), f"{model_label(model)} + correction"
 
     frames = []
-    for key, variant in VARIANTS.items():
+    for key, variant in variants(model).items():
         frame = pd.DataFrame([metrics_row(p[key][i], obs[i]) for i in scored])
         frame["basin"], frame["fold"], frame["variant"] = ids[scored], labels[scored], variant
         frames.append(frame.join(params[["k", "lam", "p", "n_seeds"]], on="fold"))
     df = pd.concat(frames, ignore_index=True)
-    df.to_csv(f"{HERE}/metrics_{cell}.csv", index=False)
-    pd.read_csv(f"{src}/tuning.csv").to_csv(f"{HERE}/tuning_{cell}.csv", index=False)
+    suffix = _suffix(model)
+    df.to_csv(f"{HERE}/metrics_{cell}{suffix}.csv", index=False)
+    pd.read_csv(f"{src}/tuning.csv").to_csv(f"{HERE}/tuning_{cell}{suffix}.csv", index=False)
 
     med = df.groupby("variant").kge.median()
-    print(f"\n{cell}: {len(scored)} basins, {int(params.n_seeds.max())} seeds, "
+    print(f"\n{cell} ({model}): {len(scored)} basins, {int(params.n_seeds.max())} seeds, "
           f"test {test_period_label(p['test_t'])}")
-    print(f"  median KGE  {med['LSTM']:.4f} -> {med['LSTM + correction']:.4f} "
-          f"({med['LSTM + correction'] - med['LSTM']:+.4f})"
-          f"   nearest gauge only {med['nearest gauge only']:.4f}")
+    print(f"  median KGE  {med[raw_label]:.4f} -> {med[corr_label]:.4f} "
+          f"({med[corr_label] - med[raw_label]:+.4f})"
+          f"   nearest gauge only {med[BENCHMARK]:.4f}")
     print("  per-seed median KGE: "
           + ", ".join(f"{d} {v:.3f}" for d, v in seed_spread(cell, model)))
     return dict(n_basins=len(scored), n_seeds=int(params.n_seeds.max()),
@@ -219,7 +253,7 @@ def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
     return curve
 
 
-def error_structure(model):
+def error_structure(model, cell="gauged"):
     """Are the model's errors spatially structured? The premise the correction rests on.
 
     How two basins' daily residuals correlate, against how far apart their gauges are, asked of
@@ -228,21 +262,32 @@ def error_structure(model):
     enters this, so what it establishes is a property of the model's errors rather than of the
     correction built on them.
 
-    Ungauged only: these are the out-of-sample residuals of the model that held each basin out,
-    which is the error the reconstruction problem actually faces.
+    Sourced from the "gauged" cell -- every trained-on basin's residual, out-of-sample only in
+    time -- rather than the smaller ungauged held-out set: the pattern being tested is a property
+    of the regional model itself, not of any one basin's training status, and testing it across
+    every trained-on basin gives the densest picture of it. It is exactly that pattern, present
+    throughout the region regardless of whether the target's own gauge was in training, that
+    licenses transferring it to a genuinely ungauged neighbour.
+
+    Restricted to basins the model actually has a residual for (`scored`): the LSTM's gauged cell
+    covers all 531, but a model missing some of them -- like hybrid's 106 never-trained-on basins
+    -- would otherwise leave those as all-NaN rows and poison every pairwise correlation that
+    touches them.
     """
-    p = np.load(f"runs/{model}/ungauged_corrected/predictions.npz", allow_pickle=True)
-    obs = observed(p["test_t"])
-    res = np.log(np.clip(p["raw"], 0, None) + EPS) - np.log(obs + EPS)
+    p = np.load(f"runs/{model}/{cell}_corrected/predictions.npz", allow_pickle=True)
+    scored = np.flatnonzero(np.isfinite(p["raw"]).any(1))
+    obs = observed(p["test_t"])[scored]
+    res = np.log(np.clip(p["raw"][scored], 0, None) + EPS) - np.log(obs + EPS)
     doy = pd.to_datetime(np.load(f"{CACHE_DIR}/dates.npy")[p["test_t"]]).dayofyear.to_numpy() - 1
-    dist = distance_matrix()
+    dist = distance_matrix()[np.ix_(scored, scored)]
 
     iu = np.triu_indices(len(dist), 1)
     d, c, cd = dist[iu], _corr_rows(res)[iu], _corr_rows(_deseason(res, doy))[iu]
     keep = d < DIST_MAX_KM
     d, c, cd = d[keep], c[keep], cd[keep]
+    suffix = _es_suffix(model, cell)
     pd.DataFrame({"dist_km": d, "r": c, "r_deseason": cd}).to_csv(
-        f"{HERE}/error_structure.csv", index=False, float_format="%.5g")
+        f"{HERE}/error_structure{suffix}.csv", index=False, float_format="%.5g")
 
     # The curve starts at 10 km, not at the closest pair: a local linear fit against a kernel
     # truncated by the x = 0 boundary extrapolates the steep decay and curls upward, which is an
@@ -250,9 +295,10 @@ def error_structure(model):
     grid = np.linspace(10, DIST_MAX_KM, 160)
     fit, fit_d = _loess(d, c, grid), _loess(d, cd, grid)
     pd.DataFrame({"dist_km": grid, "r_fit": fit, "r_fit_deseason": fit_d}).to_csv(
-        f"{HERE}/error_structure_fit.csv", index=False, float_format="%.5g")
+        f"{HERE}/error_structure_fit{suffix}.csv", index=False, float_format="%.5g")
 
-    print(f"\nerror structure: {len(d)} basin pairs within {DIST_MAX_KM} km")
+    print(f"\nerror structure ({cell}, {len(scored)} basins): {len(d)} basin pairs within "
+          f"{DIST_MAX_KM} km")
     for at in (25, 100, 500, 900):
         print(f"  fitted correlation at {at:4d} km {np.interp(at, grid, fit):.3f}, "
               f"{np.interp(at, grid, fit_d):.3f} deseasonalised")
@@ -271,13 +317,17 @@ def main():
 
     info_path = f"{HERE}/run_info.json"
     info = json.load(open(info_path)) if os.path.exists(info_path) else {}
+    if "gauged" in info or "ungauged" in info:  # migrate the old flat, lstm-only schema
+        info = {"lstm": {c: info[c] for c in CELLS if c in info}}
+    info.setdefault(a.model, {})
     for cell in cells:
-        info[cell] = evaluate(cell, a.model)
-    info["model"] = a.model
+        info[a.model][cell] = evaluate(cell, a.model)
     json.dump(info, open(info_path, "w"), indent=1)
-    if "ungauged" in cells:
+    if "gauged" in cells:
         error_structure(a.model)
-    print(f"\n-> {HERE}/metrics_*.csv, tuning_*.csv, error_structure.csv, run_info.json")
+    suffix = _suffix(a.model)
+    print(f"\n-> {HERE}/metrics_*{suffix}.csv, tuning_*{suffix}.csv, "
+          f"error_structure_gauged{suffix}.csv, run_info.json")
 
 
 if __name__ == "__main__":

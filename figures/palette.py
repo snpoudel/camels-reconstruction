@@ -42,12 +42,31 @@ DIVERGING = mcolors.LinearSegmentedColormap.from_list("diverging", [BLUE, DIVERG
 # Series identity, used across every figure. The names are the `variant` values in
 # figures/metrics_*.csv, so a figure never invents its own wording for a series.
 RAW, CORRECTED = BLUE, ORANGE
-SERIES = {"LSTM": RAW, "LSTM + correction": CORRECTED}
+
+# What each runs/<model>/ tree is called in a caption or legend. Falls back to the model name
+# capitalised, so a new model needs no entry here to work -- only to read better than "Hybrid".
+MODEL_LABEL = {"lstm": "LSTM"}
 
 # The parameter-free reference -- one donor, all of its error, nothing selected. Only the CDF
-# figure draws it, so `SERIES` above stays a pair and the figures that unpack it keep working.
+# figure draws it, so `series_pair` below stays a pair and the figures that unpack it keep
+# working.
 BENCHMARK = "nearest gauge only"
-SERIES_CDF = {"LSTM": RAW, BENCHMARK: NEUTRAL, "LSTM + correction": CORRECTED}
+
+
+def model_label(model):
+    return MODEL_LABEL.get(model, model.capitalize())
+
+
+def series_pair(model="lstm"):
+    """{name: colour} for the raw and corrected series of one model, in that order."""
+    name = model_label(model)
+    return {name: RAW, f"{name} + correction": CORRECTED}
+
+
+def series_cdf(model="lstm"):
+    """`series_pair`, plus the nearest-gauge-only benchmark the CDF figure alone draws."""
+    name = model_label(model)
+    return {name: RAW, BENCHMARK: NEUTRAL, f"{name} + correction": CORRECTED}
 
 CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
 CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone dark",

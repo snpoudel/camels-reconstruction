@@ -36,18 +36,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from evaluate import fold_settings, read_info, read_metrics  # noqa: E402
 from palette import BENCHMARK, CELL_BLURB, CELL_TITLE, INK, LABEL, MUTE  # noqa: E402
-from palette import SERIES_CDF, TITLE, caption, settings_note, style  # noqa: E402
+from palette import TITLE, caption, model_label, series_cdf, settings_note, style  # noqa: E402
 
 PANELS = [("nse", "NSE, Nash-Sutcliffe efficiency"), ("kge", "KGE, Kling-Gupta efficiency")]
 
 
-def main(cell):
-    df = read_metrics(cell)
-    info = read_info(cell)
+def main(cell, model):
+    df = read_metrics(cell, model)
+    info = read_info(cell, model)
 
     fig, axes = plt.subplots(2, 1, figsize=(6.2, 7.6), sharex=True)
     for ax, (col, xlabel) in zip(axes, PANELS):
-        for name, color in SERIES_CDF.items():
+        for name, color in series_cdf(model).items():
             v = np.sort(df.loc[df.variant == name, col].dropna().to_numpy())
             ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2, zorder=3,
                     label=f"{name}   median {np.median(v):.2f}")
@@ -61,17 +61,19 @@ def main(cell):
         ax.legend(frameon=False, loc="upper left", fontsize=LABEL - 1, labelcolor=INK)
         style(ax)
 
-    axes[0].set_title(f"{CELL_TITLE[cell]}: skill before and after the correction",
-                      color=INK, fontsize=TITLE, loc="left", pad=8)
+    axes[0].set_title(f"{CELL_TITLE[cell]}: skill before and after the correction "
+                      f"({model_label(model)})", color=INK, fontsize=TITLE, loc="left", pad=8)
     bottom = caption(fig, f"{info['n_basins']} basins, {CELL_BLURB[cell]}, "
                           f"{info['n_folds']} folds, {info['n_seeds']} seeds, test period "
-                          f"{info['test_period']}.  {settings_note(fold_settings(df))}, chosen by "
+                          f"{info['test_period']}.  "
+                          f"{settings_note(fold_settings(df, model_label(model)))}, chosen by "
                           f"cross-validation to maximise KGE, never reading the basin being "
                           f"corrected.  \"{BENCHMARK}\" is the parameter-free reference: the "
                           f"single closest gauge's error applied in full, nothing selected.  "
                           f"Top: NSE.  Bottom: KGE.", 96)
     fig.tight_layout(rect=(0, bottom, 1, 1))
-    out = f"{HERE}/{cell}_cdf.png"
+    suffix = "" if model == "lstm" else f"_{model}"
+    out = f"{HERE}/{cell}_cdf{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
 
@@ -79,4 +81,6 @@ def main(cell):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=list(CELL_TITLE), default="ungauged")
-    main(ap.parse_args().cell)
+    ap.add_argument("--model", default="lstm")
+    a = ap.parse_args()
+    main(a.cell, a.model)

@@ -47,8 +47,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
 from evaluate import read_info, read_metrics  # noqa: E402
-from palette import CELL_TITLE, DIVERGING, INK, LABEL, MUTE, SERIES, TITLE  # noqa: E402
-from palette import caption, draw_us_outline, style  # noqa: E402
+from palette import CELL_TITLE, DIVERGING, INK, LABEL, MUTE, TITLE  # noqa: E402
+from palette import caption, draw_us_outline, model_label, series_pair, style  # noqa: E402
 from residual_postprocessing import BASINS_CSV  # noqa: E402
 
 # The 85th percentile of |change|, not the 98th: see module docstring. ~15% of basins land
@@ -58,10 +58,10 @@ CAP_PERCENTILE = 85
 PANELS = [("nse", "NSE, Nash-Sutcliffe efficiency"), ("kge", "KGE, Kling-Gupta efficiency")]
 
 
-def main(cell):
-    df = read_metrics(cell)
-    info = read_info(cell)
-    raw, corr = list(SERIES)  # "LSTM", "LSTM + correction", in that order
+def main(cell, model):
+    df = read_metrics(cell, model)
+    info = read_info(cell, model)
+    raw, corr = list(series_pair(model))  # e.g. "LSTM", "LSTM + correction", in that order
 
     loc = pd.read_csv(BASINS_CSV, dtype={"gauge_id": str}).set_index("gauge_id")
 
@@ -99,8 +99,8 @@ def main(cell):
                      f"{len(gain) - n_worse}/{len(gain)} improved, cap {cap:.2f}, "
                      f"{n_off} beyond it")
 
-    axes[0].set_title(f"{CELL_TITLE[cell]}: where the correction changes skill",
-                      color=INK, fontsize=TITLE, loc="left", pad=8)
+    axes[0].set_title(f"{CELL_TITLE[cell]}: where the correction changes skill "
+                      f"({model_label(model)})", color=INK, fontsize=TITLE, loc="left", pad=8)
 
     bottom = caption(fig, f"{n_basins} basins, "
                           f"test period {info['test_period']}, coloured by each score, corrected "
@@ -109,7 +109,8 @@ def main(cell):
                           f"colour; basins beyond it are shown at full colour.  "
                           f"{'  '.join(lines)}.", 104)
     fig.tight_layout(rect=(0, bottom, 1, 0.97))
-    out = f"{HERE}/{cell}_change_map.png"
+    suffix = "" if model == "lstm" else f"_{model}"
+    out = f"{HERE}/{cell}_change_map{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   " + "   ".join(lines))
 
@@ -117,4 +118,6 @@ def main(cell):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=list(CELL_TITLE), default="ungauged")
-    main(ap.parse_args().cell)
+    ap.add_argument("--model", default="lstm")
+    a = ap.parse_args()
+    main(a.cell, a.model)

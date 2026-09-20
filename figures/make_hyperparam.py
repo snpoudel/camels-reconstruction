@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from evaluate import read_info, read_tuning  # noqa: E402
 from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, PANEL, TITLE  # noqa: E402
-from palette import caption, style  # noqa: E402
+from palette import caption, model_label, style  # noqa: E402
 
 # What the cross-validation pool is, per cell -- not the same thing as the basins being
 # corrected, which appear nowhere on this figure.
@@ -41,9 +41,9 @@ AXES = [("k", "K, donor gauges consulted", "(a)"),
         ("p", "p, inverse-distance exponent", "(c)")]
 
 
-def main(cell):
-    df = read_tuning(cell)
-    info = read_info(cell)
+def main(cell, model):
+    df = read_tuning(cell, model)
+    info = read_info(cell, model)
     labels = sorted(df.label.unique())
     single = len(labels) == 1
     lw, alpha = (1.6, 1.0) if single else (1.0, 0.75)
@@ -101,8 +101,8 @@ def main(cell):
     axes[2].tick_params(labelleft=False)
     axes[0].set_ylabel("Median cross-validation KGE", color=INK, fontsize=LABEL)
 
-    fig.suptitle(f"{CELL_TITLE[cell]}: cross-validation for K, $\\lambda$ and p",
-                 fontsize=TITLE, color=INK, x=0.012, ha="left", y=0.98)
+    fig.suptitle(f"{CELL_TITLE[cell]}: cross-validation for K, $\\lambda$ and p "
+                 f"({model_label(model)})", fontsize=TITLE, color=INK, x=0.012, ha="left", y=0.98)
     spans = []
     for col, label in (("k", "K"), ("lam", r"$\lambda$"), ("p", "p")):
         v = optima[col]
@@ -118,7 +118,8 @@ def main(cell):
                           f"nearly the same.  No basin is read here to choose the settings "
                           f"applied to it.", 118)
     fig.tight_layout(rect=(0.02, bottom, 1, 0.94))
-    out = f"{HERE}/{cell}_hyperparameters.png"
+    suffix = "" if model == "lstm" else f"_{model}"
+    out = f"{HERE}/{cell}_hyperparameters{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   optima: " + ", ".join(spans))
 
@@ -126,4 +127,6 @@ def main(cell):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=list(CELL_TITLE), default="ungauged")
-    main(ap.parse_args().cell)
+    ap.add_argument("--model", default="lstm")
+    a = ap.parse_args()
+    main(a.cell, a.model)
