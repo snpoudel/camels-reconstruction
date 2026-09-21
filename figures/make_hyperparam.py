@@ -118,7 +118,7 @@ def main(cell, model):
                           f"nearly the same.  No basin is read here to choose the settings "
                           f"applied to it.", 118)
     fig.tight_layout(rect=(0.02, bottom, 1, 0.94))
-    suffix = "" if model == "lstm" else f"_{model}"
+    suffix = f"_{model}"
     out = f"{HERE}/{cell}_hyperparameters{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   optima: " + ", ".join(spans))

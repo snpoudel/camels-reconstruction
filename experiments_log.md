@@ -20,6 +20,70 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-09-21 — Extending the hybrid model's test window from ten years to sixteen (1980-1989 → 1980-1995)
+
+**What I ran** — The hybrid model's raw predictions cover 1980-2014 for all 531 basins, but the
+first look at this model (2026-09-19 entry) only pulled out 1980-1989 as the test window. The raw
+per-basin files were made available locally, so `src/hybrid/prepare.py`'s `TEST_END` was moved to
+1995-12-31, extending the window to sixteen years (1980-01-01 through 1995-12-31, 5,844 days,
+versus 3,653 before). Nothing else about the setup changed: the same 425 trained-on basins
+(discontinued-gauge case) and 106 never-trained-on basins (basins-held-out-entirely case), the
+same neighbour correction, and settings chosen the same cross-validated way, with the basins being
+corrected always left out of that search. Both correction scripts were re-run
+(`src/01_gauged_correction.py --model hybrid` and `src/02_ungauged_correction.py --model hybrid
+--folds-csv data/basin_list_with_folds_hybrid.csv`), followed by `figures/evaluate.py --model
+hybrid` and all of the hybrid-model figures. Pipeline run from repo commit `fafcf28`, with the
+`TEST_END` edit itself still uncommitted at the time of this run.
+
+**What came out**
+
+Median across each group of basins, before correction and after (Nash-Sutcliffe efficiency and
+Kling-Gupta efficiency both measure how closely predicted daily flow tracks measured flow — 1.0 a
+perfect match, 0.0 no better than always predicting the long-term average, negative worse than
+that):
+
+Discontinued-gauge case, 425 basins:
+
+| | uncorrected | corrected |
+|---|---|---|
+| Nash-Sutcliffe efficiency | 0.707 | 0.759 |
+| Kling-Gupta efficiency | 0.717 | 0.781 |
+| root-mean-square error (mm/day) | 1.239 | 1.076 |
+| overall bias | −2.1% | −2.7% |
+| bias, top 10% of flows | −15.4% | −10.4% |
+| bias, middle 30–90% of flows | +6.9% | +4.7% |
+| bias, bottom 30% of flows | +42.6% | +21.4% |
+
+Basins-held-out-entirely case, 106 basins:
+
+| | uncorrected | corrected |
+|---|---|---|
+| Nash-Sutcliffe efficiency | 0.634 | 0.711 |
+| Kling-Gupta efficiency | 0.660 | 0.678 |
+| root-mean-square error (mm/day) | 1.455 | 1.317 |
+| overall bias | −0.5% | −0.5% |
+| bias, top 10% of flows | −9.2% | −6.0% |
+| bias, middle 30–90% of flows | +10.7% | +8.9% |
+| bias, bottom 30% of flows | +33.1% | +14.6% |
+
+Against the 1980-1989 numbers (Nash-Sutcliffe 0.682 → 0.746 discontinued-gauge, 0.622 → 0.719
+basins-held-out-entirely), the longer window reads a little higher on both sides before
+correction, and the correction still moves both groups the same direction — skill up, bottom-30%
+bias roughly halved. There is still only one run of this model (no repeated random starts), so as
+before this is one data point, not a settled estimate of the correction's effect size.
+
+**What it means** — 1980-1995 is the window that should have been used from the start; the earlier
+1980-1989 window was a mistake. No change to how the earlier entry's finding should be read beyond
+that correction — the numbers above are the ones to use going forward.
+
+**What's next** — Figures under `figures/*_hybrid.png` and `figures/*_hybrid.csv` now reflect the
+1980-1995 window; the LSTM's and HBV's own files are unchanged. The `TEST_END` change in
+`src/hybrid/prepare.py` is not yet committed. If the hybrid model's raw files are ever refreshed
+or more realisations become available, re-run `src/hybrid/prepare.py` followed by both correction
+scripts and `figures/evaluate.py --model hybrid` again.
+
+---
+
 ## 2026-09-20 — Filling in the last two random starts for the ungauged LSTM (3 seeds → 5)
 
 **What I ran** — The ungauged cell (a basin never seen during training, held out of a fold at

@@ -101,7 +101,7 @@ def main(cell, model):
                           f"chosen by cross-validation that never reads the basin being corrected.",
                      145)
     fig.tight_layout(rect=(0, bottom, 1, 0.975))
-    suffix = "" if model == "lstm" else f"_{model}"
+    suffix = f"_{model}"
     out = f"{HERE}/{cell}_metrics_boxplots{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")

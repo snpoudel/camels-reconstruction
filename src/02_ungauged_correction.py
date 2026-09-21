@@ -1,7 +1,7 @@
 """Correct the ungauged-basin predictions: one fold at a time, donors from that fold's gauges.
 
-    python src/02_lstm_ungauged_correction.py
-    python src/02_lstm_ungauged_correction.py --model hybrid
+    python src/02_ungauged_correction.py
+    python src/02_ungauged_correction.py --model hybrid
 
 Each fold held a seventh of the basins out of training, so those basins are ungauged in space as
 well as in time -- the prediction-in-ungauged-basins case. They are corrected using that fold's

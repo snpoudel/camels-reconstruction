@@ -19,7 +19,7 @@ figure's own: blue is a gauged basin in every step panel, orange is the ungauged
 Nothing here is measured. It is a method diagram: the sketches are schematic (step 5's
 hydrograph is an analytic curve, not a run), and the only numbers on the page -- the search
 grid for K, p and lambda -- are imported from `src/parameter_tuning.py` so they cannot drift
-from the code. For the same method on real data see `figures/ungauged_hyperparameters.png`.
+from the code. For the same method on real data see `figures/ungauged_hyperparameters_lstm.png`.
 
 No footnotes: the distance floor, the epsilon that keeps the logs finite, and the
 renormalisation over donors that reported are all in manuscript.md and belong in the caption.

@@ -1,7 +1,7 @@
 """Correct the gauged-basin predictions: every basin reconstructed as if its own gauge went dark.
 
-    python src/01_lstm_gauged_correction.py
-    python src/01_lstm_gauged_correction.py --model hybrid
+    python src/01_gauged_correction.py
+    python src/01_gauged_correction.py --model hybrid
 
 This model was trained on all 531 basins, so every basin's test-period prediction is
 out-of-sample in time only -- the discontinued-gauge case. Each basin is corrected using all 530

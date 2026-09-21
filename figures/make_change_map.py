@@ -109,7 +109,7 @@ def main(cell, model):
                           f"colour; basins beyond it are shown at full colour.  "
                           f"{'  '.join(lines)}.", 104)
     fig.tight_layout(rect=(0, bottom, 1, 0.97))
-    suffix = "" if model == "lstm" else f"_{model}"
+    suffix = f"_{model}"
     out = f"{HERE}/{cell}_change_map{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   " + "   ".join(lines))

@@ -5,13 +5,15 @@
 
 Reads the finished corrections out of runs/ and writes, into this folder:
 
-    metrics_<cell>.csv          one row per basin x variant: NSE, KGE and its components,
-                                RMSE, and bias split by how high the river actually was
-    tuning_<cell>.csv           the cross-validation surface the settings were chosen on
-    run_info.json               test window, seed and basin counts, for the figure captions
-    error_structure_gauged.csv  whether the model's errors are spatially structured at all,
-                                across every trained-on basin, by gauge separation -- the
-                                premise the correction rests on
+    metrics_<cell>_<model>.csv          one row per basin x variant: NSE, KGE and its
+                                        components, RMSE, and bias split by how high the
+                                        river actually was
+    tuning_<cell>_<model>.csv           the cross-validation surface the settings were chosen on
+    run_info.json                       test window, seed and basin counts, for the figure
+                                        captions
+    error_structure_gauged_<model>.csv  whether the model's errors are spatially structured at
+                                        all, across every trained-on basin, by gauge separation
+                                        -- the premise the correction rests on
 
 Nothing downstream of here touches runs/, so a figure can never disagree with the numbers.
 """
@@ -41,14 +43,14 @@ def variants(model):
 
 
 def _suffix(model):
-    return "" if model == "lstm" else f"_{model}"
+    return f"_{model}"
 
 
 def folds_csv_for(model):
-    """The fold assignment a model's ungauged correction was run with. 01_lstm_gauged_correction.py
+    """The fold assignment a model's ungauged correction was run with. 01_gauged_correction.py
     always uses the real LSTM 0-6 split regardless of model, but a model whose own held-out set
     doesn't line up with that split (see src/hybrid/prepare.py) needs the override its
-    02_lstm_ungauged_correction.py --folds-csv run used, or basin-to-fold lookups here would
+    02_ungauged_correction.py --folds-csv run used, or basin-to-fold lookups here would
     disagree with what's in that model's params.csv."""
     override = f"{os.path.dirname(FOLDS_CSV)}/basin_list_with_folds_{model}.csv"
     return override if model != "lstm" and os.path.exists(override) else FOLDS_CSV
@@ -77,8 +79,8 @@ def read_info(cell=None, model="lstm"):
 def _es_suffix(model, cell):
     """error_structure's own filename suffix: cell is only spelled out when it isn't the
     original "ungauged" default, so that file keeps its name for backward compatibility."""
-    parts = ([] if cell == "ungauged" else [cell]) + ([] if model == "lstm" else [model])
-    return "" if not parts else "_" + "_".join(parts)
+    parts = ([] if cell == "ungauged" else [cell]) + [model]
+    return "_" + "_".join(parts)
 
 
 def read_error_structure(model="lstm", cell="gauged"):
@@ -155,7 +157,7 @@ def evaluate(cell, model):
     p = np.load(f"{src}/predictions.npz", allow_pickle=True)
     params = pd.read_csv(f"{src}/params.csv").set_index("fold")
     obs = observed(p["test_t"])
-    # 01_lstm_gauged_correction.py always groups by the real LSTM split; only the ungauged
+    # 01_gauged_correction.py always groups by the real LSTM split; only the ungauged
     # script can have been pointed at a model-specific override (see folds_csv_for).
     ids = np.array(basin_ids())
     labels = fold_labels(folds_csv=folds_csv_for(model)) if cell == "ungauged" else fold_labels()

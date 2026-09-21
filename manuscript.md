@@ -295,11 +295,22 @@ regardless of whether the target's own gauge happened to be in training, that li
 transferring it to a genuinely ungauged neighbour (§1).
 
 Errors are strongly shared between close gauges, and the sharing decays with distance
-(Figure 1). Every pair of gauges within 1000 km contributes one correlation, 39,285 pairs in all,
-and a locally weighted regression through them falls from 0.53 at a separation of 25 km to 0.28
-at 100 km, 0.11 at 500 km and 0.06 at 900 km. The information is therefore local. That is what
-justifies both weighting donors by distance and keeping the donor count small: beyond a few
+(Figure 1, top). Every pair of gauges within 1000 km contributes one correlation, 39,285 pairs in
+all, and a locally weighted regression through them falls from 0.53 at a separation of 25 km to
+0.28 at 100 km, 0.11 at 500 km and 0.06 at 900 km. The information is therefore local. That is
+what justifies both weighting donors by distance and keeping the donor count small: beyond a few
 hundred kilometres a donor carries almost nothing about the target's error today.
+
+The pattern is not specific to LSTMs. Repeating the identical check, unchanged, on two unrelated
+model families run on the same basins finds the same shape (Figure 1, middle and bottom). A
+differentiable HBV trained jointly on the 425 of the 531 basins it was fit to (Poudel &
+Steinschneider, 2026) falls from 0.68 at 25 km to 0.50 at 100 km, 0.30 at 500 km and 0.23 at
+900 km, and an HBV model calibrated to each basin's own record alone, with no cross-basin
+information of any kind (Seibert et al., 2018), falls from 0.68 at 25 km to 0.47 at 100 km, 0.28
+at 500 km and 0.20 at 900 km. Both curves sit above the LSTM's at every distance rather than
+below it, so the shared-error structure is not an artefact of regional training: the model with
+the least cross-basin information of the three, calibrated one basin at a time by construction,
+shows the pattern most strongly of all.
 
 The spread around that trend is wide. Individual pairs at any separation range from strongly
 correlated to mildly anticorrelated, so the decay describes the typical pair rather than a
@@ -308,31 +319,37 @@ several donors and applies only a fraction of what they suggest, rather than tru
 neighbour.
 
 This agreement is not merely the seasonal cycle that two neighbouring basins share through their
-forcings. Removing each series' day-of-year climatology before correlating (a 31-day circular
-smoothing of the mean residual for each calendar day) leaves the fitted curve almost unchanged at
-short range, 0.51 against 0.53 at 25 km, while lowering it further out: 0.07 against 0.11 at 500
-km. What neighbouring gauges reveal at the distances the correction actually draws from is
-therefore day-to-day information about the model's error, not a seasonal pattern the model
-already recovers from its own inputs.
+forcings. For the LSTM, removing each series' day-of-year climatology before correlating (a
+31-day circular smoothing of the mean residual for each calendar day) leaves the fitted curve
+almost unchanged at short range, 0.51 against 0.53 at 25 km, while lowering it further out: 0.07
+against 0.11 at 500 km. What neighbouring gauges reveal at the distances the correction actually
+draws from is therefore day-to-day information about the model's error, not a seasonal pattern
+the model already recovers from its own inputs.
 
-This analysis uses nothing but the model's residuals and the gauge coordinates; no part of the
-correction enters it. What it establishes is therefore a property of the model's errors, not of
+This analysis uses nothing but a model's residuals and the gauge coordinates; no part of the
+correction enters it. What it establishes is therefore a property of each model's errors, not of
 any particular way of exploiting them. At a basin with no gauge, the model's own error is
 unobservable, but a quantity substantially correlated with it is measurable at the gauges nearby.
-The same check repeated on only the basins held out of training entirely, never seen by any model
-at all, shows the identical pattern over a much smaller sample: a somewhat weaker correlation at
-short range (0.45 at 25 km against 0.53), consistent with a trained-on basin carrying a little
-more basin-specific signal than one the model has never seen, but the same shape and the same
-conclusion. The rest of the paper asks how much of that error can be recovered in practice.
+For the LSTM, the same check repeated on only the basins held out of training entirely, never
+seen by any model at all, shows the identical pattern over a much smaller sample: a somewhat
+weaker correlation at short range (0.45 at 25 km against 0.53), consistent with a trained-on
+basin carrying a little more basin-specific signal than one the model has never seen, but the
+same shape and the same conclusion. The rest of the paper asks how much of that error can be
+recovered in practice.
 
-**Figure 1.** *Model errors are spatially structured.* Each grey dot is one pair of basins: the
-correlation between their two daily log-residual series over the whole evaluation period,
-against the great-circle distance between their gauges. All 39,285 pairs within 1000 km are
-shown, so the horizontal axis is gauge separation rather than time. The line is a robust
-locally weighted regression (Cleveland, 1979) through the cloud, using a fixed 60 km bandwidth
-rather than a fixed share of the points, because pairs are far denser at long range than at
-short and a density-adaptive span would over-smooth precisely where the decay is steepest.
-(`figures/gauged_error_structure.png`)
+**Figure 1.** *Model errors are spatially structured, in three unrelated model families.* Each
+grey dot is one pair of basins: the correlation between their two daily log-residual series over
+the whole evaluation period, against the great-circle distance between their gauges, for (top) a
+regional LSTM (Kratzert et al., 2019b), (middle) a differentiable HBV trained jointly on the
+basins it was fit to (Poudel & Steinschneider, 2026), and (bottom) an HBV model calibrated to
+each basin individually, with no cross-basin information at all (Seibert et al., 2018). All three
+panels share axes, a 1000 km distance cutoff and, within each panel, a robust locally weighted
+regression (Cleveland, 1979) through that panel's own cloud, using a fixed 60 km bandwidth rather
+than a fixed share of the points because pairs are far denser at long range than at short and a
+density-adaptive span would over-smooth precisely where the decay is steepest. Pair counts differ
+because the differentiable HBV is scored only on the 425 basins it was trained on, against 531
+for the other two: 39,285 pairs within 1000 km for the LSTM and the local HBV, 25,085 for the
+differentiable HBV. (`figures/gauged_error_structure.png`)
 
 ## 4. Discussion
 
@@ -422,6 +439,11 @@ approaches based on 913 French catchments. *Water Resources Research*, 44, W0341
 
 Parajka, J., Merz, R., Blöschl, G. (2005). A comparison of regionalisation methods for catchment
 model parameters. *Hydrology and Earth System Sciences*, 9, 157–171.
+
+Poudel, S., Steinschneider, S. (2026). *[Title, venue and status to be added.]*
+
+Seibert, J., Vis, M. J. P., Lewis, E., van Meerveld, H. J. (2018). Upper and lower benchmarks in
+hydrological modelling. *Hydrological Processes*, 32, 1120–1125.
 
 Shen, C., et al. (2023). Differentiable modelling to unify machine learning and physical models
 for geosciences. *Nature Reviews Earth & Environment*, 4, 552–567.

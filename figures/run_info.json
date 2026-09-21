@@ -18,13 +18,13 @@
    "n_basins": 425,
    "n_seeds": 1,
    "n_folds": 7,
-   "test_period": "1980-1989"
+   "test_period": "1980-1995"
   },
   "ungauged": {
    "n_basins": 106,
    "n_seeds": 1,
    "n_folds": 1,
-   "test_period": "1980-1989"
+   "test_period": "1980-1995"
   }
  },
  "hbv": {

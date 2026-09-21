@@ -96,7 +96,7 @@ def main(model):
                           f"{info['test_period']}.",
                      118)
     fig.tight_layout(rect=(0, bottom, 1, 1))
-    suffix = "" if model == "lstm" else f"_{model}"
+    suffix = f"_{model}"
     out = f"{HERE}/{CELL}_donor_map{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}   {len(target)} basins, {len(segs)} donor links")

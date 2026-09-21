@@ -46,8 +46,8 @@ measured against each other rather than assumed; see manuscript.md 2.6.
 |---|---|
 | `src/residual_postprocessing.py` | the correction itself, and where its inputs live on disk |
 | `src/parameter_tuning.py` | the K x lambda x p search: three selection objectives (KGE, NSE, NSE*) |
-| `src/01_lstm_gauged_correction.py` | correct the gauged cell → `runs/lstm/gauged_corrected/` |
-| `src/02_lstm_ungauged_correction.py` | correct the ungauged cell → `runs/lstm/ungauged_corrected/` |
+| `src/01_gauged_correction.py` | correct the gauged cell → `runs/<model>/gauged_corrected/` |
+| `src/02_ungauged_correction.py` | correct the ungauged cell → `runs/<model>/ungauged_corrected/` |
 | `src/lstm/common.py` | the LSTM: cache, folds, model, training, prediction |
 | `src/lstm/01_lstm_gauged.py` | train on every basin, one run per seed |
 | `src/lstm/02_lstm_ungauged.py` | train one run per (fold, seed) |
@@ -72,8 +72,8 @@ python src/lstm/02_lstm_ungauged.py
 python src/lstm/01_lstm_gauged.py
 
 # correct (CPU, minutes) -> runs/lstm/<cell>_corrected/
-python src/02_lstm_ungauged_correction.py
-python src/01_lstm_gauged_correction.py
+python src/02_ungauged_correction.py
+python src/01_gauged_correction.py
 
 # score and plot (CPU) -> figures/*.csv, figures/*.png
 python figures/evaluate.py
@@ -82,7 +82,8 @@ python figures/make_boxplot.py --cell ungauged
 python figures/make_hyperparam.py --cell ungauged
 python figures/make_change_map.py --cell ungauged
 python figures/make_donor_map.py        # ungauged only, by design
-python figures/make_error_structure.py  # ungauged only: the premise, before any correction
+python figures/make_error_structure.py  # the premise, before any correction -- needs
+                                         # evaluate.py run for --model lstm, hybrid and hbv
 python figures/make_method.py
 ```
 

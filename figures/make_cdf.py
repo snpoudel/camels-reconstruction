@@ -1,7 +1,7 @@
 """How the skill of every basin shifts when the correction is applied.
 
-    python figures/make_cdf.py --cell ungauged    # -> figures/ungauged_cdf.png
-    python figures/make_cdf.py --cell gauged      # -> figures/gauged_cdf.png
+    python figures/make_cdf.py --cell ungauged    # -> figures/ungauged_cdf_lstm.png
+    python figures/make_cdf.py --cell gauged      # -> figures/gauged_cdf_lstm.png
 
 Two empirical cumulative distributions, NSE on top and KGE below, across basins. Each basin
 contributes one point -- the score of its seed-mean hydrograph -- so a curve lying to the right
@@ -49,8 +49,9 @@ def main(cell, model):
     for ax, (col, xlabel) in zip(axes, PANELS):
         for name, color in series_cdf(model).items():
             v = np.sort(df.loc[df.variant == name, col].dropna().to_numpy())
+            label = f"{model_label(model)} + {name}" if name == BENCHMARK else name
             ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=2, zorder=3,
-                    label=f"{name}   median {np.median(v):.2f}")
+                    label=f"{label} (median {np.median(v):.2f})")
             ax.plot([np.median(v)], [0.5], "o", ms=7, color=color, markeredgecolor="white",
                     markeredgewidth=1.6, zorder=4)
         ax.axhline(0.5, color=MUTE, lw=0.8, ls=(0, (4, 3)), zorder=1)
@@ -72,7 +73,7 @@ def main(cell, model):
                           f"single closest gauge's error applied in full, nothing selected.  "
                           f"Top: NSE.  Bottom: KGE.", 96)
     fig.tight_layout(rect=(0, bottom, 1, 1))
-    suffix = "" if model == "lstm" else f"_{model}"
+    suffix = f"_{model}"
     out = f"{HERE}/{cell}_cdf{suffix}.png"
     fig.savefig(out, dpi=200, facecolor="white")
     print(f"-> {out}")
