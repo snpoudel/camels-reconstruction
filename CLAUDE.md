@@ -59,18 +59,7 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
   *why* (a leak-prevention invariant, a literature-mandated constant, a workaround).
 - No speculative abstractions, flags, or config knobs for hypothetical future needs. This is a
   research repo: prefer the direct, readable version.
-- **The fold-isolation invariant**: no search may read a basin it will go on to correct. In the
-  ungauged cell the fold's held-out basins are absent from the search; in the gauged cell the
-  whole group being corrected is, and a basin is masked out of its own donor set at infinite
-  distance. Any change to `src/residual_postprocessing.py`, `src/parameter_tuning.py`, or either
-  `*_correction.py` must preserve that — check it by destroying the target basins' observations
-  and confirming both the selected (K, λ, p) and the corrected hydrographs are bit-identical,
-  with a positive control that destroys a *donor* and confirms the output does move.
-- Hyperparameters in `src/lstm/common.py` are literature-sourced (Kratzert et al. 2019); don't
-  retune without noting the source and reason in `experiments_log.md`.
 - Prefer editing existing scripts over adding new ones; each script has one clear purpose.
-- Figures read only `figures/*.csv` and `run_info.json`, never `runs/` — so a figure cannot
-  disagree with the reported numbers. Style lives in `figures/palette.py`, not per figure.
 - After a training/eval run completes, use the `log-experiment` skill to record it in
   `experiments_log.md` rather than describing results only in chat.
 - Write short, concise code and short scripts; don't make too many small functions. Avoid

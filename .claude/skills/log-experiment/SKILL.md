@@ -1,6 +1,7 @@
 ---
 name: log-experiment
-description: Record a completed experiment run in experiments_log.md — what was run, what came out, in plain language — and keep it usable as the project's memory across sessions: a new session should read the top entry and know where things stand. Use after a training batch finishes and `python figures/evaluate.py` has written the metrics CSVs, or when the user says "log this", "write this up", or "add this to the experiment log".
+description: >-
+  Record a completed experiment run in experiments_log.md — what was run, what came out, in plain language — and keep it usable as the project's memory across sessions: a new session should read the top entry and know where things stand. Use after a training batch finishes and `python figures/evaluate.py` has written the metrics CSVs, or when the user says "log this", "write this up", or "add this to the experiment log".
 ---
 
 # Log an experiment
