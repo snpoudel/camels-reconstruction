@@ -72,6 +72,22 @@ CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
 CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone dark",
               "ungauged": "basins held out of training entirely"}
 
+
+def available_cells(model):
+    """Which cells this model has scored metrics for (gauged first), so a figure script can
+    combine both when they exist and fall back to whichever one does when it doesn't -- HBV
+    has no ungauged run, so it always comes back `["gauged"]`."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [c for c in ("gauged", "ungauged")
+            if os.path.exists(f"{here}/metrics_{c}_{model}.csv")]
+
+
+PANEL_LETTERS = "abcdefghij"
+
+
+def panel_letter(i):
+    return f"({PANEL_LETTERS[i]})"
+
 # One type scale, in points.
 TITLE, PANEL, LABEL, TICK, CAPTION = 11.5, 10.5, 10, 9, 8.5
 
@@ -86,7 +102,7 @@ def style(ax, grid=True):
     # Two calls, not one with `visible=grid`: matplotlib re-enables the grid whenever any
     # line-property kwarg is passed alongside visible=False, regardless of its value.
     if grid:
-        ax.grid(True, color=GRID, lw=0.7, zorder=0)
+        ax.grid(True, color=GRID, lw=0.6, alpha=0.6, zorder=0)
     else:
         ax.grid(False)
     ax.set_axisbelow(True)

@@ -77,15 +77,21 @@ python src/01_gauged_correction.py
 
 # score and plot (CPU) -> figures/*.csv, figures/*.png
 python figures/evaluate.py
-python figures/make_cdf.py --cell ungauged
-python figures/make_boxplot.py --cell ungauged
-python figures/make_hyperparam.py --cell ungauged
-python figures/make_change_map.py --cell ungauged
+python figures/make_cdf.py              # gauged + ungauged, one figure -> figures/cdf_lstm.png
+python figures/make_boxplot.py          # -> figures/metrics_boxplots_lstm.png
+python figures/make_hyperparam.py       # -> figures/hyperparameters_lstm.png
+python figures/make_change_map.py       # -> figures/change_map_lstm.png
 python figures/make_donor_map.py        # ungauged only, by design
 python figures/make_error_structure.py  # the premise, before any correction -- needs
                                          # evaluate.py run for --model lstm, hybrid and hbv
 python figures/make_method.py
 ```
+
+The four combined figures take `--model` (default `lstm`) and auto-detect which cells that
+model has -- HBV has no ungauged run, so `--model hbv` produces a gauged-only figure instead of
+a two-row one. `--cell gauged`/`--cell ungauged` forces a single cell even for a model that has
+both, for one-off inspection; that always writes a `gauged_`/`ungauged_`-prefixed file so it
+never overwrites the combined one.
 
 Only training needs a GPU. Everything downstream runs on any machine: the correction is a few
 minutes of grid search, and the correction itself is milliseconds.
