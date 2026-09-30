@@ -1,38 +1,14 @@
-"""The neighbour-residual correction: five steps, each with its equation and a picture.
+"""Method diagram: the five steps of the neighbour-residual correction.
 
-    python figures/make_method.py    # -> figures/method.png, figures/method.svg
+    python figures/make_method.py    # -> method.png, method.svg
 
-Every step box carries the arithmetic on top and a sketch of the same neighbourhood underneath,
-so the notation can be read straight off the picture: step 1 names the basins (q_1, q_2, q_j at
-the gauges, q_i at the ungauged target), step 2 turns distance into weight on those same points,
-step 3 puts today's error at each gauge, step 4 pools them onto the target, step 5 shows the
-shift that comes out. The neighbourhood is the same one throughout -- that is the point, the
-eye tracks a single target and its donors the whole way across. Step 1 is the one panel that
-draws every gauge alike: nothing has been selected yet, and singling the donors out there
-would give away a choice step 2 has not made.
+Each step box has its equation above a sketch of the same neighbourhood, so the eye follows one
+target and its donors across all five steps. The band above says K, p and lambda are
+cross-validated on the gauged folds; the search grid is imported from src/parameter_tuning.py
+so it cannot drift from the code. Everything else is schematic.
 
-The band above the five steps says where the three constants come from: the seven folds drawn
-as seven cells -- one ungauged (held out), six gauged (the donor pool) -- and the one line of
-text that K, p and lambda are cross-validated on those gauged folds. The cell colours are the
-figure's own: blue is a gauged basin in every step panel, orange is the ungauged target.
-
-Nothing here is measured. It is a method diagram: the sketches are schematic (step 5's
-hydrograph is an analytic curve, not a run), and the only numbers on the page -- the search
-grid for K, p and lambda -- are imported from `src/parameter_tuning.py` so they cannot drift
-from the code. For the same method on real data see `figures/ungauged_hyperparameters_lstm.png`.
-
-No footnotes: the distance floor, the epsilon that keeps the logs finite, and the
-renormalisation over donors that reported are all in manuscript.md and belong in the caption.
-Carrying them on the figure made it busier than the five steps it exists to show.
-
-`check_fit` measures every string against the box it sits in and prints a WARN if one spills,
-because the failure mode of this figure is silent: an equation grows, overruns its border, and
-nothing complains. Keep the run clean.
-
-Colour: `figures/palette.py` -- slot-0 blue for the uncorrected LSTM and for gauged basins,
-slot-1 orange for the ungauged target and the corrected prediction, matching what
-`make_cdf.py` and `make_boxplot.py` use for "LSTM" vs "LSTM + correction".
-Two hues only; ink and grey carry everything else.
+`check_fit` prints a WARN for any string that overflows its box, since nothing else would catch
+it. Keep the run clean.
 """
 import os
 import sys
@@ -58,25 +34,22 @@ MARGIN, GAP = 0.32, 0.34
 BOX_H, Y0 = 3.40, 0.28
 BOX_W = (FIG_W - 2 * MARGIN - 4 * GAP) / 5
 
-# The cross-validation band above the steps: seven fold cells, then one line of text. Sized so
-# the five step boxes keep their own geometry -- the room comes from dropping the footnotes.
+# The cross-validation band above the steps: seven fold cells, then one line of text.
 CV_Y, CV_H = 3.82, 0.66
 CELL_W, CELL_H, CELL_GAP = 0.26, 0.24, 0.045
 SPLIT_GAP = 0.16          # separates the one ungauged cell from the six gauged ones
 
-# One neighbourhood, drawn five times, in unit coordinates inside each sketch panel. Three
-# constraints on these positions: every donor is nearer the target than every other gauge, so
-# "the K nearest" is visible rather than asserted; no two donors are collinear with the target,
-# so the three weight lines in step 2 read as three; and the donor distances differ enough that
-# those lines come out visibly unequal.
+# One neighbourhood in unit coordinates, drawn in every sketch. Every donor is nearer the target
+# than every other gauge, no two donors are collinear with it, and their distances differ enough
+# that step 2's weight lines come out visibly unequal.
 TARGET = (0.44, 0.46)
 DONORS = ((0.22, 0.70), (0.56, 0.62), (0.78, 0.40))
 OTHERS = ((0.06, 0.14), (0.94, 0.84), (0.32, 0.06))
 Q_LAB = (r"$q_1$", r"$q_2$", r"$q_j$")
 W_LAB = (r"$w_{i1}$", r"$w_{i2}$", r"$w_{ij}$")
 R_LAB = (r"$r_1$", r"$r_2$", r"$r_j$")
-# Offset, alignment and (for step 2) where along the line the weight label sits -- fixed per
-# donor so no label jumps between panels or lands on top of its neighbour.
+# Per-donor label offset, alignment, and (step 2) position along the weight line, fixed so
+# labels stay put across panels.
 OFF = (((0.00, 0.10), "center", "bottom", 0.68),
        ((0.07, 0.05), "left", "bottom", 0.40),
        ((0.08, 0.00), "left", "center", 0.70))
@@ -133,12 +106,8 @@ def pt(rect, u, v):
 
 
 def basins(ax, rect, mark_donors=True):
-    """The same map in every panel: three donors, three farther gauges, one ungauged target.
-
-    `mark_donors=False` draws every gauge alike -- step 1, where the LSTM has simply predicted
-    everywhere and no donor has been picked yet. The K nearest are chosen in step 2, so that is
-    the first panel allowed to single them out.
-    """
+    """Three donors, three farther gauges and the target. `mark_donors=False` draws every gauge
+    alike, for step 1: donors are not chosen until step 2."""
     faint = OTHERS if mark_donors else ()
     strong = DONORS if mark_donors else OTHERS + DONORS
     for u, v in faint:
@@ -158,7 +127,7 @@ def label_donors(ax, rect, labels):
 
 
 def hydrograph(ax, rect):
-    """Schematic, not data: one analytic storm, before and after a downward correction."""
+    """A schematic storm hydrograph, before and after a downward correction."""
     x0, y0, w, h = rect
     px0, px1 = x0 + 0.10 * w, x0 + 0.96 * w
     py0, py1 = y0 + 0.16 * h, y0 + 0.72 * h
@@ -172,8 +141,7 @@ def hydrograph(ax, rect):
     ax.plot(x, raw, color=RAW, lw=1.3, zorder=5)
     ax.plot(x, cor, color=CORRECTED, lw=1.3, zorder=6)
     ax.plot([px0, px1], [py0, py0], color=MUTE, lw=0.6, alpha=0.6, zorder=3)
-    # Mini legend, top-left, clear of the peak: labelling the curves in place needs leader
-    # lines at this size, and leader lines at this size are clutter.
+    # A mini legend rather than in-place labels, which would need leader lines at this size.
     for n, (lab, col) in enumerate(((r"$q^{sim}_i$", RAW), (r"$q^{corr}_i$", CORRECTED))):
         ly = y0 + (0.94 - 0.13 * n) * h
         ax.plot([x0 + 0.08 * w, x0 + 0.20 * w], [ly, ly], color=col, lw=1.3, zorder=7)
@@ -238,13 +206,8 @@ def add_box(ax, x, y, step, n):
 
 
 def cv_band(ax):
-    """Where K, p and lambda come from: seven fold cells, an arrow, and one line of text.
-
-    The ungauged fold is drawn first and set apart by a wider gap, so the six that follow read
-    as the pool the search is allowed to use. Colours are the figure's own -- orange is the
-    ungauged target everywhere else on the page, blue is a gauged basin -- so the band needs no
-    legend of its own.
-    """
+    """Where K, p and lambda come from: the held-out fold set apart from the six gauged folds
+    the search may use, in the same orange/blue as the target and gauges below."""
     x0, w = MARGIN, FIG_W - 2 * MARGIN
     ax.add_patch(FancyBboxPatch((x0, CV_Y), w, CV_H,
                                 boxstyle="round,pad=0,rounding_size=0.08", linewidth=1.0,
@@ -263,8 +226,7 @@ def cv_band(ax):
                                     edgecolor=colour, facecolor=colour, alpha=0.30, zorder=4))
     gauged_end = gauged_x + 6 * CELL_W + 5 * CELL_GAP
 
-    # Two lines each: "ungauged (target)" on one line is three times its cell's width, and
-    # widening the split to fit it would spend exactly the room the sentence needs.
+    # Two-line labels: on one line "ungauged (target)" is three times its cell's width.
     lab_y = cell_y - 0.05
     track(ax.text(ungauged_x + CELL_W / 2, lab_y, "ungauged\n(target)", fontsize=7.4,
                   color=CORRECTED, ha="center", va="top", linespacing=1.25, zorder=5),

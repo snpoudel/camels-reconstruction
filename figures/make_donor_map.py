@@ -1,19 +1,15 @@
-"""Which gauges the correction actually borrows from, for the ungauged cell.
+"""Ungauged cell, one fold: which gauges each corrected basin borrows from, and how its NSE changed.
 
-    python figures/make_donor_map.py
+    python figures/make_donor_map.py                  # -> ungauged_donor_map_lstm.png
+    python figures/make_donor_map.py --model hybrid   # -> ungauged_donor_map_hybrid.png
+    python figures/make_donor_map.py --mark-no-skill
 
-Every held-out basin joined to the K gauges it actually borrows from, each line's opacity its
-inverse-distance weight, so the reader can see without being told that the neighbourhood is
-local. One fold's network is drawn -- all seven overlaid would be an unreadable mat of lines,
-and every fold's geometry is the same procedure over a different seventh of the basins.
+(a) Each held-out basin joined to its K donors, line opacity by inverse-distance weight. Only
+one fold is drawn; all seven overlaid would be unreadable.
+(b) The same basins coloured by change in NSE, on the change map's colour scale.
 
-The gauged cell isn't drawn here: there every basin draws from the same all-other-basins pool,
-so a per-fold donor map doesn't show anything the ungauged one doesn't already -- one picture is
-enough.
-
-Colour: palette slots 0 and 1 (blue = donor gauges, vermillion = the basins being corrected).
-The donor links are neutral ink, not a third series, and both point series are named in the
-legend and drawn at different marker sizes, so nothing rests on colour alone.
+`--mark-no-skill` draws basins with NSE below 0 both before and after as hollow rings and drops
+them from the "% improved" count: a gain that stays below 0 is still worse than the mean flow.
 """
 import argparse
 import os
@@ -21,6 +17,7 @@ import sys
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.colors as mcolors  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -29,26 +26,26 @@ from matplotlib.collections import LineCollection  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
-from evaluate import fold_settings, folds_csv_for, read_info, read_metrics  # noqa: E402
-from palette import CELL_TITLE, CORRECTED, INK, LABEL, MUTE, RAW, TITLE  # noqa: E402
-from palette import caption, draw_us_outline, model_label, style  # noqa: E402
+from evaluate import fold_settings, folds_csv_for, read_metrics  # noqa: E402
+from palette import CAP_PERCENTILE, CELL_TITLE, CORRECTED, DIVERGING, INK, LABEL, MUTE  # noqa: E402
+from palette import PANEL, RAW, TITLE, draw_us_outline, model_label, panel_letter  # noqa: E402
+from palette import series_pair, style  # noqa: E402
 from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # noqa: E402
                                      fold_labels, idw_weights)
 
 CELL = "ungauged"
 
 
-def main(model):
+def main(model, mark_no_skill):
     df = read_metrics(CELL, model)
-    info = read_info(CELL, model)
-    # Pick the fold whose K is closest to 5: few enough donor lines to read individually, many
-    # enough to look like a real neighbourhood rather than a single nearest-neighbour lookup.
+    # The fold whose K is closest to 5: few enough lines to read, enough to look like a
+    # neighbourhood rather than a nearest-neighbour lookup.
     settings = fold_settings(df, model_label(model))
     fold, k, lam, p = min(settings, key=lambda s: (abs(s[1] - 5), s[0]))
 
     labels, dist = fold_labels(folds_csv=folds_csv_for(model)), distance_matrix()
     target = np.flatnonzero(labels == fold)
-    donor = np.flatnonzero(labels != fold)          # the fold's own gauged basins
+    donor = np.flatnonzero(labels != fold)
     d = dist[np.ix_(target, donor)]
 
     loc = pd.read_csv(BASINS_CSV, dtype={"gauge_id": str}).set_index("gauge_id")
@@ -63,46 +60,73 @@ def main(model):
             weights.append(W[r, c])
     w = np.asarray(weights)
 
-    # Shaped to the CONUS aspect the `set_aspect` below enforces, so the axes fill the
-    # figure instead of floating in a band of white.
-    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    raw, corr = list(series_pair(model))
+    piv = df.pivot_table(index="basin", columns="variant", values="nse")
+    before, after = (piv[v].reindex(np.asarray(basin_ids())[target]).to_numpy()
+                     for v in (raw, corr))
+    gain = after - before
+    no_skill = (before < 0) & (after < 0) if mark_no_skill else np.zeros(len(gain), bool)
+    improved = int(((gain > 0) & ~no_skill).sum())
+
+    fig, (ax, bx) = plt.subplots(2, 1, figsize=(8.0, 10.2), sharex=True, sharey=True)
     draw_us_outline(ax)
-    # Thicker and darker than the default MUTE grid ink, so the donor links read clearly
-    # against the basin points rather than disappearing into the background. The alpha floor
-    # matters more than the ceiling: it is the weakest links that were vanishing, and they are
-    # the ones that show how far the neighbourhood actually reaches.
+    # A high alpha floor: the weakest links are the ones that show how far the neighbourhood
+    # reaches, and they vanish first.
     ax.add_collection(LineCollection(segs, colors=INK, linewidths=1.35, zorder=2,
                                      alpha=0.40 + 0.50 * (w / w.max())))
     ax.scatter(lon[donor], lat[donor], s=16, color=RAW, alpha=0.75, lw=0.5,
-              edgecolor="white", zorder=3, label=f"donor gauges ({len(donor)})")
+               edgecolor="white", zorder=3, label=f"donor gauges ({len(donor)})")
     ax.scatter(lon[target], lat[target], s=34, color=CORRECTED, lw=0.8, zorder=4,
-              edgecolor="white", label=f"basins being corrected ({len(target)})")
+               edgecolor="white", label=f"basins being corrected ({len(target)})")
 
-    ax.set_aspect(1 / np.cos(np.radians(lat.mean())))
-    ax.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)
-    ax.set_ylabel("latitude (°N)", color=INK, fontsize=LABEL)
-    ax.set_title(f"{CELL_TITLE[CELL]}: where the borrowed residuals come from (K = {k}, "
-                 f"{model_label(model)})", color=INK, fontsize=TITLE, loc="left", pad=8)
+    ax.set_title(f"{panel_letter(0)} donor gauges each corrected basin borrows from",
+                 color=INK, fontsize=PANEL, loc="left", pad=6)
     ax.legend(frameon=False, loc="lower left", fontsize=LABEL - 1.5, labelcolor=INK,
               handletextpad=0.4, borderpad=0.2, markerscale=2.2)
-    style(ax, grid=False)
 
-    bottom = caption(fig, f"One of the {info['n_folds']} folds shown alone for clarity -- all "
-                          f"{info['n_folds']} overlaid would be an unreadable mat of lines, and "
-                          f"each fold draws from its own training-basin pool.  {len(target)} of "
-                          f"{info['n_basins']} basins, each joined to the K = {k} nearest of "
-                          f"that fold's {len(donor)} training basins, line opacity proportional "
-                          f"to the inverse-distance weight (p = {p:g}).  Test period "
-                          f"{info['test_period']}.",
-                     118)
-    fig.tight_layout(rect=(0, bottom, 1, 1))
-    suffix = f"_{model}"
-    out = f"{HERE}/{CELL}_donor_map{suffix}.png"
-    fig.savefig(out, dpi=200, facecolor="white")
-    print(f"-> {out}   {len(target)} basins, {len(segs)} donor links")
+    # Cap over every basin, so --mark-no-skill never recolours the others.
+    cap = np.nanpercentile(np.abs(gain), CAP_PERCENTILE)
+    norm = mcolors.TwoSlopeNorm(vcenter=0.0, vmin=-cap, vmax=cap)
+    draw_us_outline(bx)
+    order = [i for i in np.argsort(np.abs(gain)) if not no_skill[i]]  # biggest changes on top
+    sc = bx.scatter(lon[target][order], lat[target][order], c=gain[order], cmap=DIVERGING,
+                    norm=norm, s=34, edgecolor=MUTE, linewidth=0.4, zorder=3)
+    if no_skill.any():
+        bx.scatter(lon[target][no_skill], lat[target][no_skill], s=34, facecolor="none",
+                   edgecolor=INK, linewidth=1.1, zorder=4,
+                   label=f"NSE below 0 before and after ({int(no_skill.sum())})")
+        bx.legend(frameon=False, loc="lower left", fontsize=LABEL - 1.5, labelcolor=INK,
+                  handletextpad=0.4, borderpad=0.2, markerscale=1.6)
+    bx.set_title(f"{panel_letter(1)} change in NSE at the basins being corrected "
+                 f"({100 * improved / len(gain):.0f}% of sites improved)",
+                 color=INK, fontsize=PANEL, loc="left", pad=6)
+    bx.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)
+
+    for a in (ax, bx):
+        a.set_aspect(1 / np.cos(np.radians(lat.mean())))
+        a.set_ylabel("latitude (°N)", color=INK, fontsize=LABEL)
+        style(a, grid=False)
+
+    fig.suptitle(f"{CELL_TITLE[CELL]}: where the borrowed residuals come from, and what they "
+                 f"change ({model_label(model)}, K = {k})", fontsize=TITLE, color=INK,
+                 x=0.012, ha="left", y=0.995)
+    fig.tight_layout(rect=(0, 0.07, 1, 0.985))
+    cax = fig.add_axes((0.25, 0.045, 0.5, 0.012))
+    cb = fig.colorbar(sc, cax=cax, orientation="horizontal", extend="both")
+    cb.set_label("change in NSE, corrected minus uncorrected", color=INK, fontsize=LABEL - 1.5)
+    cb.ax.tick_params(colors=MUTE, labelsize=LABEL - 2.5, length=2)
+    cb.outline.set_visible(False)
+    out = f"{HERE}/{CELL}_donor_map_{model}.png"
+    fig.savefig(out, dpi=300, facecolor="white")
+    print(f"-> {out}   {len(target)} basins, {len(segs)} donor links, "
+          f"{improved} improved, median change {np.nanmedian(gain):+.3f}, "
+          f"cap {cap:.2f}, {int(no_skill.sum())} marked no-skill")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="lstm")
-    main(ap.parse_args().model)
+    ap.add_argument("--mark-no-skill", action="store_true", help="set apart basins whose NSE "
+                    "is below 0 both before and after the correction")
+    a = ap.parse_args()
+    main(a.model, a.mark_no_skill)

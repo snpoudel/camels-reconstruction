@@ -1,30 +1,15 @@
-"""The one palette and figure style every figure here uses.
+"""The shared palette and figure style. Import from here rather than re-deciding per figure.
 
-Colours are the Okabe-Ito colourblind-safe qualitative palette (Okabe & Ito, 2008), used as
-published rather than designed here -- it is the standard set for scientific figures and can
-simply be cited. Slot order is fixed and never cycled, so a series keeps its colour across
-figures:
+Series colours are the Okabe-Ito colourblind-safe palette (Okabe & Ito, 2008), in fixed slots:
 
-    slot 0  #0072B2  blue        the uncorrected model ("LSTM")
-    slot 1  #D55E00  vermillion  the same model after the neighbour-residual correction
-    slot 2  #949494  grey        the parameter-free nearest-gauge reference (CDF figure only)
+    slot 0  #0072B2  blue        the uncorrected model
+    slot 1  #D55E00  vermillion  the same model after the correction
+    slot 2  #949494  grey        the nearest-gauge-only reference (CDF figure only)
 
-Blue and vermillion are the two series any figure compares. Grey is the reference line rather
-than a third series, and reads that way: a baseline the eye passes over on its way to the two
-that matter.
-
-Ink, not colour, carries text:  INK #16191c   MUTE #5d6a73   GRID #dfe3e6
-
-Identity never rests on colour alone in any case: every series is named in its legend, and the
-figures separate their series by position, marker size or dash as well.
-
-Everything else here exists so the figures agree with each other: one type scale, one axis
-treatment, one caption block, one pair of series names, one pair of cell titles. Import them
-rather than re-deciding per figure.
+Text uses ink, not series colour: INK #16191c, MUTE #5d6a73, GRID #dfe3e6.
 """
 import json
 import os
-import textwrap
 
 import matplotlib.colors as mcolors
 import numpy as np
@@ -32,25 +17,35 @@ import numpy as np
 BLUE, ORANGE, NEUTRAL = "#0072B2", "#D55E00", "#949494"
 INK, MUTE, GRID = "#16191c", "#5d6a73", "#dfe3e6"
 
-# The signed-quantity ramp both map figures use. A visibly grey zero, not the near-white GRID:
-# that reads as "empty" on a map, and a marker filled with it is nearly invisible against the
-# page. Same two hues as the series pair, so a vermillion basin carries the same meaning here
-# as an vermillion line does anywhere else.
+# Signed change on a map. The zero is a visible grey, not GRID: a near-white marker reads as
+# "missing" rather than "unchanged".
 DIVERGE_ZERO = "#b6bec4"
 DIVERGING = mcolors.LinearSegmentedColormap.from_list("diverging", [BLUE, DIVERGE_ZERO, ORANGE])
+# DIVERGING saturates at this percentile of |change|, so the typical basin reaches full colour
+# instead of the ramp being spent on a few extreme near-zero-flow basins.
+CAP_PERCENTILE = 85
 
-# Series identity, used across every figure. The names are the `variant` values in
-# figures/metrics_*.csv, so a figure never invents its own wording for a series.
+# Unsigned skill on a map, darker = better. Stepped at equal OKLCH lightness in the series
+# blue's hue; stock "Blues" bunches its dark end, which made NSE 0.7-0.9 look identical.
+SEQUENTIAL = mcolors.LinearSegmentedColormap.from_list("sequential", [
+    "#d4ebff", "#acd9ff", "#81c7ff", "#4eb3ff", "#239ff0", "#038bd8",
+    "#0278bb", "#00659f", "#005383", "#004169", "#0a314b"])
+
 RAW, CORRECTED = BLUE, ORANGE
 
-# What each runs/<model>/ tree is called in a caption or legend. Falls back to the model name
-# capitalised, so a new model needs no entry here to work -- only to read better than "Hybrid".
+# Display names for runs/<model>/; anything missing falls back to the capitalised key.
 MODEL_LABEL = {"lstm": "LSTM", "hbv": "HBV"}
 
-# The parameter-free reference -- one donor, all of its error, nothing selected. Only the CDF
-# figure draws it, so `series_pair` below stays a pair and the figures that unpack it keep
-# working.
 BENCHMARK = "nearest gauge only"
+
+CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
+
+TITLE, PANEL, LABEL, TICK = 11.5, 10.5, 10, 9
+
+# CONUS + DC state outlines, trimmed from a public-domain GeoJSON (PublicaMundi/MappingAPI) and
+# tracked in data/ so no figure needs network access.
+US_STATES_GEOJSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "data", "us_states_conus.geojson")
 
 
 def model_label(model):
@@ -58,49 +53,33 @@ def model_label(model):
 
 
 def series_pair(model="lstm"):
-    """{name: colour} for the raw and corrected series of one model, in that order."""
+    """{name: colour} for the raw and corrected series, in that order. The names are the
+    `variant` values in figures/metrics_*.csv."""
     name = model_label(model)
     return {name: RAW, f"{name} + correction": CORRECTED}
 
 
 def series_cdf(model="lstm"):
-    """`series_pair`, plus the nearest-gauge-only benchmark the CDF figure alone draws."""
+    """`series_pair` plus the nearest-gauge-only reference."""
     name = model_label(model)
     return {name: RAW, BENCHMARK: NEUTRAL, f"{name} + correction": CORRECTED}
 
-CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
-CELL_BLURB = {"gauged": "each basin reconstructed as if its own gauge had gone dark",
-              "ungauged": "basins held out of training entirely"}
-
 
 def available_cells(model):
-    """Which cells this model has scored metrics for (gauged first), so a figure script can
-    combine both when they exist and fall back to whichever one does when it doesn't -- HBV
-    has no ungauged run, so it always comes back `["gauged"]`."""
+    """The cells this model has metrics for, gauged first. HBV has no ungauged run."""
     here = os.path.dirname(os.path.abspath(__file__))
     return [c for c in ("gauged", "ungauged")
             if os.path.exists(f"{here}/metrics_{c}_{model}.csv")]
 
 
-PANEL_LETTERS = "abcdefghij"
-
-
 def panel_letter(i):
-    return f"({PANEL_LETTERS[i]})"
-
-# One type scale, in points.
-TITLE, PANEL, LABEL, TICK, CAPTION = 11.5, 10.5, 10, 9, 8.5
+    return f"({'abcdefghij'[i]})"
 
 
 def style(ax, grid=True):
-    """Recessive grid and axes: the data carries the ink, the frame does not.
-
-    `grid=False` for the map figures -- lat/lon gridlines compete with the state outline and
-    the data points for the same thin grey ink; the axis ticks alone are enough to read
-    coordinates off. Tick marks are unaffected either way.
-    """
-    # Two calls, not one with `visible=grid`: matplotlib re-enables the grid whenever any
-    # line-property kwarg is passed alongside visible=False, regardless of its value.
+    """Recessive axes; `grid=False` for maps, where gridlines compete with the state outlines."""
+    # Two calls, not `ax.grid(grid, ...)`: matplotlib turns the grid back on whenever a
+    # line-property kwarg is passed, even alongside visible=False.
     if grid:
         ax.grid(True, color=GRID, lw=0.6, alpha=0.6, zorder=0)
     else:
@@ -114,20 +93,8 @@ def style(ax, grid=True):
     ax.tick_params(colors=MUTE, labelsize=TICK, length=3)
 
 
-# CONUS + DC state boundaries, trimmed from a public-domain simplified GeoJSON
-# (PublicaMundi/MappingAPI) to the 49 features CAMELS-US basins ever fall inside -- no Alaska,
-# Hawaii or Puerto Rico. 59 KB, tracked alongside data/camels531.csv rather than fetched at
-# plot time, so a figure never depends on network access.
-US_STATES_GEOJSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                 "data", "us_states_conus.geojson")
-
-
 def draw_us_outline(ax, color=GRID, lw=0.7, zorder=1):
-    """State boundaries, drawn dim and behind the data -- geographic context, not a series.
-
-    Reads GeoJSON with the standard library only (no geopandas/shapely dependency for one
-    background layer); handles the Polygon and MultiPolygon geometries the states need.
-    """
+    """State boundaries behind the data, read with the standard library (no geopandas)."""
     states = json.load(open(US_STATES_GEOJSON))
     for feature in states["features"]:
         geom = feature["geometry"]
@@ -136,20 +103,3 @@ def draw_us_outline(ax, color=GRID, lw=0.7, zorder=1):
         for ring in rings:
             xy = np.asarray(ring)
             ax.plot(xy[:, 0], xy[:, 1], color=color, lw=lw, zorder=zorder)
-
-
-def caption(fig, text, width=120):
-    """The caption block, in the same place at the same size on every figure. Returns the
-    bottom margin to leave for it, for the caller's `tight_layout(rect=...)`."""
-    lines = textwrap.wrap(text, width)
-    fig.text(0.012, 0.014, textwrap.fill(text, width), fontsize=CAPTION, color=MUTE, va="bottom")
-    return 0.035 + 0.021 * len(lines)
-
-
-def settings_note(params):
-    """How a caption states the selected settings: spelled out when there are few, summarised
-    when every fold has its own."""
-    if len(params) < 4:
-        return "; ".join(rf"fold {f}: K={int(k)}, $\lambda$={lam:g}, p={p:g}"
-                         for f, k, lam, p in params)
-    return r"K, $\lambda$ and p selected per fold"
