@@ -7,6 +7,12 @@ inverse-distance-weighted step, nothing trained, no GPU. The project is about **
 output dropped into `runs/<model>/`. See `README.md` for the method summary and `manuscript.md`
 for the paper itself.
 
+That IDW correction (`src/corrections/idw/`) is the finished method the manuscript reports. Next
+up is a second, learned one: an MLP that predicts each day's correction for a target basin
+from its donors, with the number of donors as its only hyperparameter. Unlike IDW's fixed K,
+lambda and p, its correction can change from day to day. It will be compared against IDW on the
+LSTM only, and whether it goes into the manuscript depends on that comparison.
+
 Two cells: **ungauged** (basin never in training — out of sample in space and time) and
 **gauged** (basin trained on, but its gauge stops reporting for the test years — out of sample
 in time).
@@ -43,10 +49,12 @@ See README.md "Running it" for the pipeline (cache → train → correct → eva
 
 ## Compute
 
-- Training (`src/models/lstm/*`) runs on the NSF Delta GPU cluster — that is where new seeds and
-  folds get launched, and where `runs/lstm/<cell>/` comes from before being pulled down here.
-- The IDW correction (`src/corrections/idw/*`) and `figures/*` are CPU-only and run locally. The
-  grid search is a couple of minutes per cell; the correction itself is milliseconds.
+- LSTM training is finished: every seed and fold was trained on the NSF Delta GPU cluster, and
+  that cluster is no longer used. `runs/lstm/{gauged,ungauged}/` are final and are the only copy
+  of those predictions, since regenerating them would mean retraining on a GPU, so never
+  overwrite or delete them. `src/models/lstm/` is kept as the record of how they were made.
+- Everything now runs locally. The IDW correction (`src/corrections/idw/*`) and `figures/*` are
+  CPU-only; the grid search is a couple of minutes per cell, the correction itself milliseconds.
 
 ## Workflow
 

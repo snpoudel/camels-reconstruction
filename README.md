@@ -69,8 +69,9 @@ predictions and `src/corrections/<method>/` fixes them. A correction never impor
 # once: build the cache from data/raw/
 python -c "import sys; sys.path.insert(0,'src/models/lstm'); import common; common.build_cache()"
 
-# train (GPU; the cluster). Each writes runs/lstm/<cell>/..., then the seed-mean the
-# correction reads. --fold/--seed run one at a time so they can be launched concurrently.
+# train (GPU) -- already done: runs/lstm/<cell>/ holds the final predictions, so this is a
+# record of how they were made, not a step to repeat. Each writes runs/lstm/<cell>/..., then
+# the seed-mean the correction reads. --fold/--seed run one at a time.
 python src/models/lstm/02_lstm_ungauged.py
 python src/models/lstm/01_lstm_gauged.py
 
@@ -96,5 +97,5 @@ a two-row one. `--cell gauged`/`--cell ungauged` forces a single cell even for a
 both, for one-off inspection; that always writes a `gauged_`/`ungauged_`-prefixed file so it
 never overwrites the combined one.
 
-Only training needs a GPU. Everything downstream runs on any machine: the correction is a few
+Only training needed a GPU, and it is finished. Everything downstream runs on any machine: the correction is a few
 minutes of grid search, and the correction itself is milliseconds.
