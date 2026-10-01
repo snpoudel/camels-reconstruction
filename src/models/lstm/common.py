@@ -1,8 +1,8 @@
 """The LSTM: data cache, fold split, model, training, prediction.
 
-Everything the two driver scripts in this folder share. Nothing outside `src/lstm/` imports
-this -- the post-processing in `src/` reads finished predictions off disk, so it works just as
-well on hydrographs produced by somebody else's model.
+Everything the two driver scripts in this folder share. Nothing outside `src/models/lstm/`
+imports this -- the corrections in `src/corrections/` read finished predictions off disk, so
+they work just as well on hydrographs produced by somebody else's model.
 
 Hyperparameters follow Kratzert et al. (2019, WRR 55, 11344) where the paper specifies a value
 and NeuralHydrology defaults otherwise. Nothing here is tuned: the model has to stay the one

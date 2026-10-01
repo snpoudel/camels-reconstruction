@@ -1,7 +1,7 @@
 """Correct the gauged-basin predictions: every basin reconstructed as if its own gauge went dark.
 
-    python src/01_gauged_correction.py
-    python src/01_gauged_correction.py --model hybrid
+    python src/corrections/idw/01_gauged.py
+    python src/corrections/idw/01_gauged.py --model hybrid
 
 This model was trained on all 531 basins, so every basin's test-period prediction is
 out-of-sample in time only -- the discontinued-gauge case. Each basin is corrected using all 530
@@ -23,11 +23,11 @@ is self-masked leave-one-out, matching the dense donor network the correction is
 under.
 
     reads   runs/<model>/gauged/_mean/predictions.npz
-    writes  runs/<model>/gauged_corrected/{predictions.npz, params.csv, tuning.csv}
+    writes  runs/<model>/idw/gauged/{predictions.npz, params.csv, tuning.csv}
 
 --select-on picks what the search maximises: kge (default), nse, or nse_star -- the
 basin-normalised loss the LSTM itself was trained on. A non-default objective
-writes to gauged_corrected_<objective>/ so both can sit side by side.
+writes to idw/gauged_<objective>/ so both can sit side by side.
 """
 import argparse
 import os
@@ -35,11 +35,13 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from parameter_tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # noqa: E402
-
-from residual_postprocessing import (correct, distance_matrix, fold_labels,  # noqa: E402
-                                     load_mean, observed, save_corrected, train_sigma)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+from correction import correct  # noqa: E402
+from shared import (distance_matrix, fold_labels, load_mean, observed,  # noqa: E402
+                    save_corrected, train_sigma)
+from tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # noqa: E402
 
 
 def main():
@@ -51,7 +53,7 @@ def main():
     a = ap.parse_args()
     mean_npz = f"runs/{a.model}/gauged/_mean/predictions.npz"
     if not os.path.exists(mean_npz):
-        raise SystemExit(f"{mean_npz} not found -- run src/lstm/01_lstm_gauged.py")
+        raise SystemExit(f"{mean_npz} not found -- run src/models/lstm/01_lstm_gauged.py")
 
     pred, test_t, n_seeds = load_mean(mean_npz)
     sigma = train_sigma(mean_npz) if a.select_on == "nse_star" else None
@@ -103,7 +105,7 @@ def main():
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
-    save_corrected(f"runs/{a.model}/gauged_corrected{suffix}", raw, corrected, nearest, test_t,
+    save_corrected(f"runs/{a.model}/idw/gauged{suffix}", raw, corrected, nearest, test_t,
                    params, surface_rows(surfaces, picked, a.select_on))
 
 

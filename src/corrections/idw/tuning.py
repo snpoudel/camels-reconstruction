@@ -21,8 +21,8 @@ from collections import namedtuple
 
 import numpy as np
 
-from residual_postprocessing import (EPS, apply_shrinkage, idw_weights, kge_per_basin,
-                                     neighbour_residual, nse_per_basin)
+from correction import apply_shrinkage, idw_weights, neighbour_residual
+from shared import EPS, kge_per_basin, nse_per_basin
 
 # Kratzert et al. (2019)'s NSE*, the loss the LSTM itself was trained to minimise: squared
 # error divided by each basin's training-period flow std. The 0.1 offset is theirs, in mm/day,

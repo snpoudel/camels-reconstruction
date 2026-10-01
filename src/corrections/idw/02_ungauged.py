@@ -1,7 +1,7 @@
 """Correct the ungauged-basin predictions: one fold at a time, donors from that fold's gauges.
 
-    python src/02_ungauged_correction.py
-    python src/02_ungauged_correction.py --model hybrid
+    python src/corrections/idw/02_ungauged.py
+    python src/corrections/idw/02_ungauged.py --model hybrid
 
 Each fold held a seventh of the basins out of training, so those basins are ungauged in space as
 well as in time -- the prediction-in-ungauged-basins case. They are corrected using that fold's
@@ -13,11 +13,11 @@ donors from the other five -- a thinned gauge network, like a real ungauged basi
 held-out basin is read during selection, of this fold or of any other.
 
     reads   runs/<model>/ungauged/_mean/fold{f}.npz
-    writes  runs/<model>/ungauged_corrected/{predictions.npz, params.csv, tuning.csv}
+    writes  runs/<model>/idw/ungauged/{predictions.npz, params.csv, tuning.csv}
 
 --select-on picks what the search maximises: kge (default), nse, or nse_star -- the
 basin-normalised loss the LSTM itself was trained on. A non-default objective
-writes to ungauged_corrected_<objective>/ so both can sit side by side.
+writes to idw/ungauged_<objective>/ so both can sit side by side.
 """
 import argparse
 import os
@@ -25,12 +25,13 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from parameter_tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # noqa: E402
-
-from residual_postprocessing import (basin_ids, correct, distance_matrix,  # noqa: E402
-                                     fold_labels, load_mean, observed,
-                                     save_corrected, train_sigma)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+from correction import correct  # noqa: E402
+from shared import (basin_ids, distance_matrix, fold_labels, load_mean,  # noqa: E402
+                    observed, save_corrected, train_sigma)
+from tuning import SCORERS, make_job, pick, run_jobs, surface_rows  # noqa: E402
 
 
 def main():
@@ -49,7 +50,8 @@ def main():
     dist = distance_matrix()
     folds = [f for f in sorted(set(labels)) if os.path.exists(f"{mean_dir}/fold{f}.npz")]
     if not folds:
-        raise SystemExit(f"no fold*.npz under {mean_dir}/ -- run src/lstm/02_lstm_ungauged.py")
+        raise SystemExit(f"no fold*.npz under {mean_dir}/ -- "
+                         f"run src/models/lstm/02_lstm_ungauged.py")
 
     # Each fold has its own model, so a fold's donors and its held-out basins must both be
     # predicted by that same model -- hence one matrix per fold rather than one global one.
@@ -105,7 +107,7 @@ def main():
           f"({after - before:+.4f})")
 
     suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
-    save_corrected(f"runs/{a.model}/ungauged_corrected{suffix}", raw, corrected, nearest, test_t,
+    save_corrected(f"runs/{a.model}/idw/ungauged{suffix}", raw, corrected, nearest, test_t,
                    params, surface_rows(surfaces, picked, a.select_on))
 
 

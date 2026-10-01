@@ -15,14 +15,16 @@ in time).
 
 | Path | Contents |
 |---|---|
-| `src/residual_postprocessing.py` | The correction, and where its inputs live on disk |
-| `src/parameter_tuning.py` | K x lambda x p grids, the CV surfaces, three selection objectives |
-| `src/01_gauged_correction.py` | Gauged pipeline → `runs/<model>/gauged_corrected/` |
-| `src/02_ungauged_correction.py` | Ungauged pipeline → `runs/<model>/ungauged_corrected/` |
-| `src/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |
-| `src/lstm/01_lstm_gauged.py` | Train on all basins, per seed → `runs/lstm/gauged/` |
-| `src/lstm/02_lstm_ungauged.py` | Train per (fold, seed) → `runs/lstm/ungauged/` |
-| `figures/evaluate.py` | Metrics → `figures/metrics_*.csv`, `tuning_*.csv`, `run_info.json` |
+| `src/shared.py` | What every correction method shares: basins, folds, distances, obs, NSE/KGE, save format |
+| `src/corrections/idw/correction.py` | The IDW neighbour-residual correction |
+| `src/corrections/idw/tuning.py` | K x lambda x p grids, the CV surfaces, three selection objectives |
+| `src/corrections/idw/01_gauged.py` | Gauged pipeline → `runs/<model>/idw/gauged/` |
+| `src/corrections/idw/02_ungauged.py` | Ungauged pipeline → `runs/<model>/idw/ungauged/` |
+| `src/models/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |
+| `src/models/lstm/01_lstm_gauged.py` | Train on all basins, per seed → `runs/lstm/gauged/` |
+| `src/models/lstm/02_lstm_ungauged.py` | Train per (fold, seed) → `runs/lstm/ungauged/` |
+| `src/models/{hbv,hybrid}/prepare.py` | Drop another model's published predictions into `runs/<model>/` |
+| `figures/evaluate.py` | Metrics → `figures/metrics_<cell>_<model>_<method>.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
 | `data/` | `camels531.csv`, fold assignment, US state outlines (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/` | Per-model predictions and corrections (gitignored) |
@@ -30,15 +32,20 @@ in time).
 Everything runs as `python <path>.py` — no packages, no `python -m`. The digit-prefixed scripts
 are pipelines, not modules, and are not importable by design.
 
+`src/models/` produces predictions; `src/corrections/<method>/` fixes them. A correction method
+imports only `src/shared.py` and its own folder, never another method or a model, and writes
+`runs/<model>/<method>/<cell>/` through `shared.save_corrected` so `figures/evaluate.py
+--method <method>` scores every method identically.
+
 ## Running
 
 See README.md "Running it" for the pipeline (cache → train → correct → evaluate → figures).
 
 ## Compute
 
-- Training (`src/lstm/*`) runs on the NSF Delta GPU cluster — that is where new seeds and folds
-  get launched, and where `runs/lstm/<cell>/` comes from before being pulled down here.
-- Everything downstream (`src/*_correction.py`, `figures/*`) is CPU-only and runs locally. The
+- Training (`src/models/lstm/*`) runs on the NSF Delta GPU cluster — that is where new seeds and
+  folds get launched, and where `runs/lstm/<cell>/` comes from before being pulled down here.
+- The IDW correction (`src/corrections/idw/*`) and `figures/*` are CPU-only and run locally. The
   grid search is a couple of minutes per cell; the correction itself is milliseconds.
 
 ## Workflow

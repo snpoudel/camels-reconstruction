@@ -22,7 +22,7 @@ sys.path.insert(0, HERE)
 from evaluate import read_metrics  # noqa: E402
 from palette import INK, LABEL, MUTE, PANEL, SEQUENTIAL, TITLE, draw_us_outline  # noqa: E402
 from palette import panel_letter, series_pair, style  # noqa: E402
-from residual_postprocessing import BASINS_CSV  # noqa: E402
+from shared import BASINS_CSV  # noqa: E402
 
 CELL = "gauged"
 

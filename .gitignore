@@ -13,5 +13,5 @@ logs/
 *.log
 
 # The hybrid model's raw per-basin prediction CSVs (149 MB, one model's dropped-in output) --
-# same treatment as data/raw/. src/hybrid/prepare.py regenerates runs/hybrid/ from this.
+# same treatment as data/raw/. src/models/hybrid/prepare.py regenerates runs/hybrid/ from this.
 /hybrid/

@@ -1,8 +1,8 @@
 """Train the LSTM on every basin, one run per seed.
 
-    python src/lstm/01_lstm_gauged.py              # every seed, then the ensemble mean
-    python src/lstm/01_lstm_gauged.py --seed 3     # one run
-    python src/lstm/01_lstm_gauged.py --mean-only  # rebuild _mean from finished runs
+    python src/models/lstm/01_lstm_gauged.py              # every seed, then the ensemble mean
+    python src/models/lstm/01_lstm_gauged.py --seed 3     # one run
+    python src/models/lstm/01_lstm_gauged.py --mean-only  # rebuild _mean from finished runs
 
 No basin is held out, so every basin's test-period prediction is out-of-sample in TIME only.
 That is the "gauged" cell: the model knew these gauges during training, and the correction

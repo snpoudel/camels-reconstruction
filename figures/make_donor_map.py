@@ -25,13 +25,14 @@ from matplotlib.collections import LineCollection  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src", "corrections", "idw"))
 sys.path.insert(0, HERE)
+from correction import idw_weights  # noqa: E402
 from evaluate import fold_settings, folds_csv_for, read_metrics  # noqa: E402
 from palette import CAP_PERCENTILE, CELL_TITLE, CORRECTED, DIVERGING, INK, LABEL, MUTE  # noqa: E402
 from palette import PANEL, RAW, TITLE, draw_us_outline, model_label, panel_letter  # noqa: E402
 from palette import series_pair, style  # noqa: E402
-from residual_postprocessing import (BASINS_CSV, basin_ids, distance_matrix,  # noqa: E402
-                                     fold_labels, idw_weights)
+from shared import BASINS_CSV, basin_ids, distance_matrix, fold_labels  # noqa: E402
 
 CELL = "ungauged"
 

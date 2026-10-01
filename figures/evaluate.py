@@ -2,12 +2,13 @@
 
     python figures/evaluate.py --model lstm     # whichever cells have been corrected
     python figures/evaluate.py --cell ungauged
+    python figures/evaluate.py --method mlp     # a different correction method
 
-Reads runs/<model>/<cell>_corrected/ and writes, into this folder:
+Reads runs/<model>/<method>/<cell>/ and writes, into this folder:
 
-    metrics_<cell>_<model>.csv                 per basin x variant: NSE, KGE and components,
+    metrics_<cell>_<model>_<method>.csv        per basin x variant: NSE, KGE and components,
                                                RMSE, bias by flow band
-    tuning_<cell>_<model>.csv                  the cross-validation surface
+    tuning_<cell>_<model>_<method>.csv         the cross-validation surface
     run_info.json                              test window, seed and basin counts
     error_structure[_fit]_gauged_<model>.csv   residual correlation against gauge distance
 
@@ -24,9 +25,8 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from palette import BENCHMARK, model_label  # noqa: E402
-from residual_postprocessing import (CACHE_DIR, EPS, FOLDS_CSV, basin_ids,  # noqa: E402
-                                     distance_matrix, fold_labels, kge_per_basin, observed,
-                                     test_period_label)
+from shared import (CACHE_DIR, EPS, FOLDS_CSV, basin_ids, distance_matrix,  # noqa: E402
+                    fold_labels, kge_per_basin, load_mean, observed, test_period_label)
 
 CELLS = ("gauged", "ungauged")
 
@@ -37,13 +37,13 @@ def variants(model):
     return {"raw": name, "nearest": BENCHMARK, "corrected": f"{name} + correction"}
 
 
-def _suffix(model):
-    return f"_{model}"
+def _suffix(model, method):
+    return f"_{model}_{method}"
 
 
 def folds_csv_for(model):
     """The fold assignment a model's ungauged correction used: the override its
-    02_ungauged_correction.py --folds-csv run was given (see src/hybrid/prepare.py), if any.
+    02_ungauged.py --folds-csv run was given (see src/models/hybrid/prepare.py), if any.
     The gauged correction always uses the LSTM split."""
     override = f"{os.path.dirname(FOLDS_CSV)}/basin_list_with_folds_{model}.csv"
     return override if model != "lstm" and os.path.exists(override) else FOLDS_CSV
@@ -55,14 +55,15 @@ def folds_csv_for(model):
 DIST_MAX_KM, CLIM_WINDOW, LOESS_KM = 1000, 31, 60
 
 
-def read_metrics(cell, model="lstm"):
+def read_metrics(cell, model="lstm", method="idw"):
     """The per-basin scores every figure draws from."""
-    return pd.read_csv(f"{HERE}/metrics_{cell}{_suffix(model)}.csv", dtype={"basin": str})
+    return pd.read_csv(f"{HERE}/metrics_{cell}{_suffix(model, method)}.csv",
+                       dtype={"basin": str})
 
 
-def read_tuning(cell, model="lstm"):
+def read_tuning(cell, model="lstm", method="idw"):
     """The cross-validation surface the settings were chosen on."""
-    return pd.read_csv(f"{HERE}/tuning_{cell}{_suffix(model)}.csv")
+    return pd.read_csv(f"{HERE}/tuning_{cell}{_suffix(model, method)}.csv")
 
 
 def _es_suffix(model, cell):
@@ -135,8 +136,8 @@ def seed_spread(cell, model):
     return out
 
 
-def evaluate(cell, model):
-    src = f"runs/{model}/{cell}_corrected"
+def evaluate(cell, model, method):
+    src = f"runs/{model}/{method}/{cell}"
     p = np.load(f"{src}/predictions.npz", allow_pickle=True)
     params = pd.read_csv(f"{src}/params.csv").set_index("fold")
     obs = observed(p["test_t"])
@@ -151,13 +152,13 @@ def evaluate(cell, model):
         frame["basin"], frame["fold"], frame["variant"] = ids[scored], labels[scored], variant
         frames.append(frame.join(params[["k", "lam", "p", "n_seeds"]], on="fold"))
     df = pd.concat(frames, ignore_index=True)
-    suffix = _suffix(model)
+    suffix = _suffix(model, method)
     df.to_csv(f"{HERE}/metrics_{cell}{suffix}.csv", index=False)
     pd.read_csv(f"{src}/tuning.csv").to_csv(f"{HERE}/tuning_{cell}{suffix}.csv", index=False)
 
     med = df.groupby("variant").kge.median()
-    print(f"\n{cell} ({model}): {len(scored)} basins, {int(params.n_seeds.max())} seeds, "
-          f"test {test_period_label(p['test_t'])}")
+    print(f"\n{cell} ({model}, {method}): {len(scored)} basins, "
+          f"{int(params.n_seeds.max())} seeds, test {test_period_label(p['test_t'])}")
     print(f"  median KGE  {med[raw_label]:.4f} -> {med[corr_label]:.4f} "
           f"({med[corr_label] - med[raw_label]:+.4f})"
           f"   nearest gauge only {med[BENCHMARK]:.4f}")
@@ -227,14 +228,15 @@ def error_structure(model, cell="gauged"):
     """Correlation of daily log residuals between basin pairs against gauge distance, raw and
     deseasonalised. Uses the gauged cell, every trained-on basin, for the densest picture.
 
-    Restricted to basins the model scored: hybrid's 106 untrained basins would otherwise be
-    all-NaN rows that poison every correlation touching them.
+    Reads the model's own uncorrected predictions, so it is the same whichever correction
+    method is being evaluated. Restricted to basins the model scored: hybrid's 106 untrained
+    basins would otherwise be all-NaN rows that poison every correlation touching them.
     """
-    p = np.load(f"runs/{model}/{cell}_corrected/predictions.npz", allow_pickle=True)
-    scored = np.flatnonzero(np.isfinite(p["raw"]).any(1))
-    obs = observed(p["test_t"])[scored]
-    res = np.log(np.clip(p["raw"][scored], 0, None) + EPS) - np.log(obs + EPS)
-    doy = pd.to_datetime(np.load(f"{CACHE_DIR}/dates.npy")[p["test_t"]]).dayofyear.to_numpy() - 1
+    pred, test_t, _ = load_mean(f"runs/{model}/{cell}/_mean/predictions.npz")
+    scored = np.flatnonzero(np.isfinite(pred).any(1))
+    obs = observed(test_t)[scored]
+    res = np.log(np.clip(pred[scored], 0, None) + EPS) - np.log(obs + EPS)
+    doy = pd.to_datetime(np.load(f"{CACHE_DIR}/dates.npy")[test_t]).dayofyear.to_numpy() - 1
     dist = distance_matrix()[np.ix_(scored, scored)]
 
     iu = np.triu_indices(len(dist), 1)
@@ -262,24 +264,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cell", choices=CELLS, help="default: whichever have been corrected")
     ap.add_argument("--model", default="lstm")
+    ap.add_argument("--method", default="idw", help="which runs/<model>/<method>/ to score")
     a = ap.parse_args()
 
-    corrected = f"runs/{a.model}/{{}}_corrected/predictions.npz"
+    corrected = f"runs/{a.model}/{a.method}/{{}}/predictions.npz"
     cells = [a.cell] if a.cell else [c for c in CELLS if os.path.exists(corrected.format(c))]
     if not cells:
-        raise SystemExit(f"nothing corrected under runs/{a.model}/ yet")
+        raise SystemExit(f"nothing corrected under runs/{a.model}/{a.method}/ yet")
 
     info_path = f"{HERE}/run_info.json"
     info = json.load(open(info_path)) if os.path.exists(info_path) else {}
     info.setdefault(a.model, {})
     for cell in cells:
-        info[a.model][cell] = evaluate(cell, a.model)
+        info[a.model][cell] = evaluate(cell, a.model, a.method)
     json.dump(info, open(info_path, "w"), indent=1)
     if "gauged" in cells:
         error_structure(a.model)
-    suffix = _suffix(a.model)
+    suffix = _suffix(a.model, a.method)
     print(f"\n-> {HERE}/metrics_*{suffix}.csv, tuning_*{suffix}.csv, "
-          f"error_structure_gauged{suffix}.csv, run_info.json")
+          f"error_structure_gauged_{a.model}.csv, run_info.json")
 
 
 if __name__ == "__main__":

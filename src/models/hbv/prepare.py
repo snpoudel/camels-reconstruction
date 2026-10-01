@@ -1,7 +1,7 @@
 """Turn the published HBV benchmark simulations into the runs/hbv/ layout the correction
 pipeline reads.
 
-    python src/hbv/prepare.py
+    python src/models/hbv/prepare.py
 
 Reads data/raw/camels_benchmarks/netcdf/netcdf/<gauge_id>_benchmark_models.nc, one NetCDF per
 basin (the CAMELS benchmark models data set, Kratzert et al., collected for "Benchmarking a
@@ -17,7 +17,7 @@ scenario the LSTM's gauged cell corrects.
 Dates run 1989-10-01 to 1999-09-30, the validation window the data set was released for (each
 model calibrated on 1999-2008); mapped onto this project's own date cache so every downstream
 script reads it the same way as every other model. Observed discharge is always looked up fresh
-from that cache (`residual_postprocessing.observed`), never from the NetCDFs' own `QObs` -- the
+from that cache (`shared.observed`), never from the NetCDFs' own `QObs` -- the
 two agree to within a small, constant scale factor (~2.4%, the kind of basin-area-normalisation
 difference that shows up between independently processed CAMELS derivatives) but every model
 compared in this project must be scored against the one shared observation record, or NSE/KGE
@@ -38,8 +38,8 @@ import pandas as pd
 import xarray as xr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
-from residual_postprocessing import BASINS_CSV, CACHE_DIR, basin_ids  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+from shared import BASINS_CSV, CACHE_DIR, basin_ids  # noqa: E402
 
 NETCDF_DIR = "data/raw/camels_benchmarks/netcdf/netcdf"
 

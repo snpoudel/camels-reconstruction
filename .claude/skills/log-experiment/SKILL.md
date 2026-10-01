@@ -13,11 +13,11 @@ someone with no other context.
 ## 1. Gather the facts — don't guess
 
 ```bash
-ls -d runs/lstm/*/*/ | wc -l                # how many runs
+ls -d runs/lstm/{gauged,ungauged}/*/ | wc -l  # how many runs (incl. _mean)
 cat runs/lstm/*/*/config.json               # arch, fold, seed, every hyperparameter
-python figures/evaluate.py                  # figures/metrics_<cell>.csv — headline numbers,
+python figures/evaluate.py                  # figures/metrics_<cell>_<model>_<method>.csv — headline numbers,
                                             #   and prints the per-seed spread
-cat runs/lstm/*_corrected/params.csv        # the selected K, lambda, p per fold
+cat runs/lstm/idw/*/params.csv              # the selected K, lambda, p per fold
 tail -3 logs/*.log                          # wall-clock per run
 git log --oneline -1                        # commit the runs came from
 ```

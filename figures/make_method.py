@@ -4,7 +4,7 @@
 
 Each step box has its equation above a sketch of the same neighbourhood, so the eye follows one
 target and its donors across all five steps. The band above says K, p and lambda are
-cross-validated on the gauged folds; the search grid is imported from src/parameter_tuning.py
+cross-validated on the gauged folds; the search grid is imported from src/corrections/idw/tuning.py
 so it cannot drift from the code. Everything else is schematic.
 
 `check_fit` prints a WARN for any string that overflows its box, since nothing else would catch
@@ -26,8 +26,9 @@ matplotlib.rcParams["svg.fonttype"] = "path"
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src", "corrections", "idw"))
 from palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
-from parameter_tuning import K_GRID, LAM_GRID, P_GRID  # noqa: E402
+from tuning import K_GRID, LAM_GRID, P_GRID  # noqa: E402
 
 FIG_W, FIG_H = 11.0, 5.05
 MARGIN, GAP = 0.32, 0.34

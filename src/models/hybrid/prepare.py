@@ -1,7 +1,7 @@
 """Turn the hybrid model's raw per-basin CSVs into the runs/hybrid/ layout the correction
 pipeline reads.
 
-    python src/hybrid/prepare.py
+    python src/models/hybrid/prepare.py
 
 Reads hybrid/pred_input_<gauge_id>.csv (date, qobs, qsim_1) and hybrid/test_basins.csv (the
 106 basins the hybrid model never trained on -- true out-of-sample). The other 425 are trained
@@ -11,14 +11,14 @@ on ("gauged"). Both groups cover all 531 basins in the same file layout, dates 1
 Writes:
 
     runs/hybrid/gauged/_mean/predictions.npz    -- pred for the 425 gauged basins, NaN for the
-                                                    106 ungauged ones (01_gauged_correction.py
+                                                    106 ungauged ones (idw/01_gauged.py
                                                     already drops all-NaN rows via nanmedian/
                                                     isfinite, so it needs no change)
     runs/hybrid/ungauged/_mean/fold7.npz        -- pred for all 531; fold 7 is a sentinel the
                                                     LSTM's 0-6 split never uses
     data/basin_list_with_folds_hybrid.csv       -- the real fold assignment with the 106 test
                                                     basins relabelled fold 7, so
-                                                    02_ungauged_correction.py's existing
+                                                    idw/02_ungauged.py's existing
                                                     labels==f / labels!=f logic recovers exactly
                                                     this gauged/ungauged split while the search
                                                     still leave-one-group-outs the real 0-6
@@ -34,8 +34,8 @@ import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
-from residual_postprocessing import BASINS_CSV, CACHE_DIR, FOLDS_CSV, basin_ids  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+from shared import BASINS_CSV, CACHE_DIR, FOLDS_CSV, basin_ids  # noqa: E402
 
 HYBRID_DIR = "hybrid"
 TEST_START, TEST_END = "1980-01-01", "1995-12-31"

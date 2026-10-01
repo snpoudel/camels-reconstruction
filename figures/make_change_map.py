@@ -25,7 +25,7 @@ from evaluate import read_metrics  # noqa: E402
 from palette import CAP_PERCENTILE, CELL_TITLE, DIVERGING, INK, LABEL, MUTE, PANEL  # noqa: E402
 from palette import TITLE, available_cells, draw_us_outline, model_label  # noqa: E402
 from palette import panel_letter, series_pair, style  # noqa: E402
-from residual_postprocessing import BASINS_CSV  # noqa: E402
+from shared import BASINS_CSV  # noqa: E402
 
 PANELS = [("nse", "NSE, Nash-Sutcliffe efficiency"), ("kge", "KGE, Kling-Gupta efficiency")]
 

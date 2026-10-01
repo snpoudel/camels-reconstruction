@@ -1,8 +1,8 @@
 """Train the LSTM once per (fold, seed), each fold holding out a seventh of the basins.
 
-    python src/lstm/02_lstm_ungauged.py                    # the whole grid, then the means
-    python src/lstm/02_lstm_ungauged.py --fold 0 --seed 3  # one run
-    python src/lstm/02_lstm_ungauged.py --mean-only        # rebuild _mean from finished runs
+    python src/models/lstm/02_lstm_ungauged.py                    # the whole grid, then the means
+    python src/models/lstm/02_lstm_ungauged.py --fold 0 --seed 3  # one run
+    python src/models/lstm/02_lstm_ungauged.py --mean-only        # rebuild _mean from finished runs
 
 A held-out basin is out-of-sample in SPACE as well as time -- the prediction-in-ungauged-basins
 case. Every run still predicts all 531 basins: the fold's gauged basins are the donor pool the

@@ -65,11 +65,11 @@ def series_cdf(model="lstm"):
     return {name: RAW, BENCHMARK: NEUTRAL, f"{name} + correction": CORRECTED}
 
 
-def available_cells(model):
+def available_cells(model, method="idw"):
     """The cells this model has metrics for, gauged first. HBV has no ungauged run."""
     here = os.path.dirname(os.path.abspath(__file__))
     return [c for c in ("gauged", "ungauged")
-            if os.path.exists(f"{here}/metrics_{c}_{model}.csv")]
+            if os.path.exists(f"{here}/metrics_{c}_{model}_{method}.csv")]
 
 
 def panel_letter(i):
