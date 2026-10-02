@@ -1,13 +1,13 @@
-"""Method diagram: the five steps of the learned MLP neighbour-residual correction.
+"""Method diagram: the four steps of the learned MLP neighbour-residual correction.
 
     python figures/make_method_mlp.py    # -> lstm/method_mlp.png, lstm/method_mlp.svg
 
-The same layout, neighbourhood and hydrograph as make_method_idw.py, so the two read side by side:
-steps 1 and 3 are shared, step 2 picks the K nearest gauges without weighting them, and step 4
-replaces IDW's fixed weighted mean with a small network that turns today's donor errors, their
-distances, the season and the target's own predicted flow into today's correction. The band
-above says how the network is trained and K chosen. K, the passes, the seeds and the layer
-width are imported from src/corrections/mlp/model.py so they cannot drift from the code.
+The same neighbourhood and hydrograph as make_method_idw.py, so the two read side by side. Step 2
+is today's error at each of the K nearest gauges; step 3, drawn wider because it is the method,
+is a small network that turns those errors, the donors' distances, the season and the target's
+own predicted flow into today's correction. The band above says how the network is trained and K
+chosen. K, the seeds and the layer width are imported from src/corrections/mlp/model.py so they
+cannot drift from the code.
 """
 import os
 import sys
@@ -21,25 +21,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src", "corrections", "mlp"))
-from make_method_idw import (BOX_H, BOX_W, CELL_GAP, CELL_H, CELL_W, CV_H, CV_Y,  # noqa: E402
-                             DONORS, FIG_H, FIG_W, GAP, LAB_FS, MARGIN, OFF, Q_LAB, R_LAB,
-                             SPLIT_GAP, TARGET, Y0, add_box, basins, check_fit, hydrograph,
-                             label_donors, pt, track)
+from make_method_idw import (BOX_H, CELL_GAP, CELL_H, CELL_W, CV_H, CV_Y, DONORS,  # noqa: E402
+                             FIG_H, FIG_W, GAP, LAB_FS, MARGIN, Q_LAB, R_LAB, SPLIT_GAP,
+                             TARGET, Y0, add_box, basins, check_fit, hydrograph, label_donors,
+                             pt, track)
 from make_method_idw import STEPS as IDW_STEPS  # noqa: E402
-from model import EPOCHS, HIDDEN, K_GRID, SEEDS  # noqa: E402
+from model import HIDDEN, K_GRID, SEEDS  # noqa: E402
 from palette import GRID, INK, LEARNED, MUTE, RAW  # noqa: E402
 
-D_LAB = (r"$d_{i1}$", r"$d_{i2}$", r"$d_{iK}$")
+# Steps 1, 2 and 4 share a width; step 3 takes what is left.
+NARROW_W = 1.95
+WIDE_W = FIG_W - 2 * MARGIN - 3 * GAP - 3 * NARROW_W
+WIDTHS = (NARROW_W, NARROW_W, WIDE_W, NARROW_W)
 
 STEPS = (
     IDW_STEPS[0],
-    dict(title="Nearest donors", accent=None, eq_size=11,
-         eq=r"$d_{i1}\leq d_{i2}\leq\cdots\leq d_{iK}$",
-         note="the K nearest gauges,\nnearest first, unweighted"),
-    IDW_STEPS[2],
-    dict(title="Learned correction", accent=LEARNED, eq_size=9.5,
-         eq=(r"$\delta_i=f_\theta\,(r_{1..K},\,d_{1..K},$", r"$\mathrm{season},\,q^{sim}_i)$"),
-         note="a small network turns\nthem into today's factor"),
+    dict(title="Nearest donors' errors", accent=None, eq_size=11.5,
+         eq=r"$r_j=\log\dfrac{q^{sim}_j+\epsilon}{q^{obs}_j+\epsilon}$",
+         note="how wrong the LSTM is today\nat the K nearest gauges"),
+    dict(title="Learned correction", accent=LEARNED, eq_size=11,
+         eq=r"$\delta_i=f_\theta\,(r_{1..K},\;d_{1..K},\;\mathrm{season},\;q^{sim}_i)$",
+         note="a small network turns the donors' errors, the season and\n"
+              "the target's predicted flow into today's correction"),
     dict(title="Correct the target", accent=LEARNED, eq_size=10.5,
          eq=(r"$q^{corr}_i=(q^{sim}_i+\epsilon)$", r"$\times\; e^{\delta_i}-\epsilon$"),
          note="scale the prediction\nby that factor"),
@@ -47,13 +50,16 @@ STEPS = (
 
 
 def network(ax, rect):
-    """Four input groups, two hidden layers, one output: the correction delta_i."""
+    """The four inputs named in words, two hidden layers, one output: today's correction."""
     x0, y0, w, h = rect
-    inputs = ((r"$r_j$", RAW), (r"$d_j$", RAW), ("season", INK), (r"$q^{sim}_i$", LEARNED))
-    layers = [[(0.30, v) for v in (0.85, 0.62, 0.39, 0.16)],
-              [(0.52, v) for v in (0.80, 0.60, 0.40, 0.20)],
-              [(0.72, v) for v in (0.80, 0.60, 0.40, 0.20)],
-              [(0.92, 0.50)]]
+    inputs = ((r"donor errors  $r_1 \ldots r_K$", RAW),
+              (r"donor distances  $d_1 \ldots d_K$", RAW),
+              ("season (day of year)", INK),
+              (r"target's predicted flow  $q^{sim}_i$", LEARNED))
+    layers = [[(0.48, v) for v in (0.86, 0.62, 0.38, 0.14)],
+              [(0.62, v) for v in (0.80, 0.60, 0.40, 0.20)],
+              [(0.75, v) for v in (0.80, 0.60, 0.40, 0.20)],
+              [(0.88, 0.50)]]
     for a, b in zip(layers, layers[1:]):
         for ua, va in a:
             for ub, vb in b:
@@ -61,18 +67,18 @@ def network(ax, rect):
                         alpha=0.45, zorder=3)
     for (u, v), (lab, col) in zip(layers[0], inputs):
         ax.scatter(*pt(rect, u, v), s=34, color=col, edgecolor="white", linewidth=0.7, zorder=5)
-        track(ax.text(*pt(rect, u - 0.06, v), lab, fontsize=LAB_FS - 0.8, color=col,
+        track(ax.text(*pt(rect, u - 0.025, v), lab, fontsize=LAB_FS - 0.3, color=col,
                       ha="right", va="center", zorder=7), x0, x0 + w)
     for layer in layers[1:3]:
         for u, v in layer:
             ax.scatter(*pt(rect, u, v), s=26, color="white", edgecolor=MUTE, linewidth=0.8,
                        zorder=5)
-    ax.scatter(*pt(rect, 0.92, 0.50), s=70, color=LEARNED, edgecolor="white", linewidth=0.7,
+    ax.scatter(*pt(rect, 0.88, 0.50), s=80, color=LEARNED, edgecolor="white", linewidth=0.7,
                zorder=6)
-    ax.text(*pt(rect, 0.92, 0.36), r"$\delta_i$", fontsize=LAB_FS + 0.6, color=LEARNED,
-            ha="center", va="top", zorder=7)
-    track(ax.text(*pt(rect, 0.62, 0.04), f"2 × {HIDDEN} units", fontsize=6.6, color=MUTE,
-                  ha="center", va="bottom", zorder=7), x0, x0 + w)
+    track(ax.text(*pt(rect, 0.88, 0.38), "today's\ncorrection $\\delta_i$", fontsize=LAB_FS - 0.3,
+                  color=LEARNED, ha="center", va="top", linespacing=1.3, zorder=7), x0, x0 + w)
+    track(ax.text(*pt(rect, 0.68, 0.02), f"2 hidden layers × {HIDDEN} units", fontsize=6.6,
+                  color=MUTE, ha="center", va="bottom", zorder=7), x0, x0 + w)
 
 
 def sketch(ax, rect, i):
@@ -80,10 +86,10 @@ def sketch(ax, rect, i):
     # Above the step box's own white fill (zorder 2), or it is painted over and vanishes.
     ax.add_patch(FancyBboxPatch((x0, y0), w, h, boxstyle="round,pad=0,rounding_size=0.06",
                                 linewidth=0, facecolor=GRID, alpha=0.75, zorder=2.5))
-    if i == 3:
+    if i == 2:
         network(ax, rect)
         return
-    if i == 4:
+    if i == 3:
         hydrograph(ax, rect, accent=LEARNED)
         return
 
@@ -92,15 +98,10 @@ def sketch(ax, rect, i):
         label_donors(ax, rect, Q_LAB)
         ax.text(*pt(rect, TARGET[0] - 0.08, TARGET[1] - 0.02), r"$q_i$", fontsize=LAB_FS,
                 color=LEARNED, ha="right", va="center", zorder=7)
-    elif i == 1:
-        # Equal widths: unlike IDW, distance is an input here, not a weight fixed in advance.
-        for (u, v), lab, (_, _, _, at) in zip(DONORS, D_LAB, OFF):
-            ax.plot([tx, pt(rect, u, v)[0]], [ty, pt(rect, u, v)[1]], color=MUTE, lw=1.2,
-                    alpha=0.7, solid_capstyle="round", zorder=3)
-            ax.text(*pt(rect, TARGET[0] + at * (u - TARGET[0]), TARGET[1] + at * (v - TARGET[1])),
-                    lab, fontsize=LAB_FS, color=INK, ha="center", va="center", zorder=7,
-                    bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.92))
-    elif i == 2:
+    else:
+        for u, v in DONORS:
+            ax.plot([tx, pt(rect, u, v)[0]], [ty, pt(rect, u, v)[1]], color=MUTE, lw=0.9,
+                    alpha=0.6, solid_capstyle="round", zorder=3)
         label_donors(ax, rect, R_LAB)
 
 
@@ -130,8 +131,7 @@ def train_band(ax):
     arr_x0 = val_x + CELL_W + 0.15
     for cx, text, colour, lo, hi in (
             (target_x + CELL_W / 2, "ungauged\n(target)", LEARNED, x0, train_x),
-            ((train_x + train_end) / 2, "gauged: train\n(targets, donors)", RAW, train_x,
-             train_end),
+            ((train_x + train_end) / 2, "gauged:\ntrain", RAW, train_x, train_end),
             (val_x + CELL_W / 2, "gauged:\nchoose K", RAW, train_end, arr_x0)):
         track(ax.text(cx, lab_y, text, fontsize=7.4, color=colour, ha="center", va="top",
                       linespacing=1.25, zorder=5), lo, hi)
@@ -140,12 +140,10 @@ def train_band(ax):
     ax.add_patch(FancyArrowPatch((arr_x0, cy), (arr_x1, cy), arrowstyle="-|>",
                                  mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
     text_x = arr_x1 + 0.16
-    track(ax.text(text_x, cy - 0.02,
-                  f"Train $f_\\theta$ on the gauged folds: loss $1-$KGE, {EPOCHS} passes, "
-                  f"{SEEDS} seeds averaged\n"
-                  f"Choose $K$ (donor gauges, {K_GRID[0]}–{K_GRID[-1]}) on the held-back gauged "
-                  f"fold",
-                  fontsize=8.4, color=INK, ha="left", va="center", linespacing=1.45, zorder=5),
+    track(ax.text(text_x, cy,
+                  f"Train $f_\\theta$ on gauged folds (loss $1-$KGE, {SEEDS} seeds averaged); "
+                  f"choose $K$ ({K_GRID[0]}–{K_GRID[-1]}) on a held-back gauged fold",
+                  fontsize=8.4, color=INK, ha="left", va="center", zorder=5),
           text_x, x0 + w - 0.12)
 
 
@@ -162,13 +160,14 @@ def main(out=None):
 
     train_band(ax)
 
-    xs = [MARGIN + i * (BOX_W + GAP) for i in range(5)]
-    for i, step in enumerate(STEPS):
-        add_box(ax, xs[i], Y0, step, i + 1, draw=sketch)
+    x = MARGIN
+    for i, (step, w) in enumerate(zip(STEPS, WIDTHS)):
         if i:
-            ax.add_patch(FancyArrowPatch((xs[i - 1] + BOX_W, Y0 + BOX_H * 0.75),
-                                         (xs[i], Y0 + BOX_H * 0.75), arrowstyle="-|>",
-                                         mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
+            ax.add_patch(FancyArrowPatch((x - GAP, Y0 + BOX_H * 0.75), (x, Y0 + BOX_H * 0.75),
+                                         arrowstyle="-|>", mutation_scale=11, linewidth=1.2,
+                                         color=MUTE, zorder=5))
+        add_box(ax, x, Y0, step, i + 1, draw=sketch, w=w)
+        x += w + GAP
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     bad = check_fit(fig, ax)

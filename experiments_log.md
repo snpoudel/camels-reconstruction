@@ -20,6 +20,85 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-10-02 — Quick test: telling the learned correction about the target basin's climate and terrain does not help
+
+**What I ran** — A one-fold check of whether the neural-network correction (version 2, described
+in the entry below) improves if it is also told five fixed facts about the target basin:
+- aridity (potential evaporation ÷ precipitation);
+- the fraction of precipitation falling as snow;
+- mean elevation;
+- mean slope;
+- the logarithm of catchment area.
+
+All five come from the CAMELS attributes already cached for the LSTM, and none is derived from
+streamflow. Each was rescaled to mean 0 and spread 1 across the fold's training basins only.
+Everything else was identical to version 2: the same donors, the same 40 passes over the data,
+dropout, K tried at 1–30, five random starts averaged, and K chosen on the same held-back
+validation group. Basins held out entirely, **fold 0 only** (76 basins). 6.8 minutes on the
+laptop GPU. The test ran from a throwaway script outside the repo; no code, results or figures
+were added. Repo at commit `70987e2`.
+
+The bar was decided before the run: a single fold can only show a large effect, so a change of
+0.02 or more in fold 0's KGE or NSE would justify a seven-fold run; anything smaller would not.
+
+**What came out**
+
+Medians over fold 0's 76 held-out basins (KGE and NSE as in earlier entries; 1 = perfect):
+
+| | KGE | NSE |
+|---|---|---|
+| LSTM, uncorrected | 0.72 | 0.72 |
+| network version 2 | 0.73 | 0.74 |
+| network version 2 + basin attributes | 0.72 | 0.75 |
+
+- Both changes are 0.01, in opposite directions, inside the five starts' range (KGE 0.72–0.73),
+  so this run cannot tell the two variants apart. The 0.02 bar was not met.
+- Basin by basin, adding attributes gives a higher KGE in 34 of 76 basins and a higher NSE in 43
+  of 76, close to an even split.
+- Validation-group KGE for each K was unchanged to two decimals (0.85–0.87 both ways). The
+  validation group then chose K=15, against K=15 for version 2 on this fold.
+- The network barely uses the attributes. When they are shuffled between basins (each basin
+  given another's values), one trained network's validation KGE moves from 0.865 to 0.862.
+
+Follow-up check, no training, using the saved version-2 results for all 531 basins in both
+cases: does the error left after the network's correction depend on basin type at all? For each
+basin's leftover error, two measures were computed against the five attributes:
+- the rank correlation (±1 a perfect relationship, 0 none);
+- the share of the basin-to-basin variation the attributes can predict in folds they were not
+  fitted on.
+
+| leftover error | strongest correlation with any attribute | share predictable |
+|---|---|---|
+| overall bias, high-flow bias, variability, volume | at most ±0.16 (weak) | about 0% (−2% to 4%) |
+| low-flow bias, basins held out entirely | slope −0.25, aridity +0.18 | 5% |
+| low-flow bias, discontinued gauges | slope −0.31, aridity +0.24 | 11% |
+
+- Before correction, the LSTM's overall bias did depend on basin type: with snow fraction,
+  elevation and slope it correlated at −0.18 to −0.24 for discontinued gauges. The network
+  removes that from the neighbours' errors alone.
+- Only low-flow bias keeps a pattern: flat, dry, low-lying basins remain more over-predicted on
+  low flows. The network roughly halves it: the predictable share falls from 11% to 5%, and from
+  20% to 11%. Low flows barely affect KGE or NSE, so a network trained on KGE has little reason
+  to use attributes to fix this.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. Closed: no seven-fold run of the attribute variant, and no further attribute work. The
+   follow-up check shows there is no basin-type pattern left in the errors that KGE and NSE
+   measure, so per-donor similarity inputs would have nothing to exploit either. The only
+   remaining pattern is in low-flow bias. Using it would need a training objective that rewards
+   low flows (e.g. KGE on log flows), which would break the like-for-like comparison with IDW.
+2. Superseding items 1 and 3 of the entry below, by the author's decision: `manuscript.md` is
+   not to be edited here, and the HBV and hybrid results are not to be re-run or changed. Their
+   stored IDW results come from the version-1 settings search. Re-running them with the current
+   code would apply the version-2 search.
+3. One optional check remains open, not yet run: the settings (IDW) and the network (learned
+   correction) are tuned on the same test years they are scored on, using other basins only.
+   Tuning on 1995–2002 and scoring on 2003–2010 would show whether that flatters the results.
+   If the two-decimal scores agree, it doesn't.
+
 ## 2026-10-01 — Second versions of both corrections, LSTM only, both cases: the learned correction ties the distance-weighted one
 
 **What I ran** — Both corrections were revised and re-run for the LSTM in both cases (basins

@@ -35,7 +35,7 @@ in time).
 | `src/models/{hbv,hybrid}/prepare.py` | Drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | Metrics → `figures/metrics_<cell>_<model>_<method>.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | The manuscript's LSTM figures: IDW vs MLP boxplots per cell, their CDFs, both method diagrams |
+| `figures/lstm/` | The manuscript's LSTM figures: IDW vs MLP boxplots per cell, their CDFs, NSE maps, both method diagrams |
 | `data/` | `camels531.csv`, fold assignment, US state outlines (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/` | Per-model predictions and corrections (gitignored) |
 

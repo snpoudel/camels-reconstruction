@@ -31,6 +31,11 @@ CAP_PERCENTILE = 85
 SEQUENTIAL = mcolors.LinearSegmentedColormap.from_list("sequential", [
     "#d4ebff", "#acd9ff", "#81c7ff", "#4eb3ff", "#239ff0", "#038bd8",
     "#0278bb", "#00659f", "#005383", "#004169", "#0a314b"])
+# The same steps in purple (OKLCH hue 305), for skill shown beside a DIVERGING panel, where blue
+# already means "got worse".
+SEQUENTIAL_ALT = mcolors.LinearSegmentedColormap.from_list("sequential_alt", [
+    "#ede2fb", "#dccaf4", "#ccb2ec", "#bb99e3", "#aa82d8", "#996bca",
+    "#8757b7", "#7446a1", "#603787", "#4c2b6b", "#38204f"])
 
 RAW, CORRECTED = BLUE, ORANGE
 # Checked against RAW and CORRECTED under simulated protan/deutan/tritan vision: every pair stays

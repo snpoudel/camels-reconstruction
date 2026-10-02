@@ -186,11 +186,11 @@ def sketch(ax, rect, i):
                 color=CORRECTED, ha="center", va="top", zorder=7)
 
 
-def add_box(ax, x, y, step, n, draw=None):
-    ax.add_patch(FancyBboxPatch((x, y), BOX_W, BOX_H, boxstyle="round,pad=0,rounding_size=0.07",
+def add_box(ax, x, y, step, n, draw=None, w=BOX_W):
+    ax.add_patch(FancyBboxPatch((x, y), w, BOX_H, boxstyle="round,pad=0,rounding_size=0.07",
                                 linewidth=1.6 if step["accent"] else 1.0,
                                 edgecolor=step["accent"] or MUTE, facecolor="white", zorder=2))
-    cx, lo, hi = x + BOX_W / 2, x + 0.07, x + BOX_W - 0.07
+    cx, lo, hi = x + w / 2, x + 0.07, x + w - 0.07
     track(ax.text(cx, y + BOX_H - 0.22, step["title"], ha="center", va="top", fontsize=10.0,
                   color=INK, fontweight="bold", zorder=4), lo, hi)
     eq = step["eq"] if isinstance(step["eq"], tuple) else (step["eq"],)
@@ -200,7 +200,7 @@ def add_box(ax, x, y, step, n, draw=None):
               lo, hi)
     track(ax.text(cx, y + BOX_H - 1.14, step["note"], ha="center", va="top", fontsize=8.0,
                   color=MUTE, linespacing=1.5, zorder=4), lo, hi)
-    (draw or sketch)(ax, (x + 0.09, y + 0.12, BOX_W - 0.18, BOX_H - 1.74), n - 1)
+    (draw or sketch)(ax, (x + 0.09, y + 0.12, w - 0.18, BOX_H - 1.74), n - 1)
     ax.add_patch(Circle((x + 0.02, y + BOX_H - 0.02), 0.145, facecolor=step["accent"] or INK,
                         edgecolor="white", linewidth=1.1, zorder=6))
     ax.text(x + 0.02, y + BOX_H - 0.02, str(n), ha="center", va="center", fontsize=8.5,
