@@ -7,10 +7,9 @@ Each fold held a seventh of the basins out of training, so those basins are unga
 well as in time -- the prediction-in-ungauged-basins case. They are corrected using that fold's
 other 455 basins, whose gauges the model did see, as donors.
 
-K, lambda and p are cross-validated inside those 455 training basins only, leave-one-group-out:
-the training basins keep their original fold labels, so each of the six groups is scored using
-donors from the other five -- a thinned gauge network, like a real ungauged basin faces. No
-held-out basin is read during selection, of this fold or of any other.
+K, lambda and p are cross-validated inside those 455 training basins only, self-masked
+leave-one-out: each is scored using the other 454 as donors, the same donor network a held-out
+basin has. No held-out basin is read during selection, as a target or as a donor.
 
     reads   runs/<model>/ungauged/_mean/fold{f}.npz
     writes  runs/<model>/idw/ungauged/{predictions.npz, params.csv, tuning.csv}
@@ -66,8 +65,8 @@ def main():
     print(f"folds present: {folds}, {len(test_t)} test days")
 
     pool = {f: np.flatnonzero(labels != f) for f in folds}
-    surfaces = run_jobs([make_job(f, pred[f], obs, sigma, dist, pool[f], groups=labels,
-                                  objective=a.select_on) for f in folds], workers=a.workers)
+    surfaces = run_jobs([make_job(f, pred[f], obs, sigma, dist, pool[f], objective=a.select_on)
+                         for f in folds], workers=a.workers)
     picked = {f: pick(surfaces[f], a.select_on) for f in folds}
 
     obj = SCORERS[a.select_on]

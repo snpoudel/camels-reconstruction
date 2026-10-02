@@ -1,11 +1,12 @@
-"""Method diagram: the five steps of the neighbour-residual correction.
+"""Method diagram: the five steps of the IDW neighbour-residual correction.
 
-    python figures/make_method.py    # -> method.png, method.svg
+    python figures/make_method_idw.py    # -> lstm/method_idw.png, lstm/method_idw.svg
 
 Each step box has its equation above a sketch of the same neighbourhood, so the eye follows one
 target and its donors across all five steps. The band above says K, p and lambda are
 cross-validated on the gauged folds; the search grid is imported from src/corrections/idw/tuning.py
-so it cannot drift from the code. Everything else is schematic.
+so it cannot drift from the code. Everything else is schematic. make_method_mlp.py reuses the
+neighbourhood sketch and hydrograph from here, in its own accent colour.
 
 `check_fit` prints a WARN for any string that overflows its box, since nothing else would catch
 it. Keep the run clean.
@@ -106,7 +107,7 @@ def pt(rect, u, v):
     return x0 + u * w, y0 + v * h
 
 
-def basins(ax, rect, mark_donors=True):
+def basins(ax, rect, mark_donors=True, accent=CORRECTED):
     """Three donors, three farther gauges and the target. `mark_donors=False` draws every gauge
     alike, for step 1: donors are not chosen until step 2."""
     faint = OTHERS if mark_donors else ()
@@ -116,7 +117,7 @@ def basins(ax, rect, mark_donors=True):
     for u, v in strong:
         ax.scatter(*pt(rect, u, v), s=38, color=RAW, edgecolor="white", linewidth=0.7, zorder=5)
     tx, ty = pt(rect, *TARGET)
-    ax.scatter([tx], [ty], s=140, marker="*", color=CORRECTED, edgecolor="white",
+    ax.scatter([tx], [ty], s=140, marker="*", color=accent, edgecolor="white",
                linewidth=0.7, zorder=6)
     return tx, ty
 
@@ -127,7 +128,7 @@ def label_donors(ax, rect, labels):
                 ha=ha, va=va, zorder=7)
 
 
-def hydrograph(ax, rect):
+def hydrograph(ax, rect, accent=CORRECTED):
     """A schematic storm hydrograph, before and after a downward correction."""
     x0, y0, w, h = rect
     px0, px1 = x0 + 0.10 * w, x0 + 0.96 * w
@@ -138,12 +139,12 @@ def hydrograph(ax, rect):
     q /= q.max()
     x = px0 + t * (px1 - px0)
     raw, cor = py0 + q * (py1 - py0), py0 + 0.66 * q * (py1 - py0)
-    ax.fill_between(x, cor, raw, color=CORRECTED, alpha=0.14, linewidth=0, zorder=4)
+    ax.fill_between(x, cor, raw, color=accent, alpha=0.14, linewidth=0, zorder=4)
     ax.plot(x, raw, color=RAW, lw=1.3, zorder=5)
-    ax.plot(x, cor, color=CORRECTED, lw=1.3, zorder=6)
+    ax.plot(x, cor, color=accent, lw=1.3, zorder=6)
     ax.plot([px0, px1], [py0, py0], color=MUTE, lw=0.6, alpha=0.6, zorder=3)
     # A mini legend rather than in-place labels, which would need leader lines at this size.
-    for n, (lab, col) in enumerate(((r"$q^{sim}_i$", RAW), (r"$q^{corr}_i$", CORRECTED))):
+    for n, (lab, col) in enumerate(((r"$q^{sim}_i$", RAW), (r"$q^{corr}_i$", accent))):
         ly = y0 + (0.94 - 0.13 * n) * h
         ax.plot([x0 + 0.08 * w, x0 + 0.20 * w], [ly, ly], color=col, lw=1.3, zorder=7)
         ax.text(x0 + 0.24 * w, ly, lab, fontsize=LAB_FS, color=col, ha="left", va="center",
@@ -185,7 +186,7 @@ def sketch(ax, rect, i):
                 color=CORRECTED, ha="center", va="top", zorder=7)
 
 
-def add_box(ax, x, y, step, n):
+def add_box(ax, x, y, step, n, draw=None):
     ax.add_patch(FancyBboxPatch((x, y), BOX_W, BOX_H, boxstyle="round,pad=0,rounding_size=0.07",
                                 linewidth=1.6 if step["accent"] else 1.0,
                                 edgecolor=step["accent"] or MUTE, facecolor="white", zorder=2))
@@ -199,7 +200,7 @@ def add_box(ax, x, y, step, n):
               lo, hi)
     track(ax.text(cx, y + BOX_H - 1.14, step["note"], ha="center", va="top", fontsize=8.0,
                   color=MUTE, linespacing=1.5, zorder=4), lo, hi)
-    sketch(ax, (x + 0.09, y + 0.12, BOX_W - 0.18, BOX_H - 1.74), n - 1)
+    (draw or sketch)(ax, (x + 0.09, y + 0.12, BOX_W - 0.18, BOX_H - 1.74), n - 1)
     ax.add_patch(Circle((x + 0.02, y + BOX_H - 0.02), 0.145, facecolor=step["accent"] or INK,
                         edgecolor="white", linewidth=1.1, zorder=6))
     ax.text(x + 0.02, y + BOX_H - 0.02, str(n), ha="center", va="center", fontsize=8.5,
@@ -273,7 +274,8 @@ def main(out=None):
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     bad = check_fit(fig, ax)
-    stem = out or f"{HERE}/method"
+    os.makedirs(f"{HERE}/lstm", exist_ok=True)
+    stem = out or f"{HERE}/lstm/method_idw"
     fig.savefig(f"{stem}.png", dpi=300, facecolor="white")
     fig.savefig(f"{stem}.svg", facecolor="white")
     print(f"-> {stem}.png, {stem}.svg" + (f"   ({bad} overflowing)" if bad else "   (fit ok)"))

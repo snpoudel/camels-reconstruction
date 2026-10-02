@@ -27,6 +27,7 @@ in time).
 | `src/corrections/idw/01_gauged.py` | Gauged pipeline → `runs/<model>/idw/gauged/` |
 | `src/corrections/idw/02_ungauged.py` | Ungauged pipeline → `runs/<model>/idw/ungauged/` |
 | `src/corrections/mlp/model.py` | The learned MLP correction: inputs, model, KGE loss, training (LSTM only) |
+| `src/corrections/mlp/01_gauged.py` | Gauged pipeline, K × seed search → `runs/lstm/mlp/gauged/` |
 | `src/corrections/mlp/02_ungauged.py` | Ungauged pipeline, K × seed search → `runs/lstm/mlp/ungauged/` |
 | `src/models/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |
 | `src/models/lstm/01_lstm_gauged.py` | Train on all basins, per seed → `runs/lstm/gauged/` |
@@ -34,6 +35,7 @@ in time).
 | `src/models/{hbv,hybrid}/prepare.py` | Drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | Metrics → `figures/metrics_<cell>_<model>_<method>.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
+| `figures/lstm/` | The manuscript's LSTM figures: IDW vs MLP boxplots per cell, both method diagrams |
 | `data/` | `camels531.csv`, fold assignment, US state outlines (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/` | Per-model predictions and corrections (gitignored) |
 

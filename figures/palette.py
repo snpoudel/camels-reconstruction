@@ -5,6 +5,7 @@ Series colours are the Okabe-Ito colourblind-safe palette (Okabe & Ito, 2008), i
     slot 0  #0072B2  blue        the uncorrected model
     slot 1  #D55E00  vermillion  the same model after the correction
     slot 2  #949494  grey        the nearest-gauge-only reference (CDF figure only)
+    slot 3  #009E73  green       the same model after the learned MLP correction
 
 Text uses ink, not series colour: INK #16191c, MUTE #5d6a73, GRID #dfe3e6.
 """
@@ -32,6 +33,9 @@ SEQUENTIAL = mcolors.LinearSegmentedColormap.from_list("sequential", [
     "#0278bb", "#00659f", "#005383", "#004169", "#0a314b"])
 
 RAW, CORRECTED = BLUE, ORANGE
+# Checked against RAW and CORRECTED under simulated protan/deutan/tritan vision: every pair stays
+# >= 8.6 apart (OKLab delta E x 100), the closest being RAW vs LEARNED under tritan.
+LEARNED = "#009E73"
 
 # Display names for runs/<model>/; anything missing falls back to the capitalised key.
 MODEL_LABEL = {"lstm": "LSTM", "hbv": "HBV"}

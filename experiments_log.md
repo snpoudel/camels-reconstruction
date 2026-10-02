@@ -20,6 +20,123 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-10-01 — Second versions of both corrections, LSTM only, both cases: the learned correction ties the distance-weighted one
+
+**What I ran** — Both corrections were revised and re-run for the LSTM in both cases (basins
+held out entirely, and discontinued gauges), all seven folds each. The manuscript will report
+LSTM results only. The hybrid and HBV models were not re-run, and their IDW results still use the
+first-version settings search described below.
+
+IDW (inverse-distance weighting) correction, version 2:
+- In the basins-held-out-entirely case, the settings search now corrects every training basin
+  from all the fold's other training basins (itself excluded). Previously it used only basins
+  from the other groups. A check across all seven folds showed the old design gave the search a
+  donor network about 10% sparser than the one the held-out basins actually face: median
+  distance to the 3rd/10th/20th nearest donor 92/212/342 km, against 82/189/305 km for held-out
+  basins. The new design matches them, at 82/189/305 km. The discontinued-gauge case already
+  worked this way.
+- The distance-weighting power p is now searched over 0.5, 1, 1.5, 2, 2.5 and 3 (was 1, 1.5, 2
+  and 3).
+- Settings chosen (K, λ, p), basins held out entirely: (25, 0.55, 3), (3, 0.70, 1.5),
+  (7, 0.80, 2.5), (9, 0.60, 2), (5, 0.50, 3), (3, 0.50, 0.5), (21, 0.45, 3) for folds 0–6.
+  Discontinued gauges: K=3 in six of seven groups. p=3, the top of the range, was chosen in 7
+  of 14 cases. p=0.5 was chosen once in each case.
+
+Neural-network correction, version 2. The inputs and network are unchanged from version 1.
+What changed:
+- Training: a fixed 40 passes over the training basins, with the step size shrinking smoothly to
+  zero, replacing "stop when the validation group stops improving". That rule had been picking
+  noise. 40 was chosen once by comparing 20, 40 and 80 passes on validation basins only (all
+  within 0.01 of each other; 20 a little lower in the discontinued-gauge case). It was then
+  frozen.
+- Dropout 0.2: during training, each hidden unit is switched off at random 20% of the time, to
+  discourage memorising the training basins.
+- The same donor rule as IDW version 2: every pool basin except itself.
+- K tried at 1, 3, 5, 10, 15, 20 and 30, with five random starts each, averaged day by day.
+- New: the discontinued-gauge case, mirroring IDW's. When group g is corrected, the network
+  trains on the other six groups only. Each basin of group g is then corrected from all 530 other
+  basins, its own record excluded.
+- Runs on the laptop's GPU. Both cases ran side by side, about 2 hours in total. Running them
+  one at a time would have been faster.
+- Isolation checks passed for both methods and both cases:
+  - deleting the held-out basins' observations leaves the chosen settings and corrections
+    bit-identical;
+  - in the discontinued-gauge case, deleting one basin's observations leaves its own correction
+    bit-identical while changing the corrections of basins that use it as a donor;
+  - deleting a whole group's observations leaves the trained networks unchanged.
+
+Code on branch `mlp-correction`, uncommitted, on top of commit `5aa74c7` (version 1). The
+version-1 outputs were scored for the comparison below and then deleted, so that only version 2
+remains in the repo. Version 1 can be regenerated from commit `5aa74c7`.
+
+**What came out**
+
+Medians across all 531 basins, at two decimals. Measures as in the entries below: KGE and NSE
+(1 = perfect), RMSE in mm/day, the variability ratio (predicted ÷ observed day-to-day spread;
+1 = matched), and the bias on the lowest 30% of flows.
+
+Basins held out entirely:
+
+| | KGE | NSE | RMSE | variability | low-flow bias |
+|---|---|---|---|---|---|
+| LSTM, uncorrected | 0.70 | 0.69 | 1.27 | 0.92 | +76% |
+| IDW version 1 | 0.72 | 0.74 | 1.15 | 0.90 | +40% |
+| IDW version 2 | 0.71 | 0.75 | 1.13 | 0.90 | +38% |
+| network version 1 | 0.72 | 0.74 | 1.14 | 0.93 | +30% |
+| network version 2 | 0.72 | 0.74 | 1.15 | 0.93 | +33% |
+
+Discontinued gauges:
+
+| | KGE | NSE | RMSE | variability | low-flow bias |
+|---|---|---|---|---|---|
+| LSTM, uncorrected | 0.79 | 0.76 | 1.12 | 0.93 | +55% |
+| IDW version 1 | 0.82 | 0.82 | 1.00 | 0.93 | +28% |
+| IDW version 2 | 0.83 | 0.82 | 0.98 | 0.92 | +28% |
+| network version 2 | 0.83 | 0.82 | 0.98 | 0.96 | +18% |
+
+- **At two decimals, network version 2 and IDW version 2 tie on median KGE and NSE in both
+  cases.**
+- Basin by basin, network version 2 has the higher KGE in 305 of 531 basins held out entirely
+  (57%) and 336 of 531 discontinued gauges (63%). On NSE it is higher in 240 of 531 (45%) and
+  270 of 531 (51%).
+- Per fold, median KGE of network version 2 against IDW version 2:
+  - basins held out entirely: higher in folds 1, 3, 4 and 5 (by 0.01–0.02), equal in folds 0,
+    2 and 6;
+  - discontinued gauges: higher in groups 3, 4 and 5 (by 0.01–0.03), equal in groups 0, 1 and
+    2, lower in group 6 (0.82 against 0.83).
+- The five random starts of network version 2 now agree to within about 0.01 per fold (version
+  1: up to 0.04), and in the folds above where the network leads, every start leads.
+- The network's consistent differences from IDW: it keeps more of the hydrograph's day-to-day
+  variability, and it leaves less over-prediction on low flows (+18% against +28% for
+  discontinued gauges).
+- IDW version 2 is unchanged from version 1 at two decimals. Its basins-held-out-entirely KGE
+  moved from 0.716 to 0.714, crossing the 0.715 rounding boundary.
+- Network version 2 is unchanged from version 1 at two decimals. It wins on KGE in 268 of 531
+  basins, about half.
+- K=30 was never chosen by the network, in either case. The chosen K ranged from 3 to 20.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. `manuscript.md` §2.6 still describes the old settings search and argues for it ("a
+   genuinely held-out basin faces a thinned network..."). That argument does not hold: the
+   held-out basins' donor distances match the self-masked search, not the thinned one (numbers
+   above). It also still states the old p grid ("p in {1, 1.5, 2, 3} (1,680 combinations)"; now
+   six values, 2,520 combinations). It needs rewriting by the author.
+2. Done in the same session: `README.md`'s headline numbers now show IDW version 2, and the
+   version-1 outputs were removed from `runs/` and `figures/`.
+3. Before hybrid or HBV results go into a supplement, re-run their IDW corrections with the
+   version-2 search: `venv-cpu/bin/python src/corrections/idw/01_gauged.py --model hybrid`,
+   `02_ungauged.py --model hybrid --folds-csv data/basin_list_with_folds_hybrid.csv`,
+   `01_gauged.py --model hbv`, then `figures/evaluate.py --model <m>`.
+4. Not yet tried: basin attributes as extra network inputs (a pre-declared second variant: about
+   five target attributes plus donor-to-target elevation and aridity differences). Reported
+   alongside, never chosen after the fact.
+5. Commit on `mlp-correction` (ask first): the IDW search change in
+   `src/corrections/idw/{tuning.py,02_ungauged.py}`, network version 2 in
+   `src/corrections/mlp/`, and the new metrics CSVs.
+
 ## 2026-10-01 — The learned neighbour correction (first version) on all seven folds, against the distance-weighted one
 
 **What I ran** — The small neural-network correction described in the entry below, unchanged

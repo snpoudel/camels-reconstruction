@@ -5,8 +5,6 @@ A correction method (src/corrections/<method>/) reads a model's seed-mean predic
 `load_mean`, corrects them, and writes them with `save_corrected`, so figures/evaluate.py scores
 every method the same way.
 """
-import json
-
 import numpy as np
 import pandas as pd
 
@@ -125,10 +123,6 @@ def train_sigma(npz_path):
 def test_period_label(test_t, cache_dir=CACHE_DIR):
     dates = np.load(f"{cache_dir}/dates.npy")[test_t]
     return f"{str(dates[0])[:4]}-{str(dates[-1])[:4]}"
-
-
-def cache_basins(cache_dir=CACHE_DIR):
-    return list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
 
 
 def save_corrected(out_dir, raw, corrected, nearest, test_t, params, tuning):

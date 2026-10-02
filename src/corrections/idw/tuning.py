@@ -6,14 +6,14 @@ fold (ungauged) or per group (gauged) on a surface built **only from basins othe
 being corrected** -- the target's observations are not in the surface, so the reported result
 cannot have been tuned on itself.
 
-Two surfaces, because the two cells face different gauge networks (see `make_job`):
+The surface is self-masked leave-one-out in both cells: every basin the search may read is
+corrected from every other one, itself excluded. That reproduces the donor network the
+correction is then applied under. A fold's held-out basins draw on the 455 pool basins, and a
+pool basin under self-masking draws on the other 454, so the two see the same donor distances
+rank for rank. Leave-one-group-out would remove a second group on top of the held-out fold,
+leaving the search about 10% sparser than the network it chooses settings for.
 
-    leave-one-group-out   each group corrected using donors from the *other* groups only --
-                          the thinned network a held-out (ungauged) group faces.
-    self-masked           every basin corrected from every other -- what a single discontinued
-                          gauge faces, its neighbourhood still fully gauged.
-
-One process per fold/group; ~80 s per surface, so a cell is a couple of minutes.
+One process per fold/group, so a cell is a few minutes.
 """
 import concurrent.futures as cf
 import os
@@ -74,8 +74,8 @@ SCORERS = {
 # further.
 K_GRID = tuple(range(1, 40, 2))
 LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
-# The IDW exponent: 1 is plain inverse distance, 2 the classic Shepard weighting. Below 1
-# flattens toward a simple average over the K donors and scores worse.
+# The IDW exponent: 1 is plain inverse distance, 2 the classic Shepard weighting, and 0.5
+# flattens toward a simple average over the K donors. Steps of 0.5 across that range.
 #
 # Extending this past 3 looks at first like the same truncated-search problem K had -- several
 # folds pin at the boundary -- but it is not: at high p, weight concentrates on the single
@@ -83,12 +83,11 @@ LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
 # never flattening) while the held-out score for the pinned fold gets WORSE at every step
 # (fold 6: p=3 -> 0.7248, p=4 -> 0.7200, p=5 -> 0.7184). That is overfitting to the
 # cross-validation pool, not information the grid was cutting off, so the ceiling stays at 3.
-P_GRID = (1.0, 1.5, 2.0, 3.0)
-Job = namedtuple("Job", "label pred obs sigma dist groups objective")
+P_GRID = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+Job = namedtuple("Job", "label pred obs sigma dist objective")
 """One fold's or group's search. `pred`/`obs` are the CV pool's rows, `dist` the pool's own
-distance matrix with an
-infinite diagonal, `sigma` their training-period flow stds, `groups` the pool's fold labels
-(thinned) or None, `objective` the key in `SCORERS` the search maximises."""
+distance matrix with an infinite diagonal, `sigma` their training-period flow stds, `objective`
+the key in `SCORERS` the search maximises."""
 
 
 def _score_grid(pred_t, obs_t, sigma_t, pred_d, obs_d, dist, eps, score):
@@ -104,22 +103,10 @@ def _score_grid(pred_t, obs_t, sigma_t, pred_d, obs_d, dist, eps, score):
 
 
 def _surface(job, eps=EPS):
-    """{(k, lam, p): [n_pool] score}, every pool basin scored exactly once."""
-    n = len(job.pred)
-    if job.groups is None:
-        splits = [(np.arange(n), np.arange(n))]          # self masked by the infinite diagonal
-    else:
-        splits = [(np.flatnonzero(job.groups == g), np.flatnonzero(job.groups != g))
-                  for g in np.unique(job.groups)]
-    out = {}
-    for tgt, don in splits:
-        part = _score_grid(job.pred[tgt], job.obs[tgt],
-                           None if job.sigma is None else job.sigma[tgt],
-                           job.pred[don], job.obs[don], job.dist[np.ix_(tgt, don)], eps,
-                           SCORERS[job.objective].score)
-        for key, vals in part.items():
-            out.setdefault(key, np.full(n, np.nan))[tgt] = vals
-    return job.label, out
+    """{(k, lam, p): [n_pool] score}, every pool basin scored once, self masked by the infinite
+    diagonal."""
+    return job.label, _score_grid(job.pred, job.obs, job.sigma, job.pred, job.obs, job.dist, eps,
+                                  SCORERS[job.objective].score)
 
 
 def _init_worker():
@@ -129,20 +116,14 @@ def _init_worker():
     threadpool_limits(1)
 
 
-def make_job(label, pred, obs, sigma, dist, rows, groups=None, objective="kge"):
-    """One label's search, over `rows` -- the basins it is allowed to learn from.
-
-    `groups`, when given, are those basins' fold labels and the search is leave-one-group-out
-    (thinned network, the ungauged case). When None it is self-masked leave-one-out over all of
-    them (dense network, the gauged case).
-    """
+def make_job(label, pred, obs, sigma, dist, rows, objective="kge"):
+    """One label's search, self-masked leave-one-out over `rows` -- the basins it may read."""
     d = dist[np.ix_(rows, rows)].copy()
     # Without this a basin's nearest neighbour is itself at zero distance, the correction
     # collapses to the identity, and the search would return lambda = 0.
     np.fill_diagonal(d, np.inf)
     # sigma is only read by nse_star; the other objectives are handed None and ignore it.
-    return Job(label, pred[rows], obs[rows], None if sigma is None else sigma[rows], d,
-               None if groups is None else groups[rows], objective)
+    return Job(label, pred[rows], obs[rows], None if sigma is None else sigma[rows], d, objective)
 
 
 def run_jobs(jobs, workers=None):
