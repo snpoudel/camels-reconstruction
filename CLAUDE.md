@@ -26,6 +26,8 @@ in time).
 | `src/corrections/idw/tuning.py` | K x lambda x p grids, the CV surfaces, three selection objectives |
 | `src/corrections/idw/01_gauged.py` | Gauged pipeline → `runs/<model>/idw/gauged/` |
 | `src/corrections/idw/02_ungauged.py` | Ungauged pipeline → `runs/<model>/idw/ungauged/` |
+| `src/corrections/mlp/model.py` | The learned MLP correction: inputs, model, KGE loss, training (LSTM only) |
+| `src/corrections/mlp/02_ungauged.py` | Ungauged pipeline, K × seed search → `runs/lstm/mlp/ungauged/` |
 | `src/models/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |
 | `src/models/lstm/01_lstm_gauged.py` | Train on all basins, per seed → `runs/lstm/gauged/` |
 | `src/models/lstm/02_lstm_ungauged.py` | Train per (fold, seed) → `runs/lstm/ungauged/` |

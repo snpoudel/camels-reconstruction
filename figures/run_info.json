@@ -34,5 +34,13 @@
    "n_folds": 7,
    "test_period": "1989-1999"
   }
+ },
+ "lstm_mlp": {
+  "ungauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  }
  }
 }

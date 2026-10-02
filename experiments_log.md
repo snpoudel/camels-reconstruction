@@ -20,6 +20,179 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-10-01 — The learned neighbour correction (first version) on all seven folds, against the distance-weighted one
+
+**What I ran** — The small neural-network correction described in the entry below, unchanged
+from that fold-0 test, run on all seven folds of the LSTM's basins-held-out-entirely case: 531
+basins the LSTM never trained on, each corrected from its fold's other basins using that fold's
+own LSTM. Same inputs (the K nearest gauges' log errors that day, their distances, whether each
+reported, time of year, the target's own predicted flow), same network (two layers of 64 units,
+no dropout), trained to maximise the Kling-Gupta efficiency. In each fold, the next group of
+basins round, (fold + 1) mod 7, is kept back from training and decides when training stops and
+which K is used. K was tried at 1, 3, 5, 10, 15 and 20, with five random starts each, so 210
+trainings in all, taking 82 minutes of laptop CPU time. The corrected hydrograph for each basin
+is the day-by-day average of the five starts at the chosen K, scored once. Code is on branch
+`mlp-correction`, uncommitted, branched from commit `2dc321b`. The settings-search and isolation
+checks from the fold-0 entry apply unchanged. Fold 0 reproduced that entry's numbers exactly.
+
+**What came out**
+
+KGE (Kling-Gupta efficiency) and NSE (Nash-Sutcliffe efficiency) as defined in the entry below.
+RMSE is the root-mean-square daily error in mm/day. The flow-band biases are the percent
+over- or under-prediction on the top 10% and bottom 30% of observed flows. Medians across all
+531 basins:
+
+| | KGE | NSE | RMSE | high-flow bias | low-flow bias |
+|---|---|---|---|---|---|
+| LSTM, uncorrected | 0.700 | 0.686 | 1.266 | −9.9% | +76.3% |
+| nearest gauge's error applied in full | 0.680 | 0.623 | | | |
+| LSTM + IDW correction | 0.716 | 0.743 | 1.154 | −12.3% | +40.4% |
+| LSTM + neural-network correction | 0.723 | 0.740 | 1.141 | −9.9% | +29.7% |
+
+Per fold, median KGE, with the five starts' range for the network:
+
+| fold | K chosen (IDW / network) | uncorrected | IDW | network | five starts | NSE IDW / network |
+|---|---|---|---|---|---|---|
+| 0 | 3 / 3 | 0.718 | 0.725 | 0.734 | 0.730–0.749 | 0.751 / 0.753 |
+| 1 | 3 / 5 | 0.711 | 0.726 | 0.731 | 0.716–0.741 | 0.775 / 0.777 |
+| 2 | 15 / 20 | 0.674 | 0.688 | 0.694 | 0.686–0.708 | 0.715 / 0.692 |
+| 3 | 5 / 5 | 0.690 | 0.698 | 0.718 | 0.714–0.726 | 0.756 / 0.772 |
+| 4 | 5 / 15 | 0.695 | 0.692 | 0.697 | 0.680–0.707 | 0.730 / 0.732 |
+| 5 | 3 / 20 | 0.702 | 0.733 | 0.746 | 0.739–0.764 | 0.750 / 0.746 |
+| 6 | 35 / 10 | 0.701 | 0.716 | 0.729 | 0.685–0.727 | 0.735 / 0.707 |
+
+- **KGE:** the network scores higher than IDW in all seven folds, by 0.005 to 0.020. If the
+  two corrections were equally good, all seven going the same way would happen by chance less
+  than 1% of the time. Basin by basin it wins 306 of 531 (median difference 0.008). In four
+  folds (0, 1, 2, 4) the fold's gap is inside the spread of the five starts. In folds 3 and 5
+  even the worst start beats IDW.
+- **NSE:** the network is not better. Median 0.740 against IDW's 0.743, winning 245 of 531
+  basins (median difference −0.002). It is clearly lower in folds 2 and 6 (by 0.023 and
+  0.028) and slightly higher in four others.
+- **Components:** timing improves equally under both (correlation 0.890 against 0.891), and
+  both remove the volume bias (0.990 against 0.988). The network keeps more of the hydrograph's
+  variability (ratio of predicted to observed spread 0.933, IDW 0.897, uncorrected 0.915) and
+  leaves a smaller low-flow over-prediction (+30% against +40%).
+- **A seed spread for the 531-basin medians is not available:** only the five-start average
+  was saved, not each start's hydrographs.
+- **Training stopped on a noisy signal:** the epoch at which validation peaked ranged from 1 to
+  177 (median 27), and two trainings peaked at the very first epoch, i.e. were barely trained.
+  This is the weakness identified in the fold-0 diagnostics: validation KGE jumps by about 0.01
+  from one pass over the data to the next, as much as the differences between K values.
+- Wall-clock: about 0.2–0.6 minutes per training. The run used about two of the laptop's ten
+  CPU cores (torch's per-step work is too small to spread further).
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. Build version 2 of the network correction in `src/corrections/mlp/model.py` and
+   `splits()`, as agreed on 2026-10-01:
+   - a fixed number of passes over the data with the learning rate decaying smoothly to zero,
+     replacing early stopping (try 20, 40 and 80 once, on validation basins only, then freeze);
+   - dropout 0.2 between the hidden layers;
+   - training basins drawing on all pool basins except themselves, so their donor distances
+     match the held-out basins'. The current docstring in `splits()` wrongly says the thinned
+     network matches.
+   Judge all of these on validation basins, never on held-out scores, then re-run all seven
+   folds.
+2. Save each random start's corrected hydrographs (not just their average), so the
+   531-basin medians get a seed spread.
+3. Optionally, a second fixed variant with about five basin attributes for the target (aridity,
+   snow fraction, mean elevation, log area, precipitation seasonality) plus each donor's elevation
+   and aridity difference from the target. Report it alongside, not as a replacement chosen after
+   the fact.
+4. Re-run with `venv-cpu/bin/python src/corrections/mlp/02_ungauged.py --seeds 5`, then
+   `venv-cpu/bin/python figures/evaluate.py --method mlp --cell ungauged`. Folds can run in
+   parallel once each fold writes its own output file.
+5. Commit the code on `mlp-correction` (ask first).
+
+## 2026-10-01 — A learned neighbour correction (a small neural network) against the distance-weighted one, on one fold of never-trained-on basins
+
+**What I ran** — A first test of a second correction method. The existing correction
+(inverse-distance weighting, "IDW") turns the nearest gauges' errors into a correction with one
+fixed rule per fold: the same number of gauges K, the same distance weighting and the same
+fraction λ of their error on every day. The new method replaces that rule with a small neural
+network that predicts each day's correction. Its inputs, for a target basin on a given day, are
+the K nearest gauges' errors that day (the same log errors IDW uses), their distances, whether
+each reported that day, the time of year, and the target's own predicted flow that day. So it
+can correct differently by season and between high and low flows. The corrected flow is
+computed the same way as IDW's: the prediction is scaled by a daily factor. The network is two
+layers of 64 units, trained to maximise the Kling-Gupta efficiency (KGE, explained below), the
+same score IDW's settings are chosen on. Every other setting was fixed in advance and never
+adjusted.
+
+Scope: the LSTM's basins-held-out-entirely case, **fold 0 only**: 76 basins the LSTM never
+trained on, corrected from the other 455 basins, using fold 0's own LSTM. The network trains on
+those 455 basins only. As in IDW's settings search, each training basin's donor gauges come
+from the other groups of basins, and one group (group 1, 76 basins) is kept back to decide when
+training stops and which K to use. K was tried at 1, 3, 5, 10, 15 and 20 gauges, with five
+random starts of the network at each. The held-out correction is the average of the five starts'
+hydrographs at the chosen K, scored once. Fold 0's held-out observations were never read before
+scoring. A check confirmed this: deleting them leaves every trained network and every corrected
+hydrograph bit-identical, while doubling one donor gauge's observations does change the output.
+The 30 trainings took 9.6 minutes on a laptop CPU (0.2–0.6 minutes each). Code is on branch
+`mlp-correction`, uncommitted at the time of this run, branched from commit `2dc321b`.
+
+**What came out**
+
+Kling-Gupta efficiency (KGE) and Nash-Sutcliffe efficiency (NSE) both measure how closely
+predicted daily flow tracks measured flow: 1.0 is a perfect match, and 0.0 is no better than
+always predicting the long-term average. Medians across fold 0's 76 never-trained-on basins:
+
+| | KGE | NSE |
+|---|---|---|
+| LSTM, uncorrected | 0.718 | 0.721 |
+| nearest gauge's error applied in full | 0.662 | 0.602 |
+| LSTM + IDW correction (K=3, λ=0.60, distance power 1.5) | 0.725 | 0.751 |
+| LSTM + neural-network correction (K=3, average of 5 starts) | 0.734 | 0.753 |
+
+- The validation group chose K=3, the same number of gauges IDW chose for this fold. Validation
+  KGE across K: 0.855 (K=1), 0.869 (3), 0.865 (5), 0.867 (10), 0.862 (15), 0.864 (20). It is
+  flat from 3 to 20.
+- Basin by basin, the network beats IDW on KGE in 45 of the 76 basins (median difference
+  0.004). On NSE it beats IDW in 38 of 76 (median difference 0.000), an even split.
+- **This run cannot tell the two corrections apart on KGE.** The five starts of the network
+  each give held-out KGE between 0.730 and 0.749. That spread of 0.019 is about twice the
+  network's 0.009 lead over IDW. On NSE there is no difference at all.
+- Where the KGE difference comes from: KGE combines timing (correlation), variability (ratio of
+  predicted to observed spread) and volume (ratio of means). Medians across the 76 basins:
+
+  | | correlation | variability ratio | volume ratio |
+  |---|---|---|---|
+  | uncorrected | 0.869 | 0.907 | 1.082 |
+  | IDW | 0.890 | 0.868 | 1.012 |
+  | network | 0.890 | 0.912 | 1.007 |
+
+  Both corrections improve timing and volume equally. IDW reduces the hydrograph's variability
+  below the uncorrected level; the network does not.
+- On the validation basins, which the LSTM did train on, the network raises median KGE from
+  0.809 to 0.869, a gain about four times its 0.017 gain on the held-out basins.
+- At two settings (K=1 and K=15), the average of the five starts scores *below every individual
+  start* on validation KGE: 0.855 against 0.858–0.864, and 0.862 against 0.868–0.871. On the
+  held-out basins, the average (0.734) sits near the low end of the five starts (0.730–0.749).
+- The epoch at which validation peaked varied widely across starts, from 3 to 75 passes over the
+  training basins.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. Run the other six folds: `venv-cpu/bin/python src/corrections/mlp/02_ungauged.py` with no
+   `--fold`, about 10 minutes per fold. Then run `venv-cpu/bin/python figures/evaluate.py
+   --method mlp --cell ungauged` and compare against `figures/metrics_ungauged_lstm_idw.csv`
+   over all 531 basins: medians for each variant, and per-basin network-minus-IDW KGE and NSE
+   (how many basins improve), with the five starts' spread beside it. IDW's gain varies from −0.004 to
+   +0.031 across folds, so only the seven-fold result can decide between the methods.
+2. Decide whether the five-start average is the right way to combine the network's starts. It
+   lowered validation KGE at some K, apparently by smoothing out variability. Scoring each
+   start's median KGE separately would be the alternative, and it would also need applying to
+   how K is chosen.
+3. Code to commit on `mlp-correction` (ask first): `src/corrections/mlp/`, `shared.nearest_gauge`,
+   two small `figures/evaluate.py` changes (MLP has no λ/p columns; `run_info.json` gets a
+   separate `lstm_mlp` entry so the IDW entry is never overwritten), and `requirements.txt` now
+   lists matplotlib and xarray. The local environment is `venv-cpu/` (gitignored).
+
 ## 2026-09-21 — Extending the hybrid model's test window from ten years to sixteen (1980-1989 → 1980-1995)
 
 **What I ran** — The hybrid model's raw predictions cover 1980-2014 for all 531 basins, but the

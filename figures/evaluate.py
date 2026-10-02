@@ -150,7 +150,8 @@ def evaluate(cell, model, method):
     for key, variant in variants(model).items():
         frame = pd.DataFrame([metrics_row(p[key][i], obs[i]) for i in scored])
         frame["basin"], frame["fold"], frame["variant"] = ids[scored], labels[scored], variant
-        frames.append(frame.join(params[["k", "lam", "p", "n_seeds"]], on="fold"))
+        settings = [c for c in ("k", "lam", "p", "n_seeds") if c in params]  # MLP: no lam, p
+        frames.append(frame.join(params[settings], on="fold"))
     df = pd.concat(frames, ignore_index=True)
     suffix = _suffix(model, method)
     df.to_csv(f"{HERE}/metrics_{cell}{suffix}.csv", index=False)
@@ -274,9 +275,10 @@ def main():
 
     info_path = f"{HERE}/run_info.json"
     info = json.load(open(info_path)) if os.path.exists(info_path) else {}
-    info.setdefault(a.model, {})
+    key = a.model if a.method == "idw" else f"{a.model}_{a.method}"
+    info.setdefault(key, {})
     for cell in cells:
-        info[a.model][cell] = evaluate(cell, a.model, a.method)
+        info[key][cell] = evaluate(cell, a.model, a.method)
     json.dump(info, open(info_path, "w"), indent=1)
     if "gauged" in cells:
         error_structure(a.model)

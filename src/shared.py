@@ -23,6 +23,17 @@ def great_circle_km(lat, lon):
     return 2 * 6371.0 * np.arcsin(np.sqrt(np.clip(h, 0, 1)))
 
 
+def nearest_gauge(sim_target, sim_donor, obs_donor, dist_km, eps=EPS):
+    """The parameter-free reference every method is reported against: the single nearest
+    donor's log error, applied in full (IDW at K=1, lambda=1). No correction on a day that donor
+    did not report."""
+    j = np.argmin(dist_km, axis=1)
+    res = np.log(np.clip(sim_donor[j], 0, None) + eps) - np.log(obs_donor[j] + eps)
+    # float64, as IDW's arithmetic is, so this matches its K=1, lambda=1 output bit for bit.
+    R = np.nan_to_num(res).astype(np.float64)
+    return np.clip(np.exp(np.log(np.clip(sim_target, 0, None) + eps) - R) - eps, 0, None)
+
+
 def nse_per_basin(sim, obs):
     """[n] Nash-Sutcliffe efficiency, vectorised over basins."""
     sim = np.clip(sim, 0, None)

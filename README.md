@@ -49,6 +49,7 @@ measured against each other rather than assumed; see manuscript.md 2.6.
 | `src/corrections/idw/tuning.py` | the K x lambda x p search: three selection objectives (KGE, NSE, NSE*) |
 | `src/corrections/idw/01_gauged.py` | correct the gauged cell → `runs/<model>/idw/gauged/` |
 | `src/corrections/idw/02_ungauged.py` | correct the ungauged cell → `runs/<model>/idw/ungauged/` |
+| `src/corrections/mlp/` | a learned alternative: an MLP predicts each day's correction from the K nearest donors' errors, the season and the target's own simulated flow (LSTM, ungauged cell; in progress) |
 | `src/models/lstm/common.py` | the LSTM: cache, folds, model, training, prediction |
 | `src/models/lstm/01_lstm_gauged.py` | train on every basin, one run per seed |
 | `src/models/lstm/02_lstm_ungauged.py` | train one run per (fold, seed) |
