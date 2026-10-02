@@ -56,7 +56,7 @@ measured against each other rather than assumed; see manuscript.md 2.6.
 | `src/models/{hbv,hybrid}/prepare.py` | drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | score a correction method into the CSVs the figures read |
 | `figures/make_*.py` | one script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | the manuscript's LSTM figures: IDW vs MLP boxplots per cell, both method diagrams |
+| `figures/lstm/` | the manuscript's LSTM figures: IDW vs MLP boxplots per cell, their CDFs, both method diagrams |
 | `data/` | `camels531.csv`, fold assignment, US state outlines for the map figures (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/<model>/` | predictions (`<cell>/`) and their corrections (`<method>/<cell>/`), per model family (gitignored) |
 
@@ -96,6 +96,7 @@ python figures/make_donor_map.py        # ungauged only, by design
 python figures/make_error_structure.py  # the premise, before any correction -- needs
                                          # evaluate.py run for --model lstm, hybrid and hbv
 python figures/make_lstm_boxplots.py    # IDW vs MLP -> figures/lstm/0{1,2}_*_boxplots.png
+python figures/make_lstm_cdf.py         # IDW vs MLP, both cells -> figures/lstm/03_cdf.png
 python figures/make_method_idw.py       # -> figures/lstm/method_idw.png
 python figures/make_method_mlp.py       # -> figures/lstm/method_mlp.png
 ```
