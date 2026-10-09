@@ -29,7 +29,11 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src", "corrections", "idw"))
 from palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from palette import figure_variant  # noqa: E402
 from tuning import K_GRID, LAM_GRID, P_GRID  # noqa: E402
+
+SUFFIX, OUT_DIR = figure_variant()
+SCALED = SUFFIX != "_noscale"
 
 FIG_W, FIG_H = 11.0, 5.05
 MARGIN, GAP = 0.32, 0.34
@@ -65,14 +69,17 @@ STEPS = (
          eq=r"$w_{ij}=\dfrac{d_{ij}^{-p}}{\sum_{j'} d_{ij'}^{-p}}$",
          note="the K nearest gauges,\nweighted by distance"),
     dict(title="Donor errors today", accent=None, eq_size=11.5,
-         eq=r"$r_j=\log\dfrac{q^{sim}_j+\epsilon}{q^{obs}_j+\epsilon}$",
-         note="how wrong the model is\nat each gauge, in logs"),
-    dict(title="Neighbour error", accent=None, eq_size=12.5,
+         eq=r"$r_j=\dfrac{q^{sim}_j-q^{obs}_j}{s_j}$" if SCALED else r"$r_j=q^{sim}_j-q^{obs}_j$",
+         note="how wrong the model is,\nin units of its flow SD $s_j$" if SCALED
+         else "how wrong the model is\nat each gauge, in mm/day"),
+    dict(title="Neighbor error", accent=None, eq_size=12.5,
          eq=r"$R_i=\sum_j w_{ij}\,r_j$",
          note="their weighted mean:\nthe error around basin i"),
     dict(title="Correct the target", accent=CORRECTED, eq_size=10.5,
-         eq=(r"$q^{corr}_i=(q^{sim}_i+\epsilon)$", r"$\times\; e^{-\lambda R_i}-\epsilon$"),
-         note="shift the prediction by\na fraction $\\lambda$ of it"),
+         eq=(r"$q^{corr}_i=\max(0,$", r"$q^{sim}_i-\lambda\,s_i R_i)$" if SCALED
+             else r"$q^{sim}_i-\lambda R_i)$"),
+         note="shift by a fraction $\\lambda$,\nin the target's own units" if SCALED
+         else "shift the prediction by\na fraction $\\lambda$ of it"),
 )
 
 _fit = []          # (artist, x_lo, x_hi) -- checked once at the end, see check_fit
@@ -251,6 +258,17 @@ def cv_band(ax):
           text_x, x0 + w - 0.12)
 
 
+def draw_steps(ax, y=Y0):
+    """The five step boxes and the arrows between them, with their bottom edge at `y`."""
+    xs = [MARGIN + i * (BOX_W + GAP) for i in range(5)]
+    for i, step in enumerate(STEPS):
+        add_box(ax, xs[i], y, step, i + 1)
+        if i:
+            ax.add_patch(FancyArrowPatch((xs[i - 1] + BOX_W, y + BOX_H * 0.75),
+                                         (xs[i], y + BOX_H * 0.75), arrowstyle="-|>",
+                                         mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
+
+
 def main(out=None):
     fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
     ax.set_xlim(0, FIG_W)
@@ -263,19 +281,12 @@ def main(out=None):
           MARGIN, FIG_W - MARGIN)
 
     cv_band(ax)
-
-    xs = [MARGIN + i * (BOX_W + GAP) for i in range(5)]
-    for i, step in enumerate(STEPS):
-        add_box(ax, xs[i], Y0, step, i + 1)
-        if i:
-            ax.add_patch(FancyArrowPatch((xs[i - 1] + BOX_W, Y0 + BOX_H * 0.75),
-                                         (xs[i], Y0 + BOX_H * 0.75), arrowstyle="-|>",
-                                         mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
+    draw_steps(ax)
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     bad = check_fit(fig, ax)
-    os.makedirs(f"{HERE}/lstm", exist_ok=True)
-    stem = out or f"{HERE}/lstm/method_idw"
+    os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
+    stem = out or f"{HERE}/{OUT_DIR}/method_idw"
     fig.savefig(f"{stem}.png", dpi=300, facecolor="white")
     fig.savefig(f"{stem}.svg", facecolor="white")
     print(f"-> {stem}.png, {stem}.svg" + (f"   ({bad} overflowing)" if bad else "   (fit ok)"))

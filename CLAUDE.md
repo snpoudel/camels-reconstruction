@@ -26,7 +26,7 @@ in time).
 | `src/corrections/idw/tuning.py` | K x lambda x p grids, the CV surfaces, three selection objectives |
 | `src/corrections/idw/01_gauged.py` | Gauged pipeline → `runs/<model>/idw/gauged/` |
 | `src/corrections/idw/02_ungauged.py` | Ungauged pipeline → `runs/<model>/idw/ungauged/` |
-| `src/corrections/mlp/model.py` | The learned MLP correction: inputs, model, KGE loss, training (LSTM only) |
+| `src/corrections/mlp/model.py` | The learned MLP correction: inputs, model, NSE* loss, training (LSTM only) |
 | `src/corrections/mlp/01_gauged.py` | Gauged pipeline, K × seed search → `runs/lstm/mlp/gauged/` |
 | `src/corrections/mlp/02_ungauged.py` | Ungauged pipeline, K × seed search → `runs/lstm/mlp/ungauged/` |
 | `src/models/lstm/common.py` | The LSTM: cache, folds, model, training loop, prediction, seed-mean |
@@ -35,7 +35,10 @@ in time).
 | `src/models/{hbv,hybrid}/prepare.py` | Drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | Metrics → `figures/metrics_<cell>_<model>_<method>.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | The manuscript's LSTM figures: IDW vs MLP boxplots per cell, their CDFs, NSE maps, both method diagrams |
+| `figures/lstm/` | The tech note's figures, named by figure number: `fig01`–`fig04` and `figS1`–`figS3` (PNG + PDF) |
+| `figures/lstm_noscale/` | Comparison: the same figures without the flow scale s (plain mm/day residuals); scripts' `--variant noscale` |
+| `figures/lstm_logresidual_kge/` | Archive: the same figures under the earlier log-residual, KGE-selected method, with their CSVs in `data/` |
+| `doc/` | The HESS tech note: `tech_note_outline.md`, `lit_review.md`, `manuscript.md` |
 | `data/` | `camels531.csv`, fold assignment, US state outlines (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/` | Per-model predictions and corrections (gitignored) |
 

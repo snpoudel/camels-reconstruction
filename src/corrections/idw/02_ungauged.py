@@ -14,8 +14,8 @@ basin has. No held-out basin is read during selection, as a target or as a donor
     reads   runs/<model>/ungauged/_mean/fold{f}.npz
     writes  runs/<model>/idw/ungauged/{predictions.npz, params.csv, tuning.csv}
 
---select-on picks what the search maximises: kge (default), nse, or nse_star -- the
-basin-normalised loss the LSTM itself was trained on. A non-default objective
+--select-on picks what the search maximises: nse_star (default) -- the basin-normalised loss
+the LSTM itself was trained on -- kge, or nse. A non-default objective
 writes to idw/ungauged_<objective>/ so both can sit side by side.
 """
 import argparse
@@ -37,8 +37,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="lstm", help="which runs/<model>/ tree to correct")
     ap.add_argument("--workers", type=int, default=None, help="processes for the grid search")
-    ap.add_argument("--select-on", choices=list(SCORERS), default="kge",
-                    help="which score the grid search maximises (default kge)")
+    ap.add_argument("--no-scale", action="store_true",
+                    help="the unscaled comparison: residuals in plain mm/day -> runs/<model>/idw_noscale/")
+    ap.add_argument("--select-on", choices=list(SCORERS), default="nse_star",
+                    help="which score the grid search maximises (default nse_star)")
     ap.add_argument("--folds-csv", default=None,
                     help="override the fold assignment (e.g. a model whose held-out basins "
                          "aren't the LSTM's own 7-way split)")
@@ -65,7 +67,8 @@ def main():
     print(f"folds present: {folds}, {len(test_t)} test days")
 
     pool = {f: np.flatnonzero(labels != f) for f in folds}
-    surfaces = run_jobs([make_job(f, pred[f], obs, sigma, dist, pool[f], objective=a.select_on)
+    surfaces = run_jobs([make_job(f, pred[f], obs, sigma, dist, pool[f], objective=a.select_on,
+                                  scaled=not a.no_scale)
                          for f in folds], workers=a.workers)
     picked = {f: pick(surfaces[f], a.select_on) for f in folds}
 
@@ -86,10 +89,12 @@ def main():
         held = np.flatnonzero(labels == f)
         raw[held] = pred[f][held]
         d = dist[np.ix_(held, pool[f])]
-        corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, k, lam, p)
+        corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, k, lam, p,
+                                  not a.no_scale)
         # The parameter-free reference: one donor, all of its error. p is irrelevant at K=1,
         # since the single surviving weight normalises to 1 whatever the exponent.
-        nearest[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, 1, 1.0, 1.0)
+        nearest[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, 1, 1.0, 1.0,
+                                not a.no_scale)
         before = report(raw[held], obs[held], held)
         after = report(corrected[held], obs[held], held)
         params.append(dict(fold=f, k=k, lam=lam, p=p, n_basins=len(held), n_donors=len(pool[f]),
@@ -105,8 +110,9 @@ def main():
     print(f"{len(done)} held-out basins pooled: {obj.label} {before:.4f} -> {after:.4f} "
           f"({after - before:+.4f})")
 
-    suffix = "" if a.select_on == "kge" else f"_{a.select_on}"
-    save_corrected(f"runs/{a.model}/idw/ungauged{suffix}", raw, corrected, nearest, test_t,
+    suffix = "" if a.select_on == "nse_star" else f"_{a.select_on}"
+    method = "idw_noscale" if a.no_scale else "idw"
+    save_corrected(f"runs/{a.model}/{method}/ungauged{suffix}", raw, corrected, nearest, test_t,
                    params, surface_rows(surfaces, picked, a.select_on))
 
 

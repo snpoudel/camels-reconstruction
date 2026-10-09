@@ -22,7 +22,7 @@ from collections import namedtuple
 import numpy as np
 
 from correction import apply_shrinkage, idw_weights, neighbour_residual
-from shared import EPS, kge_per_basin, nse_per_basin
+from shared import kge_per_basin, nse_per_basin
 
 # Kratzert et al. (2019)'s NSE*, the loss the LSTM itself was trained to minimise: squared
 # error divided by each basin's training-period flow std. The 0.1 offset is theirs, in mm/day,
@@ -84,29 +84,29 @@ LAM_GRID = tuple(np.round(np.arange(0.0, 1.05, 0.05), 2))
 # (fold 6: p=3 -> 0.7248, p=4 -> 0.7200, p=5 -> 0.7184). That is overfitting to the
 # cross-validation pool, not information the grid was cutting off, so the ceiling stays at 3.
 P_GRID = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
-Job = namedtuple("Job", "label pred obs sigma dist objective")
+Job = namedtuple("Job", "label pred obs sigma dist objective scaled")
 """One fold's or group's search. `pred`/`obs` are the CV pool's rows, `dist` the pool's own
 distance matrix with an infinite diagonal, `sigma` their training-period flow stds, `objective`
-the key in `SCORERS` the search maximises."""
+the key in `SCORERS` the search maximises, `scaled` whether residuals are divided by s."""
 
 
-def _score_grid(pred_t, obs_t, sigma_t, pred_d, obs_d, dist, eps, score):
+def _score_grid(pred_t, obs_t, sigma_t, pred_d, obs_d, dist, score, scaled):
     """{(k, lam, p): [n_target] score} for one target/donor split."""
     out = {}
     for k in K_GRID:
         for p in P_GRID:
-            R = neighbour_residual(pred_d, obs_d, idw_weights(dist, k, p), eps)
+            R = neighbour_residual(pred_d, obs_d, idw_weights(dist, k, p), scaled)
             for lam in LAM_GRID:
                 out[(int(k), float(lam), float(p))] = score(
-                    apply_shrinkage(pred_t, R, lam, eps), obs_t, sigma_t)
+                    apply_shrinkage(pred_t, R, lam, scaled), obs_t, sigma_t)
     return out
 
 
-def _surface(job, eps=EPS):
+def _surface(job):
     """{(k, lam, p): [n_pool] score}, every pool basin scored once, self masked by the infinite
     diagonal."""
-    return job.label, _score_grid(job.pred, job.obs, job.sigma, job.pred, job.obs, job.dist, eps,
-                                  SCORERS[job.objective].score)
+    return job.label, _score_grid(job.pred, job.obs, job.sigma, job.pred, job.obs, job.dist,
+                                  SCORERS[job.objective].score, job.scaled)
 
 
 def _init_worker():
@@ -116,14 +116,15 @@ def _init_worker():
     threadpool_limits(1)
 
 
-def make_job(label, pred, obs, sigma, dist, rows, objective="kge"):
+def make_job(label, pred, obs, sigma, dist, rows, objective="nse_star", scaled=True):
     """One label's search, self-masked leave-one-out over `rows` -- the basins it may read."""
     d = dist[np.ix_(rows, rows)].copy()
     # Without this a basin's nearest neighbour is itself at zero distance, the correction
     # collapses to the identity, and the search would return lambda = 0.
     np.fill_diagonal(d, np.inf)
     # sigma is only read by nse_star; the other objectives are handed None and ignore it.
-    return Job(label, pred[rows], obs[rows], None if sigma is None else sigma[rows], d, objective)
+    return Job(label, pred[rows], obs[rows], None if sigma is None else sigma[rows], d, objective,
+               scaled)
 
 
 def run_jobs(jobs, workers=None):
@@ -135,7 +136,7 @@ def run_jobs(jobs, workers=None):
         return dict(ex.map(_surface, jobs))
 
 
-def pick(surf, objective="kge"):
+def pick(surf, objective="nse_star"):
     """The (K, lambda, p) the cross-validation scores best. Exact ties break on the smallest
     (K, lambda, p), which Python's tuple ordering already gives, so the choice is deterministic.
 
@@ -151,7 +152,7 @@ def pick(surf, objective="kge"):
     return min(c for c, v in scored.items() if v == best)
 
 
-def surface_rows(surfaces, picked, objective="kge"):
+def surface_rows(surfaces, picked, objective="nse_star"):
     """The searched surface as flat records -- one row per label x k x lam x p, for the CSV the
     hyperparameter figure draws from."""
     rows = []

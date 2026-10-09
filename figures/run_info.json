@@ -48,5 +48,33 @@
    "n_folds": 7,
    "test_period": "1995-2010"
   }
+ },
+ "lstm_idw_noscale": {
+  "gauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  },
+  "ungauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  }
+ },
+ "lstm_mlp_noscale": {
+  "gauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  },
+  "ungauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  }
  }
 }

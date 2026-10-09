@@ -20,6 +20,408 @@ difference that isn't there is how this project stalled the first time.
 
 ---
 
+## 2026-10-09 — The same method without scaling: does dividing each basin's error by its flow spread matter?
+
+**What I ran** — The author asked for a simpler comparison set. Both corrections were rerun
+exactly as in the entry below (plain residuals, NSE* selection and loss, MLP version 3), but
+with **no scaling**: every s = 1, so each neighbour's error is transferred in plain mm/day.
+- IDW: corrected = max(0, predicted − λ · Σ w · (predicted_j − measured_j)).
+- MLP: the residual inputs and the target-flow input are in mm/day (each standardised on the
+  training pool), and the output δ is in mm/day: corrected = max(0, predicted − δ).
+
+Both cases: basins never seen in training ("ungauged") and basins scored on years held back
+from training ("discontinued gauges"); 531 basins; the LSTM's 5 random starts averaged.
+
+Runtime and commit:
+- IDW: about 1.5 minutes per case.
+- MLP: about 55 minutes ungauged and 52 minutes discontinued on the laptop GPU.
+- Repo at commit `73d65d8` plus uncommitted changes. Nothing is committed.
+
+Code: one switch, no duplicated scripts.
+- `shared.flow_scale(sim, scaled)` returns 1s when `scaled=False`. The switch is passed through
+  the IDW correction and its settings search, and through the MLP's input preparation.
+- Both IDW and both MLP pipelines take `--no-scale` and then write to
+  `runs/lstm/idw_noscale/` and `runs/lstm/mlp_noscale/`.
+- `figures/evaluate.py --method idw_noscale` (or `mlp_noscale`) writes
+  `figures/metrics_*_lstm_*_noscale.csv`.
+- Every LSTM figure script takes `--variant noscale` (via `palette.figure_variant`). It reads
+  those CSVs, writes to `figures/lstm_noscale/`, and drops s from the method diagrams' formulas.
+
+Checks:
+- Rerunning the default scaled IDW after the change reproduced its corrected flows bit for
+  bit.
+- Redrawing every default figure gave byte-identical files.
+- The fold-isolation audit (target observations destroyed → identical settings and corrected
+  flows; one donor destroyed → neighbours move) passes for both unscaled methods.
+
+**What came out**
+
+Medians over 531 basins, ungauged / discontinued gauges. NSE, KGE, the variability ratio
+(predicted ÷ measured spread of flows) and percent bias by flow band are as defined in the
+entry below. "Large losses" means NSE falls by more than 0.2.
+
+| | NSE | KGE | variability ratio | low-flow bias | basins where NSE rises | large losses |
+|---|---|---|---|---|---|---|
+| LSTM, uncorrected | 0.69 / 0.76 | 0.70 / 0.79 | 0.92 / 0.94 | +76 / +55 % | – | – |
+| IDW, scaled | 0.75 / 0.83 | 0.73 / 0.84 | 0.92 / 0.95 | +41 / +25 % | 79 / 82 % | 1.9 / 0.6 % |
+| IDW, unscaled | 0.74 / 0.82 | 0.72 / 0.83 | 0.92 / 0.95 | +53 / +37 % | 81 / 85 % | 2.4 / 2.1 % |
+| MLP, scaled | 0.75 / 0.83 | 0.71 / 0.82 | 0.88 / 0.90 | +37 / +22 % | 82 / 85 % | 1.1 / 0.4 % |
+| MLP, unscaled | 0.75 / 0.82 | 0.70 / 0.82 | 0.88 / 0.90 | +48 / +31 % | 81 / 84 % | 1.7 / 0.9 % |
+
+Basin-by-basin differences in median score, with bootstrap 95 % ranges:
+
+| | NSE, ungauged | NSE, discontinued | KGE, ungauged | KGE, discontinued |
+|---|---|---|---|---|
+| IDW unscaled minus scaled | −0.010 [−0.018, −0.002] | −0.007 [−0.014, −0.003] | −0.007 [−0.013, +0.001] | −0.010 [−0.016, −0.005] |
+| MLP unscaled minus scaled | −0.005 [−0.013, +0.001] | −0.005 [−0.010, +0.000] | −0.007 [−0.019, −0.003] | −0.003 [−0.009, +0.004] |
+| MLP unscaled minus IDW unscaled | +0.010 [+0.003, +0.020] | +0.001 [−0.003, +0.008] | −0.016 [−0.028, −0.009] | −0.011 [−0.017, −0.001] |
+
+- **For IDW, scaling helps, by a small but clear margin.**
+  - Without it, NSE is about 0.01 lower in both cases (both ranges exclude zero), and KGE
+    about 0.01 lower (clear in the discontinued case, borderline ungauged).
+  - The scaled version scores higher NSE in about 70 % of basins.
+  - The largest cost is low flows: the unscaled correction removes much less of the LSTM's
+    low-flow over-prediction (+53 % against +41 % ungauged; +37 % against +25 %
+    discontinued). It also has more large losses at discontinued gauges (2.1 % against 0.6 %).
+  - The unscaled search picks λ = 0.45–0.5 and p = 2–2.5 (K = 39 throughout). It applies less
+    of the donors' error, so slightly *more* basins improve (81 / 85 %), but by less.
+- **For the MLP, scaling matters less.** The differences are about 0.005 and mostly within
+  noise, apart from ungauged KGE (−0.007). Low-flow bias is again worse without scaling. The
+  network's own input standardisation absorbs part of what the scaling does.
+- **The MLP against IDW, unscaled:** the MLP is slightly ahead on NSE ungauged (+0.010) and
+  tied for discontinued gauges, and behind on KGE in both cases. That is the same pattern as
+  with scaling.
+- **Gain against distance (Fig. S3):** the fitted IDW gain at 10 / 25 / 50 / 100 km is
+  +0.075 / +0.058 / +0.028 / +0.002 ungauged. With scaling it is
+  +0.085 / +0.067 / +0.033 / +0.006: same shape, about 0.01 lower near gauges.
+- Fig. 2 (error correlation against distance) is identical in both sets, since scaling a
+  basin's errors does not change their correlations.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. **The reported method is still the scaled one** (`figures/lstm/`).
+   `figures/lstm_noscale/` is a comparison set that stays alongside it. To regenerate it:
+   - `src/corrections/{idw,mlp}/0*.py --no-scale`;
+   - `figures/evaluate.py --method idw_noscale` and `--method mlp_noscale`;
+   - each `figures/make_lstm_*.py` and `make_method_*.py` with `--variant noscale`.
+2. **Everything from the entry below still applies.** The manuscript needs updating by the
+   author, nothing is committed, and HBV and hybrid still come from the old code. If the paper
+   justifies the scaling, this entry is the evidence: about +0.01 NSE and KGE for IDW, and
+   clearly lower low-flow bias.
+
+---
+
+## 2026-10-09 — Both corrections switched to scaled plain residuals, with settings chosen on the LSTM's own error measure
+
+**What I ran** — A change to the method itself, decided by the author after a series of scratch
+tests. Both corrections, the distance-weighted one (IDW) and the learned network (MLP), now:
+- transfer each neighbour's **plain error in flow, divided by that basin's typical flow
+  swing**, instead of the error in the logarithm of flow;
+- are tuned or trained on **NSE***, the error measure the LSTM itself was trained on, instead
+  of KGE.
+
+Everything was then rerun for the LSTM in both cases:
+- basins held out of training entirely ("ungauged");
+- basins trained on but scored on years held back from training ("discontinued gauges").
+
+The figures were redrawn from scratch. LSTM predictions were not touched (5 random starts
+averaged, as before). Repo at commit `73d65d8` plus uncommitted changes. Nothing is committed.
+
+Measures:
+- **NSE**: how closely predicted daily flow tracks measured flow. 1.0 is perfect, 0.0 is no
+  better than the long-term average.
+- **KGE**: combines three parts. *r* is how well the day-to-day timing matches. The
+  *variability ratio* is predicted ÷ measured spread of flows (1.0 is right; below 1 means the
+  hydrograph is damped). The third part is the ratio of mean flows.
+- **NSE***: mean squared daily error, with each basin's error divided by (that basin's
+  training-years flow standard deviation + 0.1 mm/day), so wet and dry basins count alike.
+- **Percent bias**: total predicted minus total measured flow, as a % of measured. It is
+  computed over all days and over days in the top 10 % (high), 30th–90th percentile (medium)
+  and bottom 30 % (low) of measured flow.
+
+*The new correction.* For target basin *i* on each day, with donors *j*:
+- s = the standard deviation of a basin's **LSTM-predicted** flow + 0.1 mm/day;
+- r_j = (predicted_j − measured_j) / s_j;
+- corrected_i = max(0, predicted_i − λ · s_i · Σ w_ij r_j).
+
+The weights *w* fall off with distance as before. s is taken from predictions, never
+observations. A first version used each basin's *observed* training-years spread, which reads
+an ungauged target's own gauge, and was rejected for that reason.
+
+Code changes:
+- `src/shared.py`: new `flow_scale`; the nearest-gauge reference rewritten in the same form;
+  the unused log floor `EPS` removed.
+- `src/corrections/idw/correction.py`: the new residual.
+- `tuning.py` and both IDW pipelines: NSE* is now the default objective.
+- `src/corrections/mlp/model.py`: rewritten as version 3 (below); both MLP pipelines pass σ
+  and record NSE*.
+- `figures/evaluate.py`: the residual correlations for Fig. 2 now use plain residuals, as the
+  author chose. Scaling cannot change a correlation, so scaled residuals would give the same.
+- The three method diagrams: new formulas.
+
+Archives, so the old method stays traceable:
+- `figures/lstm_logresidual_kge/`: the old figures, with the CSVs they were drawn from in
+  `data/`.
+- `runs/lstm/idw_logresidual_kge/` and `runs/lstm/mlp_logresidual_kge/`: the old corrected
+  flows.
+
+*Scratch tests behind the decision.* These ran from throwaway scripts outside the repo,
+reproducing the repo's search exactly; they matched the published settings to the last fold.
+1. **Log against plain residual, both chosen on KGE.**
+   - Median NSE was the same.
+   - The plain residual kept flow variability and cut peaks less, but improved fewer basins:
+     70 % against 80 %. Wet donors' errors in mm/day swamped dry targets: 5 % of basins lost
+     more than 0.2 NSE.
+   - Scaling each basin's error by its flow spread fixed most of that. Scaling by mean flow
+     instead of standard deviation gave nearly the same result.
+2. **Objective, with the log residual.** KGE, NSE, NSE* and plain mean squared error were
+   compared.
+   - The three squared-error objectives behaved alike.
+   - Against KGE, NSE was unchanged ungauged and 0.82 → 0.83 discontinued. KGE was about 0.01
+     lower, and peaks were cut slightly more.
+   - With the scaled plain residual, NSE* picked λ ≈ 0.75–0.8 instead of ≈ 1. That restored
+     the share of basins improved to 79 % / 82 % while keeping the KGE gain.
+3. **How many donors (K).** NSE* picks K = 39, the top of the grid, in every fold. A test up
+   to K = 149 showed the held-out score flat to ±0.001 in median NSE from K ≈ 17 onward, never
+   turning worse. So the grid was kept at 1–39. λ (0.75–0.8) and p (2) sit well inside their
+   ranges.
+4. **MLP loss, with the old MLP (version 2), ungauged, 7 folds.** Training on 1 − NSE instead
+   of 1 − KGE gave NSE +0.011 (95 % range +0.001 to +0.023) and KGE −0.021 (−0.035 to −0.005):
+   a trade, not a gain.
+
+*MLP version 3*, designed with the author and run in full. It takes 3K + 3 inputs per basin-day:
+- each donor's scaled residual (standardised on the training pool);
+- a flag for each missing donor day;
+- each donor's distance in km (standardised);
+- the target's predicted flow ÷ s_i (standardised), i.e. how far today's flow sits above zero
+  in its own units;
+- sin and cos of day of year.
+
+Network and training:
+- two hidden layers of 64 with ReLU activations and dropout 0.2;
+- output δ, linear, starting at zero; corrected = max(0, predicted − s_i · δ);
+- NSE* loss; K ∈ {1, 3, 5, 10, 15, 20, 30, 39} chosen on a held-back pool group by NSE*;
+- 5 random starts averaged; other settings as version 2.
+
+So IDW is a special case of it. Runtime on the laptop GPU: 82 minutes ungauged, 53 minutes
+discontinued gauges. The IDW takes about 1.5 minutes per case.
+
+*Isolation audits* (`.claude/rules/fold-isolation.md`), for both methods:
+- destroying the target fold's observations leaves the chosen settings and corrected flows
+  bit-identical;
+- destroying one basin's own record leaves its own corrected flow identical while moving its
+  neighbours' (the positive control).
+
+For the MLP, two training runs with identical inputs were also bit-identical.
+
+**What came out**
+
+Medians over 531 basins, ungauged / discontinued gauges:
+
+| | NSE | KGE | variability ratio | high-flow bias | low-flow bias | basins where NSE rises |
+|---|---|---|---|---|---|---|
+| LSTM, uncorrected | 0.69 / 0.76 | 0.70 / 0.79 | 0.92 / 0.94 | −9.9 / −6.9 % | +76 / +55 % | – |
+| IDW, old (log residual, KGE) | 0.75 / 0.82 | 0.71 / 0.83 | 0.90 / 0.93 | −12.8 / −8.6 % | +38 / +28 % | 80 / 79 % |
+| **IDW, new** | **0.75 / 0.83** | **0.73 / 0.84** | 0.92 / 0.95 | −9.2 / −6.0 % | +41 / +25 % | 79 / 82 % |
+| MLP version 2 (old) | 0.74 / 0.82 | 0.72 / 0.83 | 0.93 / 0.96 | −9.9 / −6.2 % | +33 / +18 % | 76 / 79 % |
+| **MLP version 3** | **0.75 / 0.83** | **0.71 / 0.82** | 0.88 / 0.90 | −12.0 / −9.0 % | +37 / +22 % | 82 / 85 % |
+
+Basin-by-basin differences in median score, with bootstrap 95 % ranges:
+
+| | NSE, ungauged | NSE, discontinued | KGE, ungauged | KGE, discontinued |
+|---|---|---|---|---|
+| new IDW minus old IDW | +0.002 [−0.008, +0.010] | +0.012 [+0.004, +0.019] | +0.013 [+0.002, +0.023] | +0.014 [+0.007, +0.025] |
+| MLP version 3 minus new IDW | +0.005 [−0.002, +0.016] | −0.002 [−0.008, +0.005] | −0.016 [−0.023, −0.002] | −0.018 [−0.025, −0.012] |
+
+- **The new IDW against the old:**
+  - Ungauged, NSE cannot be told apart. Discontinued, NSE rises from 0.82 to 0.83, a small
+    but clear gain.
+  - KGE rises by about 0.01 in both cases, which makes the weak ungauged KGE gain more
+    visible: 0.70 → 0.73, against 0.70 → 0.71 before.
+  - It does this by keeping flow variability, so peaks are no longer pushed down.
+  - Settings: K = 39, p = 2, λ = 0.75 or 0.80 in every fold of both cases.
+- **The MLP against the IDW: still no better.**
+  - NSE cannot be told apart in either case.
+  - KGE is about 0.02 lower in both, a real difference.
+  - The network damps the hydrograph (variability ratio 0.88 / 0.90) and cuts peaks, as
+    squared-error training tends to do. It does improve slightly more basins (82 / 85 %).
+  - Its chosen K varies from 1 to 39 across folds; the validation surface is flat.
+- **Error structure (Fig. 2) with plain residuals:** the fitted correlation is 0.48 at 25 km,
+  0.19 at 100 km and 0.01 at 500 km, against 0.54 / 0.29 / 0.10 for log residuals. Plain errors
+  are shared more locally.
+- **Gain against distance (Fig. S3):** the fitted NSE gain at 10 / 25 / 50 / 100 km is
+  +0.085 / +0.067 / +0.033 / +0.006 ungauged and +0.093 / +0.070 / +0.032 / +0.012
+  discontinued. That is essentially unchanged.
+- **Basins that lose NSE now behave differently.** The previous entry found that, under the old
+  method, losing basins lost on flood peaks. With the new correction, the losing basins
+  (114 ungauged, 95 discontinued) see their high-flow bias *improve* (−5.3 → −1.2 % ungauged).
+  The peak-cutting mechanism belonged to the log residual. Why the remaining losses happen has
+  not been re-analysed.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. **The manuscript is now out of date; the author edits it.** Not changed here. Every result
+   number comes from the old method. The places to change:
+   - §2.2.1, §2.2.2 and the Fig. 1 caption: residual form, scaling and NSE*.
+   - Fig. 2 correlations (0.48 / 0.19 / 0.01).
+   - Table 1 and the abstract (ungauged KGE is now 0.73).
+   - Table S2: K = 39, p = 2, λ 0.75–0.80 everywhere; MLP K per fold as in
+     `runs/lstm/mlp/*/params.csv`.
+   - §3.3's distance and loss numbers.
+   - The Fig. S3 caption, already noted in the entry below.
+   - The MLP comparison text: it now ties on NSE and loses on KGE.
+
+   Fresh numbers are in `figures/metrics_*_lstm_*.csv` and `figures/run_info.json`.
+2. **Nothing is committed.** Review the diff (`src/`, `figures/`, `CLAUDE.md`, this log) and
+   commit when satisfied.
+3. **HBV and hybrid results still come from the old code.** By the author's earlier decision
+   they are not rerun. Their stored corrections use the log residual and an older settings
+   search, so they are not comparable with the LSTM's new numbers.
+4. **The previous entry's flood-peak finding applies to the old method only.**
+   `figures/lstm/loss_bias.png` (unnumbered, not in the paper) has been redrawn under the new
+   method. Re-analysing why the remaining losses happen is optional.
+
+---
+
+## 2026-10-09 — Where the distance-weighted correction makes things worse, and a redrawn gain-against-distance figure
+
+**What I ran** — No new runs. This is an analysis of the saved results of the
+distance-weighted correction (IDW: each day, the LSTM's errors at the nearest gauges are
+averaged with weights that fall off with distance, and a fraction of that average is removed
+from the target basin's prediction). It covers the LSTM only, in both cases:
+- basins held out of training entirely ("ungauged");
+- basins trained on but scored on years held back from training ("discontinued gauges").
+
+Inputs were `runs/lstm/idw/{ungauged,gauged}/predictions.npz` and the metrics files
+`figures/metrics_*_lstm_*.csv`. Repo at commit `73d65d8`, plus the uncommitted figure work
+listed in `git status`. Seconds of CPU time.
+
+Changes in the repo:
+- `figures/make_lstm_gain_distance.py` was rewritten. Fig. S3 is now drawn like Fig. 2:
+  ungauged on top, discontinued gauges below, one grey dot per basin, and a smoothed curve
+  (LOESS, the same local-regression helper Fig. 2 uses, 30 km window, fitted out to 150 km).
+- `figures/make_lstm_loss_bias.py` was added. It draws `figures/lstm/loss_bias.png`, which is
+  deliberately not numbered (see What's next).
+
+The exploratory part ran from throwaway scripts outside the repo. The numbers below are its
+record.
+
+Measures:
+- **NSE** measures how closely predicted daily flow tracks measured flow: 1.0 is a perfect
+  match, 0.0 is no better than the long-term average.
+- **Percent bias** is total predicted minus total observed flow, as a percentage of observed.
+  It is computed over all days and over days whose observed flow is in the top 10 % (high), the
+  30th–90th percentiles (medium) or the bottom 30 % (low).
+- A basin "loses" if its NSE is lower after the correction than before.
+
+**What came out**
+
+*1. Gain against distance to the nearest gauge the correction may use (redrawn Fig. S3).* The
+smoothed change in NSE at a given distance:
+
+| distance to nearest donor gauge | 10 km | 25 km | 50 km | 100 km |
+|---|---|---|---|---|
+| ungauged | 0.085 better | 0.064 better | 0.035 better | 0.002 better |
+| discontinued gauges | 0.090 better | 0.067 better | 0.029 better | 0.003 worse |
+
+The benefit is gone by about 80–100 km in both cases. Held-out basins can only use the other
+folds' gauges as donors; discontinued gauges can use any other gauge.
+
+*2. Which basins lose.*
+- 104 of 531 ungauged basins and 109 of 531 discontinued gauges lose NSE. The median loss is
+  0.03 in both.
+- 32 and 43 of these lose less than 0.02. 18 and 16 lose more than 0.1.
+
+Share of basins that lose, in the lowest and highest fifth of each candidate factor
+(ungauged / discontinued):
+
+| factor | lowest fifth | highest fifth |
+|---|---|---|
+| distance to nearest donor gauge | 6 % / 4 % | 41 % / 48 % |
+| how much the donors' daily errors disagree with each other | 13 % / 10 % | 37 % / 44 % |
+| difference in climate and terrain from the donors | 11 % / 15 % | 29 % / 30 % |
+| LSTM NSE at the basin itself | 21 % / 13 % | 19 % / 27 % |
+| LSTM NSE at its donors | 24 % / 22 % | 20 % / 18 % |
+
+- Distance is the driver.
+- Donor disagreement adds nothing once distance is held fixed (rank correlation with the
+  change in NSE: 0.00 / 0.03).
+- Climate and terrain difference adds little once distance is held fixed (−0.10 / −0.09).
+- Climate and terrain difference was measured on five attributes: aridity, snow fraction,
+  elevation, slope and the logarithm of area.
+- A basin's own NSE, or its donors' NSE, does not decide whether it loses. Holding distance
+  fixed, basins the LSTM models poorly gain *more*, because they have more room to improve
+  (rank correlation −0.42 / −0.54).
+
+For held-out basins, the donors' NSE was taken from that fold's model at its training basins.
+Those are the errors the correction actually uses.
+
+*3. Losses with a donor close by.* Within 20 km of a donor:
+- Only 7 of 131 ungauged basins and 6 of 141 discontinued gauges lose. Their LSTM NSE was
+  already high (median 0.82 / 0.88), so most of these losses are small.
+- They lose when their daily errors do not move with the correction the donors supply.
+- Splitting all basins into thirds by distance and by that correlation, and averaging the two
+  cases:
+  - a near basin whose errors track its donors' loses 2 % of the time;
+  - a near basin whose errors do not track them loses 15 % of the time;
+  - far basins lose about 40 % of the time either way.
+- This correlation needs the target's own measured flow, so it explains losses after the
+  fact. It cannot flag them in advance.
+
+*4. How they lose: flood peaks.*
+- Of the NSE lost by the losing basins, 83 % (ungauged) and 94 % (discontinued) falls on the
+  top 10 % of flow days.
+- 62 % and 69 % of losing basins have a *smaller* error on the logarithm of daily flow after
+  correction. That is the quantity the correction works on. NSE falls anyway because it is
+  dominated by peaks.
+
+Median percent bias in the losing basins, before and after correction
+(`figures/lstm/loss_bias.png`):
+
+| | overall | high flows | medium flows | low flows |
+|---|---|---|---|---|
+| ungauged (104 basins), LSTM | +2.3 % | −14.7 % | +24.7 % | +115.0 % |
+| ungauged, after IDW | −7.1 % | −18.4 % | +9.6 % | +62.9 % |
+| discontinued (109 basins), LSTM | +5.3 % | −8.1 % | +17.9 % | +81.1 % |
+| discontinued, after IDW | −1.7 % | −11.6 % | +8.7 % | +39.7 % |
+
+- **Peaks are pushed further down.** High-flow bias gets worse in 78 % / 73 % of the losing
+  basins.
+- **Medium and low flows still improve.** Low-flow bias roughly halves even in these basins.
+- **Overall bias overshoots.** Losing basins had little overall bias to start with (+2 % / +5 %,
+  against +8 % in the basins that gain), so removing the neighbours' over-prediction turns
+  them negative.
+- **Peaks are also cut in the basins that gain**, but less: high-flow bias goes from −9.2 to
+  −12.4 % and from −6.2 to −8.3 %. The difference is one of degree: losing basins start with
+  peaks more underestimated.
+
+**What it means**
+<!-- NEEDS YOUR REVIEW -->
+
+**What's next**
+1. **Kept out of the paper, by the author's decision.** `figures/lstm/loss_bias.png` is not
+   numbered and not cited in `doc/manuscript.md`. If it is revisited, a candidate sentence for
+   §3.3's loss paragraph: "Most of these losses come from flood peaks: in basins where NSE falls,
+   the top 10 % of flow days account for over 80 % of the loss, while low-flow bias still
+   roughly halves (Fig. S4)."
+2. **Manuscript text the author may want to update.** The manuscript is not edited by Claude.
+   - Fig. S3's caption still describes the old quartile line and rank correlation. Suggested
+     replacement: "Change in NSE after the IDW correction against the distance to the nearest
+     donor gauge, at (a) ungauged basins and (b) discontinued gauges. Each dot is a basin; the
+     line is a LOESS fit, shown out to 150 km, beyond which few basins remain. Values beyond
+     the vertical axis limits are drawn at the limits."
+   - §3.3's loss paragraph (57 km against 32 km, "about 40 %" of the farthest quarter) quotes
+     the ungauged case only; for discontinued gauges it is 58 km against 30 km and 45 %.
+   - "Farther than about 60 km" fits ungauged (58 km) but not discontinued gauges (53 km).
+3. Still open from the entry below: tune on 1995–2002 and score on 2003–2010, to check whether
+   tuning and scoring on the same years flatters the results.
+
+---
+
 ## 2026-10-02 — Quick test: telling the learned correction about the target basin's climate and terrain does not help
 
 **What I ran** — A one-fold check of whether the neural-network correction (version 2, described

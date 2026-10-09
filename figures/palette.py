@@ -57,6 +57,18 @@ US_STATES_GEOJSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath
                                  "data", "us_states_conus.geojson")
 
 
+def figure_variant():
+    """(method suffix, output folder) for an LSTM figure run: ("", "lstm") for the reported
+    method, ("_noscale", "lstm_noscale") with --variant noscale -- the comparison whose residuals
+    are not divided by each basin's flow scale. Read from the command line, so every module a
+    figure script imports agrees on it."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--variant", choices=["noscale"])
+    v = ap.parse_known_args()[0].variant
+    return (f"_{v}", f"lstm_{v}") if v else ("", "lstm")
+
+
 def model_label(model):
     return MODEL_LABEL.get(model, model.capitalize())
 

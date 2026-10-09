@@ -1,26 +1,31 @@
 """The learned neighbour-residual correction: a small MLP reads the K nearest gauges' errors
-today, the season, and the target's own simulated flow, and predicts today's correction.
+today, their distances, the season, and where the target's flow sits in its own range, and
+predicts today's correction.
 
-    delta_i(t) = f( r_1(t)..r_K(t), missing_1..K(t), log d_1..K, sin/cos doy(t), log q_sim_i(t) )
-    q_i(t)     = (q_sim_i(t) + eps) * exp(delta_i(t)) - eps
+    r_j(t)     = (q_sim_j(t) - q_obs_j(t)) / s_j                  s = flow_scale, SD of predicted flow
+    delta_i(t) = f( r_1..r_K(t), missing_1..K(t), d_1..K, q_sim_i(t) / s_i, sin/cos doy(t) )
+    q_i(t)     = max(0, q_sim_i(t) - s_i * delta_i(t))
 
-r_j is donor j's log residual, exactly as in IDW. IDW is the special case delta = -lam *
-sum_j w_j r_j, with weights fixed by distance alone; here the rule can change with the season
-and the flow. Trained on 1 - KGE, the objective IDW's settings are selected on. K is the only
-setting searched; everything else below is fixed in advance and never tuned.
+r_j is donor j's scaled residual and the output is applied exactly as in IDW, which is the special
+case delta = lam * sum_j w_j r_j with weights fixed by distance alone; here the rule can change
+with the season and the flow. Trained on NSE*, the objective IDW's settings are selected on. K is
+the only setting searched; everything else below is fixed in advance and never tuned.
 
 Each fold (ungauged) or group (gauged) is handled like IDW's search: the network trains only on
 the pool -- the basins outside the fold -- each pool basin drawing on every other pool basin as
 a donor, itself excluded. One pool group is kept back to choose K. The fold's basins are then
 corrected from the pool (ungauged), or from every other basin (gauged: one gauge dark at a time).
+
+`scaled=False` (the pipelines' --no-scale) sets every s to 1: residuals, the target-flow input
+and delta are then all in plain mm/day.
 """
 import numpy as np
 import torch
 import torch.nn as nn
 
-from shared import EPS, kge_per_basin
+from shared import SCALE_FLOOR, flow_scale, nse_per_basin
 
-K_GRID = (1, 3, 5, 10, 15, 20, 30)
+K_GRID = (1, 3, 5, 10, 15, 20, 30, 39)
 SEEDS = 5
 HIDDEN = 64
 DROPOUT = 0.2
@@ -32,14 +37,12 @@ BATCH_BASINS = 16
 # ~0.01 from one pass to the next, so its best pass is mostly noise. Chosen once on validation
 # basins (20, 40 and 80 compared), then frozen.
 EPOCHS = 40
-# Caps the daily correction at a factor of e^5 either way, so exp() cannot overflow while the
-# network is still untrained. IDW's own corrections stay far inside this.
-DELTA_MAX = 5.0
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def splits(labels, dist, fold, k, cell):
-    """{train, val, held}: (targets, donors, log distance) on DEVICE, donors nearest first."""
+    """{train, val, held}: (targets, donors, standardised distance) on DEVICE, donors nearest
+    first. Distances are standardised on the training split's own donor distances."""
     pool = labels != fold
     val_group = (fold + 1) % len(set(labels))
     rows = {"train": np.flatnonzero(pool & (labels != val_group)),
@@ -54,75 +57,78 @@ def splits(labels, dist, fold, k, cell):
         donors = np.argsort(d, axis=1)[:, :k]
         d = np.take_along_axis(d, donors, 1)
         assert np.isfinite(d).all(), f"fewer than {k} allowed donors"
-        out[name] = (torch.as_tensor(targets, device=DEVICE),
-                     torch.as_tensor(donors, device=DEVICE),
-                     torch.as_tensor(np.log(d / 100.0), dtype=torch.float32, device=DEVICE))
-    return out, val_group
+        out[name] = (targets, donors, d)
+    mu, sd = out["train"][2].mean(), out["train"][2].std()
+    return {name: (torch.as_tensor(t, device=DEVICE), torch.as_tensor(dn, device=DEVICE),
+                   torch.as_tensor((d - mu) / sd, dtype=torch.float32, device=DEVICE))
+            for name, (t, dn, d) in out.items()}, val_group
 
 
-def context(sim, obs, readable, pool, doy):
-    """The tensors every K shares: donor log residuals for `readable` rows only, every basin's
-    log simulated flow standardised on the pool, and the season."""
-    res = np.full(sim.shape, np.nan, np.float32)
-    res[readable] = np.log(np.clip(sim[readable], 0, None) + EPS) - np.log(obs[readable] + EPS)
-    logq = np.log(np.clip(sim, 0, None) + EPS)
-    logq = (logq - logq[pool].mean()) / logq[pool].std()
+def context(sim, obs, readable, pool, doy, scaled=True):
+    """The tensors every K shares: donor scaled residuals for `readable` rows only and every
+    basin's flow in its own units, both standardised on the pool; the season; and each basin's
+    scale s."""
+    s = flow_scale(sim, scaled)
+    res = np.full(sim.shape, np.nan)
+    res[readable] = (np.clip(sim[readable], 0, None) - obs[readable]) / s[readable, None]
+    on_pool = res[pool & readable]
+    res = (res - np.nanmean(on_pool)) / np.nanstd(on_pool)
+    own = np.clip(sim, 0, None) / s[:, None]
+    own = (own - own[pool].mean()) / own[pool].std()
     angle = 2 * np.pi * doy / 365.25
     season = np.stack([np.sin(angle), np.cos(angle)])
     return tuple(torch.as_tensor(a, dtype=torch.float32, device=DEVICE)
-                 for a in (res, logq, season))
+                 for a in (res, own, season, s))
 
 
-def features(ctx, targets, donors, logd):
+def features(ctx, targets, donors, dist):
     """[B, T, 3K+3] inputs for a batch of targets, gathered on the fly."""
-    res, logq, season = ctx
+    res, own, season, _ = ctx
     r = res[donors]                                   # [B, K, T]
     missing = torch.isnan(r)
     B, K, T = r.shape
-    x = torch.cat([torch.nan_to_num(r), missing.float(), logd[:, :, None].expand(B, K, T),
-                   logq[targets][:, None], season[None].expand(B, 2, T)], 1)
+    x = torch.cat([torch.nan_to_num(r), missing.float(), dist[:, :, None].expand(B, K, T),
+                   own[targets][:, None], season[None].expand(B, 2, T)], 1)
     return x.transpose(1, 2)
 
 
 class MLP(nn.Module):
     def __init__(self, k):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(3 * k + 3, HIDDEN), nn.SiLU(), nn.Dropout(DROPOUT),
-                                 nn.Linear(HIDDEN, HIDDEN), nn.SiLU(), nn.Dropout(DROPOUT),
+        self.net = nn.Sequential(nn.Linear(3 * k + 3, HIDDEN), nn.ReLU(), nn.Dropout(DROPOUT),
+                                 nn.Linear(HIDDEN, HIDDEN), nn.ReLU(), nn.Dropout(DROPOUT),
                                  nn.Linear(HIDDEN, 1))
         # Zero output layer: training starts from no correction at all, IDW's lambda = 0.
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
 
-    def forward(self, x, sim):
+    def forward(self, x, sim, s):
         """[B, T] corrected flow, mm/day."""
-        delta = DELTA_MAX * torch.tanh(self.net(x).squeeze(-1))
-        return torch.clamp((torch.clamp(sim, min=0) + EPS) * torch.exp(delta) - EPS, min=0)
+        delta = self.net(x).squeeze(-1)
+        return torch.clamp(torch.clamp(sim, min=0) - s[:, None] * delta, min=0)
 
 
-def kge(sim, obs):
-    """[B] KGE per basin over its reported days -- shared.kge_per_basin, in torch."""
+def nse_star(sim, obs, sigma):
+    """[B] NSE* loss per basin over its reported days -- tuning._nse_star, in torch. `sigma` is
+    each basin's training-period flow SD, read only for training-pool basins."""
     m = ~torch.isnan(obs)
-    n = m.sum(1)
-    o, s = torch.where(m, obs, 0.0), torch.where(m, sim, 0.0)
-    do, ds = (o - (o.sum(1) / n)[:, None]) * m, (s - (s.sum(1) / n)[:, None]) * m
-    var_o, var_s, cov = (do ** 2).sum(1), (ds ** 2).sum(1), (do * ds).sum(1)
-    r = cov / torch.sqrt(var_o * var_s)
-    alpha, beta = torch.sqrt(var_s / var_o), s.sum(1) / o.sum(1)
-    return 1 - torch.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+    err = torch.where(m, ((sim - torch.nan_to_num(obs)) / (sigma[:, None] + SCALE_FLOOR)) ** 2, 0.0)
+    return err.sum(1) / m.sum(1)
 
 
 @torch.no_grad()
 def correct(model, sim, ctx, split, chunk=64):
     """[n_target, T] corrected flow for one split, as numpy."""
     model.eval()
-    targets, donors, logd = split
+    targets, donors, dist = split
+    s = ctx[3]
     return torch.cat([model(features(ctx, targets[i:i + chunk], donors[i:i + chunk],
-                                     logd[i:i + chunk]), sim[targets[i:i + chunk]])
+                                     dist[i:i + chunk]), sim[targets[i:i + chunk]],
+                            s[targets[i:i + chunk]])
                       for i in range(0, len(targets), chunk)]).cpu().numpy()
 
 
-def train(seed, sim, obs, ctx, split, epochs=EPOCHS):
+def train(seed, sim, obs, sigma, ctx, split, epochs=EPOCHS):
     """One seed, `epochs` passes over the training basins, learning rate cosine-decayed to 0."""
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
@@ -134,9 +140,9 @@ def train(seed, sim, obs, ctx, split, epochs=EPOCHS):
     for _ in range(epochs):
         model.train()
         for b in np.array_split(rng.permutation(n), n_batches):
-            targets, donors, logd = (a[torch.as_tensor(b, device=DEVICE)] for a in split)
-            loss = (1 - kge(model(features(ctx, targets, donors, logd), sim[targets]),
-                            obs[targets])).mean()
+            targets, donors, dist = (a[torch.as_tensor(b, device=DEVICE)] for a in split)
+            out = model(features(ctx, targets, donors, dist), sim[targets], ctx[3][targets])
+            loss = nse_star(out, obs[targets], sigma[targets]).mean()
             opt.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), CLIP_NORM)
@@ -145,7 +151,8 @@ def train(seed, sim, obs, ctx, split, epochs=EPOCHS):
     return model
 
 
-def run_fold(sim, obs, labels, dist, fold, cell, doy, k_grid, seeds, epochs=EPOCHS, log=print):
+def run_fold(sim, obs, sigma, labels, dist, fold, cell, doy, k_grid, seeds, epochs=EPOCHS,
+             scaled=True, log=print):
     """Train every K x seed for one fold, choose K on the validation group, and return the
     held-out basins' corrected flow (the seeds' average at that K) with the bookkeeping.
 
@@ -153,22 +160,26 @@ def run_fold(sim, obs, labels, dist, fold, cell, doy, k_grid, seeds, epochs=EPOC
     in the gauged cell only as donor inputs for their neighbours once training is done.
     """
     pool = labels != fold
-    ctx = context(sim, obs, pool if cell == "ungauged" else np.ones_like(pool), pool, doy)
+    ctx = context(sim, obs, pool if cell == "ungauged" else np.ones_like(pool), pool, doy, scaled)
     sim_t = torch.as_tensor(sim, device=DEVICE)
     obs_t = torch.as_tensor(np.where(pool[:, None], obs, np.nan), device=DEVICE)
+    sigma_t = torch.as_tensor(np.where(pool, sigma, np.nan), dtype=torch.float32, device=DEVICE)
     val_score, held_runs, tuning = {}, {}, []
     for k in k_grid:
         split, val_group = splits(labels, dist, fold, k, cell)
         val_runs, held_runs[k] = [], []
         for s in range(seeds):
-            model = train(s, sim_t, obs_t, ctx, split["train"], epochs)
+            model = train(s, sim_t, obs_t, sigma_t, ctx, split["train"], epochs)
             val_runs.append(correct(model, sim_t, ctx, split["val"]))
             held_runs[k].append(correct(model, sim_t, ctx, split["held"]))
-        val_obs = obs[split["val"][0].cpu().numpy()]
-        val_score[k] = np.nanmedian(kge_per_basin(np.mean(val_runs, 0), val_obs))
-        tuning.append(dict(label=fold, k=k, score=val_score[k], n_basins=len(val_obs)))
-        log(f"  {cell} {fold} K={k:>2}: validation KGE {val_score[k]:.3f} ({seeds} seeds)")
-    best = max(val_score.values())
+        v = split["val"][0].cpu().numpy()
+        val_mean = np.mean(val_runs, 0)
+        val_score[k] = float(np.nanmean(np.nanmean(
+            ((val_mean - obs[v]) / (sigma[v, None] + SCALE_FLOOR)) ** 2, 1)))
+        tuning.append(dict(label=fold, k=k, score=val_score[k], n_basins=len(v)))
+        log(f"  {cell} {fold} K={k:>2}: validation NSE* loss {val_score[k]:.4f}, median NSE "
+            f"{np.nanmedian(nse_per_basin(val_mean, obs[v])):.3f} ({seeds} seeds)", flush=True)
+    best = min(val_score.values())
     k = min(c for c, v in val_score.items() if v == best)
     for row in tuning:
         row["selected"] = row["k"] == k

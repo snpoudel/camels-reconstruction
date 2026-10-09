@@ -8,12 +8,6 @@ every method the same way.
 import numpy as np
 import pandas as pd
 
-# mm/day. Keeps log() finite on the 2.8% of days that report exactly zero flow, and is small
-# enough to be hydrologically negligible. A far smaller floor (1e-5) makes those days produce
-# log-residuals near -11 and costs ~0.005 NSE.
-EPS = 0.01
-
-
 def great_circle_km(lat, lon):
     la, lo = np.radians(lat), np.radians(lon)
     h = (np.sin((la[:, None] - la[None, :]) / 2) ** 2
@@ -21,15 +15,29 @@ def great_circle_km(lat, lon):
     return 2 * 6371.0 * np.arcsin(np.sqrt(np.clip(h, 0, 1)))
 
 
-def nearest_gauge(sim_target, sim_donor, obs_donor, dist_km, eps=EPS):
+# mm/day. Floors each basin's scale so a near-dry basin's tiny SD cannot blow its residuals up.
+SCALE_FLOOR = 0.1
+
+
+def flow_scale(sim, scaled=True):
+    """[n] each basin's error scale: the SD of its *predicted* flow over the period, plus a
+    floor. Read from the model's output, never from observations, so an ungauged target's own
+    gauge is never touched. `scaled=False` is the unscaled comparison (--no-scale): every s is
+    1, so errors move between basins in plain mm/day."""
+    if not scaled:
+        return np.ones(len(sim))
+    return np.nanstd(np.clip(sim, 0, None), axis=1) + SCALE_FLOOR
+
+
+def nearest_gauge(sim_target, sim_donor, obs_donor, dist_km, scaled=True):
     """The parameter-free reference every method is reported against: the single nearest
-    donor's log error, applied in full (IDW at K=1, lambda=1). No correction on a day that donor
-    did not report."""
+    donor's scaled error, applied in full (IDW at K=1, lambda=1). No correction on a day that
+    donor did not report."""
     j = np.argmin(dist_km, axis=1)
-    res = np.log(np.clip(sim_donor[j], 0, None) + eps) - np.log(obs_donor[j] + eps)
+    sd = flow_scale(sim_donor[j], scaled)
     # float64, as IDW's arithmetic is, so this matches its K=1, lambda=1 output bit for bit.
-    R = np.nan_to_num(res).astype(np.float64)
-    return np.clip(np.exp(np.log(np.clip(sim_target, 0, None) + eps) - R) - eps, 0, None)
+    R = np.nan_to_num((np.clip(sim_donor[j], 0, None) - obs_donor[j]) / sd[:, None]).astype(np.float64)
+    return np.clip(np.clip(sim_target, 0, None) - flow_scale(sim_target, scaled)[:, None] * R, 0, None)
 
 
 def nse_per_basin(sim, obs):

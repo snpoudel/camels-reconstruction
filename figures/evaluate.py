@@ -25,7 +25,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from palette import BENCHMARK, model_label  # noqa: E402
-from shared import (CACHE_DIR, EPS, FOLDS_CSV, basin_ids, distance_matrix,  # noqa: E402
+from shared import (CACHE_DIR, FOLDS_CSV, basin_ids, distance_matrix,  # noqa: E402
                     fold_labels, kge_per_basin, load_mean, observed, test_period_label)
 
 CELLS = ("gauged", "ungauged")
@@ -226,8 +226,9 @@ def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
 
 
 def error_structure(model, cell="gauged"):
-    """Correlation of daily log residuals between basin pairs against gauge distance, raw and
-    deseasonalised. Uses the gauged cell, every trained-on basin, for the densest picture.
+    """Correlation of daily residuals (predicted minus observed flow, mm/day) between basin pairs
+    against gauge distance, raw and deseasonalised. These are the errors the correction transfers;
+    its per-basin scaling cannot change a correlation, so scaled residuals would give the same. Uses the gauged cell, every trained-on basin, for the densest picture.
 
     Reads the model's own uncorrected predictions, so it is the same whichever correction
     method is being evaluated. Restricted to basins the model scored: hybrid's 106 untrained
@@ -236,7 +237,7 @@ def error_structure(model, cell="gauged"):
     pred, test_t, _ = load_mean(f"runs/{model}/{cell}/_mean/predictions.npz")
     scored = np.flatnonzero(np.isfinite(pred).any(1))
     obs = observed(test_t)[scored]
-    res = np.log(np.clip(pred[scored], 0, None) + EPS) - np.log(obs + EPS)
+    res = np.clip(pred[scored], 0, None) - obs
     doy = pd.to_datetime(np.load(f"{CACHE_DIR}/dates.npy")[test_t]).dayofyear.to_numpy() - 1
     dist = distance_matrix()[np.ix_(scored, scored)]
 

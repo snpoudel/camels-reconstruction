@@ -1,11 +1,12 @@
 """Maps of the LSTM's NSE and how much each correction changes it, both cells.
 
-    python figures/make_lstm_nse_map.py   # -> lstm/04_nse_maps.png
+    python figures/make_lstm_nse_map.py   # -> lstm/fig04_nse_maps.{png,pdf}
 
-One row per cell (ungauged, gauged). Column 1 is the uncorrected LSTM's NSE on the bins of
+One row per cell (ungauged, gauged -- labelled "discontinued" as in the manuscript). Column 1 is the uncorrected LSTM's NSE on the bins of
 make_nse_map.py, in purple; columns 2 and 3 are the change in NSE after the IDW and the MLP
 correction, on one binned diverging scale shared by all four. Its bins split exactly at 0, so
-every orange dot is one of the title's "% sites improved".
+every orange dot counts toward the panel's "% improved". No lat/lon axes: the state outlines
+are the reference.
 """
 import os
 import sys
@@ -21,13 +22,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
 from make_lstm_boxplots import series  # noqa: E402
-from palette import BLUE, INK, LABEL, MUTE, ORANGE, PANEL, SEQUENTIAL_ALT, TITLE  # noqa: E402
-from palette import draw_us_outline, panel_letter, style  # noqa: E402
+from palette import BLUE, INK, LABEL, MUTE, ORANGE, PANEL, SEQUENTIAL_ALT  # noqa: E402
+from palette import figure_variant  # noqa: E402
+from palette import draw_us_outline, panel_letter  # noqa: E402
 from shared import BASINS_CSV  # noqa: E402
 
+SUFFIX, OUT_DIR = figure_variant()
+
 CELLS = ["ungauged", "gauged"]
+ROW_LABEL = {"ungauged": "Ungauged", "gauged": "Discontinued"}
 CORRECTIONS = ["LSTM + IDW", "LSTM + MLP"]
-WIDTH, HEIGHT = 10.6, 5.5
+COL_TITLE = ["LSTM NSE", "ΔNSE after IDW", "ΔNSE after MLP"]
+WIDTH, HEIGHT = 7.1, 3.7
 
 
 def colorbar(fig, sc, rect, label, **kw):
@@ -55,14 +61,14 @@ def main():
 
     fig, axes = plt.subplots(2, 3, figsize=(WIDTH, HEIGHT), sharex=True, sharey=True)
     for row, cell in enumerate(CELLS):
-        panels = [(nse[cell], f"{cell.capitalize()}, LSTM NSE ({len(nse[cell])} sites)")]
+        panels = [(nse[cell], None)]
         for name in CORRECTIONS:
             g = gains[cell, name]
-            panels.append((g, f"ΔNSE, {name} ({100 * (g > 0).mean():.0f}% sites improved)"))
+            panels.append((g, f"{100 * (g > 0).mean():.0f}% improved"))
             print(f"  {cell:<9} {name}: {int((g > 0).sum())}/{len(g)} improved, "
                   f"median change {g.median():+.2f}")
 
-        for col, (v, title) in enumerate(panels):
+        for col, (v, note) in enumerate(panels):
             ax = axes[row][col]
             lat = loc.loc[v.index, "gauge_lat"].to_numpy()
             lon = loc.loc[v.index, "gauge_lon"].to_numpy()
@@ -71,30 +77,29 @@ def main():
             if col == 0:
                 order = np.argsort(-v)  # poorest basins on top, so they aren't buried
                 nse_sc = ax.scatter(lon[order], lat[order], c=v[order], cmap=nse_cmap,
-                                    norm=nse_norm, s=9, edgecolor=MUTE, linewidth=0.3, zorder=3)
-                ax.set_ylabel("latitude (°N)", color=INK, fontsize=LABEL)
+                                    norm=nse_norm, s=5, edgecolor=MUTE, linewidth=0.2, zorder=3)
+                ax.text(-0.04, 0.5, ROW_LABEL[cell], transform=ax.transAxes, rotation=90,
+                        ha="right", va="center", color=INK, fontsize=LABEL - 1)
             else:
                 order = np.argsort(np.abs(v))  # biggest changes drawn on top
                 change_sc = ax.scatter(lon[order], lat[order], c=v[order], cmap=change_cmap,
-                                       norm=change_norm, s=9, edgecolor=MUTE, linewidth=0.25,
+                                       norm=change_norm, s=5, edgecolor=MUTE, linewidth=0.15,
                                        zorder=3)
+                ax.text(0.02, 0.02, note, transform=ax.transAxes, ha="left", va="bottom",
+                        color=INK, fontsize=LABEL - 2.5)
             ax.set_aspect(1 / np.cos(np.radians(lat.mean())))
-            if row == 1:
-                ax.set_xlabel("longitude (°E)", color=INK, fontsize=LABEL)
-            ax.set_title(f"{panel_letter(3 * row + col)} {title}", color=INK, fontsize=PANEL - 1.5,
-                         loc="left", pad=5)
-            style(ax, grid=False)
+            ax.set_title(f"{panel_letter(3 * row + col)} {COL_TITLE[col]}", color=INK,
+                         fontsize=PANEL - 2, loc="left", pad=2)
+            ax.set_axis_off()
 
-    fig.suptitle("LSTM NSE, and where each correction changes it", fontsize=TITLE, color=INK,
-                 x=0.012, ha="left", y=0.995)
     # Margins in inches, set by hand: tight_layout sizes the slots before the fixed map aspect
     # shrinks them (as in make_change_map.py).
-    fig.subplots_adjust(left=0.065, right=0.995, top=1 - 0.55 / HEIGHT, bottom=1.3 / HEIGHT,
-                        wspace=0.04, hspace=0.32)
+    fig.subplots_adjust(left=0.035, right=0.995, top=1 - 0.2 / HEIGHT, bottom=0.75 / HEIGHT,
+                        wspace=0.03, hspace=0.12)
     for ax in axes[1]:
         ax.apply_aspect()  # so get_position() gives where the map is drawn, not its slot
     first, second, third = (ax.get_position() for ax in axes[1])
-    bar_y, bar_h = 0.5 / HEIGHT, 0.1 / HEIGHT
+    bar_y, bar_h = 0.42 / HEIGHT, 0.08 / HEIGHT
     colorbar(fig, nse_sc, (first.x0 + 0.1 * first.width, bar_y, 0.8 * first.width, bar_h),
              "NSE, Nash-Sutcliffe efficiency", ticks=bounds, spacing="uniform")
     span = third.x1 - second.x0
@@ -102,10 +107,11 @@ def main():
              "change in NSE, corrected minus LSTM", ticks=change_bounds,
              spacing="uniform")
 
-    os.makedirs(f"{HERE}/lstm", exist_ok=True)
-    out = f"{HERE}/lstm/04_nse_maps.png"
-    fig.savefig(out, dpi=300, facecolor="white")
-    print(f"-> {out}")
+    os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
+    stem = f"{HERE}/{OUT_DIR}/fig04_nse_maps"
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{stem}.{ext}", dpi=300, facecolor="white")
+    print(f"-> {stem}.png/.pdf")
 
 
 if __name__ == "__main__":

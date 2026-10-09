@@ -1,0 +1,52 @@
+{
+ "lstm": {
+  "gauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  },
+  "ungauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  }
+ },
+ "hybrid": {
+  "gauged": {
+   "n_basins": 425,
+   "n_seeds": 1,
+   "n_folds": 7,
+   "test_period": "1980-1995"
+  },
+  "ungauged": {
+   "n_basins": 106,
+   "n_seeds": 1,
+   "n_folds": 1,
+   "test_period": "1980-1995"
+  }
+ },
+ "hbv": {
+  "gauged": {
+   "n_basins": 531,
+   "n_seeds": 1,
+   "n_folds": 7,
+   "test_period": "1989-1999"
+  }
+ },
+ "lstm_mlp": {
+  "ungauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  },
+  "gauged": {
+   "n_basins": 531,
+   "n_seeds": 5,
+   "n_folds": 7,
+   "test_period": "1995-2010"
+  }
+ }
+}

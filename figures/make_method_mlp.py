@@ -28,6 +28,11 @@ from make_method_idw import (BOX_H, CELL_GAP, CELL_H, CELL_W, CV_H, CV_Y, DONORS
 from make_method_idw import STEPS as IDW_STEPS  # noqa: E402
 from model import HIDDEN, K_GRID, SEEDS  # noqa: E402
 from palette import GRID, INK, LEARNED, MUTE, RAW  # noqa: E402
+from palette import figure_variant  # noqa: E402
+
+SUFFIX, OUT_DIR = figure_variant()
+SCALED = SUFFIX != "_noscale"
+
 
 # Steps 1, 2 and 4 share a width; step 3 takes what is left.
 NARROW_W = 1.95
@@ -37,15 +42,18 @@ WIDTHS = (NARROW_W, NARROW_W, WIDE_W, NARROW_W)
 STEPS = (
     IDW_STEPS[0],
     dict(title="Nearest donors' errors", accent=None, eq_size=11.5,
-         eq=r"$r_j=\log\dfrac{q^{sim}_j+\epsilon}{q^{obs}_j+\epsilon}$",
+         eq=r"$r_j=\dfrac{q^{sim}_j-q^{obs}_j}{s_j}$" if SCALED else r"$r_j=q^{sim}_j-q^{obs}_j$",
          note="how wrong the LSTM is today\nat the K nearest gauges"),
     dict(title="Learned correction", accent=LEARNED, eq_size=11,
-         eq=r"$\delta_i=f_\theta\,(r_{1..K},\;d_{1..K},\;\mathrm{season},\;q^{sim}_i)$",
+         eq=r"$\delta_i=f_\theta\,(r_{1..K},\;d_{1..K},\;\mathrm{season},\;q^{sim}_i/s_i)$" if SCALED
+         else r"$\delta_i=f_\theta\,(r_{1..K},\;d_{1..K},\;\mathrm{season},\;q^{sim}_i)$",
          note="a small network turns the donors' errors, the season and\n"
               "the target's predicted flow into today's correction"),
     dict(title="Correct the target", accent=LEARNED, eq_size=10.5,
-         eq=(r"$q^{corr}_i=(q^{sim}_i+\epsilon)$", r"$\times\; e^{\delta_i}-\epsilon$"),
-         note="scale the prediction\nby that factor"),
+         eq=(r"$q^{corr}_i=\max(0,$", r"$q^{sim}_i-s_i\,\delta_i)$" if SCALED
+             else r"$q^{sim}_i-\delta_i)$"),
+         note="shift the prediction by\nthat many of its own SDs" if SCALED
+         else "shift the prediction\nby that many mm/day"),
 )
 
 
@@ -55,7 +63,8 @@ def network(ax, rect):
     inputs = ((r"donor errors  $r_1 \ldots r_K$", RAW),
               (r"donor distances  $d_1 \ldots d_K$", RAW),
               ("season (day of year)", INK),
-              (r"target's predicted flow  $q^{sim}_i$", LEARNED))
+              (r"target's own flow  $q^{sim}_i/s_i$" if SCALED
+               else r"target's predicted flow  $q^{sim}_i$", LEARNED))
     layers = [[(0.48, v) for v in (0.86, 0.62, 0.38, 0.14)],
               [(0.62, v) for v in (0.80, 0.60, 0.40, 0.20)],
               [(0.75, v) for v in (0.80, 0.60, 0.40, 0.20)],
@@ -141,10 +150,22 @@ def train_band(ax):
                                  mutation_scale=11, linewidth=1.2, color=MUTE, zorder=5))
     text_x = arr_x1 + 0.16
     track(ax.text(text_x, cy,
-                  f"Train $f_\\theta$ on gauged folds (loss $1-$KGE, {SEEDS} seeds averaged); "
+                  f"Train $f_\\theta$ on gauged folds (loss NSE*, {SEEDS} seeds averaged); "
                   f"choose $K$ ({K_GRID[0]}–{K_GRID[-1]}) on a held-back gauged fold",
                   fontsize=8.4, color=INK, ha="left", va="center", zorder=5),
           text_x, x0 + w - 0.12)
+
+
+def draw_steps(ax, y=Y0):
+    """The four step boxes and the arrows between them, with their bottom edge at `y`."""
+    x = MARGIN
+    for i, (step, w) in enumerate(zip(STEPS, WIDTHS)):
+        if i:
+            ax.add_patch(FancyArrowPatch((x - GAP, y + BOX_H * 0.75), (x, y + BOX_H * 0.75),
+                                         arrowstyle="-|>", mutation_scale=11, linewidth=1.2,
+                                         color=MUTE, zorder=5))
+        add_box(ax, x, y, step, i + 1, draw=sketch, w=w)
+        x += w + GAP
 
 
 def main(out=None):
@@ -159,20 +180,12 @@ def main(out=None):
           MARGIN, FIG_W - MARGIN)
 
     train_band(ax)
-
-    x = MARGIN
-    for i, (step, w) in enumerate(zip(STEPS, WIDTHS)):
-        if i:
-            ax.add_patch(FancyArrowPatch((x - GAP, Y0 + BOX_H * 0.75), (x, Y0 + BOX_H * 0.75),
-                                         arrowstyle="-|>", mutation_scale=11, linewidth=1.2,
-                                         color=MUTE, zorder=5))
-        add_box(ax, x, Y0, step, i + 1, draw=sketch, w=w)
-        x += w + GAP
+    draw_steps(ax)
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     bad = check_fit(fig, ax)
-    os.makedirs(f"{HERE}/lstm", exist_ok=True)
-    stem = out or f"{HERE}/lstm/method_mlp"
+    os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
+    stem = out or f"{HERE}/{OUT_DIR}/method_mlp"
     fig.savefig(f"{stem}.png", dpi=300, facecolor="white")
     fig.savefig(f"{stem}.svg", facecolor="white")
     print(f"-> {stem}.png, {stem}.svg" + (f"   ({bad} overflowing)" if bad else "   (fit ok)"))
