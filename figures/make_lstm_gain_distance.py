@@ -1,10 +1,9 @@
-"""Fig. S3: NSE gain from the IDW correction against distance to the nearest donor gauge.
+"""Fig. S2: NSE gain from the IDW correction against distance to the nearest donor gauge.
 
-    python figures/make_lstm_gain_distance.py   # -> lstm/figS3_gain_distance.{png,pdf}
+    python figures/make_lstm_gain_distance.py   # -> lstm/figS2_gain_distance.{png,svg}
 
-Drawn like Fig. 2: one panel per cell, ungauged on top, each dot a basin, with the LOESS fit
-through them. Ungauged donors are the training basins of the target's fold; discontinued-gauge
-donors are all other basins.
+One panel per cell, ungauged on top, each dot a basin. Ungauged donors are the training basins
+of the target's fold; discontinued-gauge donors are all other basins.
 """
 import os
 import sys
@@ -17,9 +16,8 @@ import numpy as np  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
-from evaluate import _loess  # noqa: E402
 from make_lstm_boxplots import series  # noqa: E402
-from palette import CORRECTED, INK, MUTE, NEUTRAL, panel_letter, style  # noqa: E402
+from palette import INK, MUTE, NEUTRAL, panel_letter, style  # noqa: E402
 from palette import figure_variant  # noqa: E402
 from shared import basin_ids, distance_matrix  # noqa: E402
 
@@ -27,10 +25,8 @@ SUFFIX, OUT_DIR = figure_variant()
 
 FS = 8
 CELLS = {"ungauged": "Ungauged", "gauged": "Discontinued"}
-YLIM = (-0.3, 0.6)
+YLIM = (-0.1, 0.6)
 XMAX = 330
-# Fewer than a dozen basins lie beyond 150 km, too few for the fit to mean anything there.
-FIT_MAX_KM = 150
 
 
 def main():
@@ -45,14 +41,8 @@ def main():
         fold = lstm.fold.to_numpy()
         allowed = fold[None, :] != fold[:, None] if cell == "ungauged" else np.ones_like(dist, bool)
         near = np.where(allowed, dist, np.inf).min(1)
-
-        grid = np.linspace(5, FIT_MAX_KM, 120)
-        # Narrower than Fig. 2's 60 km: with 531 points rather than 39k pairs, most within 60 km,
-        # a 60 km window would flatten the drop over the first 50 km.
-        fit = _loess(near, gain, grid, bandwidth=30)
         ax.scatter(near, np.clip(gain, *YLIM), s=5, color=NEUTRAL, alpha=0.5, linewidths=0,
-                   zorder=2)
-        ax.plot(grid, fit, color=CORRECTED, lw=1.8, zorder=4, label="NSE change (LOESS fitted)")
+                   zorder=2, clip_on=False)
         ax.axhline(0, color=MUTE, lw=0.7, ls=(0, (2, 2)), zorder=3)
         ax.set_xlim(0, XMAX)
         ax.set_ylim(*YLIM)
@@ -61,19 +51,15 @@ def main():
                      pad=3)
         style(ax)
         ax.tick_params(labelsize=FS - 1)
-        if letter == 0:
-            ax.legend(frameon=False, loc="upper right", fontsize=FS - 1, labelcolor=INK,
-                      handlelength=2.2)
-        print(f"  {cell:<9} fitted change at 10/25/50/100 km "
-              + " ".join(f"{np.interp(at, grid, fit):+.3f}" for at in (10, 25, 50, 100)))
+        print(f"  {cell:<9} {(gain < YLIM[0]).sum()} basins drawn at the lower limit")
     axes[-1].set_xlabel("distance to nearest donor gauge (km)", color=INK, fontsize=FS)
 
     fig.tight_layout(pad=0.3, h_pad=0.8)
     os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
-    stem = f"{HERE}/{OUT_DIR}/figS3_gain_distance"
-    for ext in ("png", "pdf"):
+    stem = f"{HERE}/{OUT_DIR}/figS2_gain_distance"
+    for ext in ("png", "svg"):
         fig.savefig(f"{stem}.{ext}", dpi=300, facecolor="white")
-    print(f"-> {stem}.png/.pdf")
+    print(f"-> {stem}.png/.svg")
 
 
 if __name__ == "__main__":

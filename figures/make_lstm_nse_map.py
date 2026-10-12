@@ -1,6 +1,6 @@
 """Maps of the LSTM's NSE and how much each correction changes it, both cells.
 
-    python figures/make_lstm_nse_map.py   # -> lstm/fig04_nse_maps.{png,pdf}
+    python figures/make_lstm_nse_map.py   # -> lstm/fig04_nse_maps.{png,svg}
 
 One row per cell (ungauged, gauged -- labelled "discontinued" as in the manuscript). Column 1 is the uncorrected LSTM's NSE on the bins of
 make_nse_map.py, in purple; columns 2 and 3 are the change in NSE after the IDW and the MLP
@@ -109,9 +109,9 @@ def main():
 
     os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
     stem = f"{HERE}/{OUT_DIR}/fig04_nse_maps"
-    for ext in ("png", "pdf"):
+    for ext in ("png", "svg"):
         fig.savefig(f"{stem}.{ext}", dpi=300, facecolor="white")
-    print(f"-> {stem}.png/.pdf")
+    print(f"-> {stem}.png/.svg")
 
 
 if __name__ == "__main__":

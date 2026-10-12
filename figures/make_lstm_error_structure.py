@@ -1,6 +1,6 @@
 """Fig. 2: correlation of the LSTM's daily residuals between basin pairs against gauge distance.
 
-    python figures/make_lstm_error_structure.py   # -> lstm/fig02_error_structure.{png,pdf}
+    python figures/make_lstm_error_structure.py   # -> lstm/fig02_error_structure.{png,svg}
 
 The LSTM panel of make_error_structure.py, compact: gauged (discontinued-gauge) cell, every pair
 within 1000 km, with the LOESS fit through them.
@@ -43,9 +43,9 @@ def main():
     fig.tight_layout(pad=0.3)
     os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
     stem = f"{HERE}/{OUT_DIR}/fig02_error_structure"
-    for ext in ("png", "pdf"):
+    for ext in ("png", "svg"):
         fig.savefig(f"{stem}.{ext}", dpi=300, facecolor="white")
-    print(f"-> {stem}.png/.pdf")
+    print(f"-> {stem}.png/.svg")
 
 
 if __name__ == "__main__":

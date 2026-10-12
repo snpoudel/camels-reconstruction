@@ -35,7 +35,7 @@ in time).
 | `src/models/{hbv,hybrid}/prepare.py` | Drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | Metrics → `figures/metrics_<cell>_<model>_<method>.csv`, `tuning_*.csv`, `run_info.json` |
 | `figures/make_*.py` | One script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | The tech note's figures, named by figure number: `fig01`–`fig04` and `figS1`–`figS3` (PNG + PDF) |
+| `figures/lstm/` | The tech note's figures, named by figure number: `fig01`–`fig04` and `figS1`–`figS2` (PNG + SVG) |
 | `figures/lstm_noscale/` | Comparison: the same figures without the flow scale s (plain mm/day residuals); scripts' `--variant noscale` |
 | `figures/lstm_logresidual_kge/` | Archive: the same figures under the earlier log-residual, KGE-selected method, with their CSVs in `data/` |
 | `doc/` | The HESS tech note: `tech_note_outline.md`, `lit_review.md`, `manuscript.md` |

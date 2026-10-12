@@ -56,7 +56,7 @@ measured against each other rather than assumed; see manuscript.md 2.6.
 | `src/models/{hbv,hybrid}/prepare.py` | drop another model's published predictions into `runs/<model>/` |
 | `figures/evaluate.py` | score a correction method into the CSVs the figures read |
 | `figures/make_*.py` | one script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | the tech note's figures, named by figure number: `fig01`–`fig04` (method, error structure, CDFs, NSE maps) and `figS1`–`figS3` (boxplots per setting, gain vs donor distance); PNG + PDF |
+| `figures/lstm/` | the tech note's figures, named by figure number: `fig01`–`fig04` (method, error structure, NSE CDF, NSE maps) and `figS1`–`figS2` (boxplots of both settings, gain vs donor distance); PNG + SVG |
 | `data/` | `camels531.csv`, fold assignment, US state outlines for the map figures (tracked); `raw/`, `cache/` (gitignored) |
 | `runs/<model>/` | predictions (`<cell>/`) and their corrections (`<method>/<cell>/`), per model family (gitignored) |
 
@@ -95,12 +95,12 @@ python figures/make_change_map.py       # -> figures/change_map_lstm.png
 python figures/make_donor_map.py        # ungauged only, by design
 python figures/make_error_structure.py  # the premise, before any correction -- needs
                                          # evaluate.py run for --model lstm, hybrid and hbv
-python figures/make_lstm_method.py          # Fig. 1, both method diagrams -> figures/lstm/fig01_method.*
+python figures/make_lstm_method.py          # Fig. 1, the method diagram -> figures/lstm/fig01_method.*
 python figures/make_lstm_error_structure.py # Fig. 2 -> figures/lstm/fig02_error_structure.*
-python figures/make_lstm_cdf.py             # Fig. 3 -> figures/lstm/fig03_cdf.*
+python figures/make_lstm_cdf.py             # Fig. 3 (NSE) -> figures/lstm/fig03_cdf.*
 python figures/make_lstm_nse_map.py         # Fig. 4 -> figures/lstm/fig04_nse_maps.*
-python figures/make_lstm_boxplots.py        # Figs. S1-S2 -> figures/lstm/figS{1,2}_*_boxplots.*
-python figures/make_lstm_gain_distance.py   # Fig. S3 -> figures/lstm/figS3_gain_distance.*
+python figures/make_lstm_boxplots.py        # Fig. S1 -> figures/lstm/figS1_boxplots.*
+python figures/make_lstm_gain_distance.py   # Fig. S2 -> figures/lstm/figS2_gain_distance.*
 ```
 
 The four combined figures take `--model` (default `lstm`) and auto-detect which cells that
