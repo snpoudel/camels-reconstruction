@@ -80,11 +80,7 @@ def main():
         lo, hi = (min(wy.min(), 0.0), max(wy.max(), 0.0)) if centred else (wy.min(), wy.max())
         pad = (hi - lo) * 0.16 + 1e-9
         ax.set_ylim(lo - pad, hi + pad)
-        fmt = "{:.1f}" if centred else "{:.2f}"
         for i, (x, v) in enumerate(zip(pos, vals)):
-            ax.annotate(fmt.format(np.median(v)), (x, np.median(v)), ha="center", va="center",
-                        fontsize=LABEL - 3.5, color=INK, zorder=4,
-                        bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85))
             n_off = int((v < lo - pad).sum() + (v > hi + pad).sum())
             if n_off:
                 ax.annotate(f"({n_off})", (x, bp["caps"][2 * i].get_ydata()[0]), xytext=(0, -3),
