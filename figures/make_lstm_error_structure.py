@@ -26,7 +26,7 @@ FS = 8
 
 def main():
     pairs, fit = read_error_structure("lstm", "gauged")
-    fig, ax = plt.subplots(figsize=(3.5, 2.5))
+    fig, ax = plt.subplots(figsize=(4.0, 2.85))
     ax.scatter(pairs.dist_km, pairs.r, s=2, color=NEUTRAL, alpha=0.08, linewidths=0,
                rasterized=True, zorder=2)
     ax.plot(fit.dist_km, fit.r_fit, color=RAW, lw=1.8, zorder=4,

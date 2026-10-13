@@ -12,8 +12,8 @@ eye follows one target and its donors across the steps.
 `check_fit` prints a WARN for any string that overflows its box, since nothing else would catch
 it. Keep the run clean.
 
-Descriptive superscripts (sim, obs, corr) are upright, as Copernicus style requires. Sized for a
-17.8 cm wide print, where the smallest text (9 here) comes out at about 6.5 pt.
+Descriptive superscripts (sim, obs, corr) are upright, as Copernicus style requires. 8.5 in wide;
+printed at 17.8 cm the smallest text (9 here) comes out at about 7.4 pt.
 """
 import os
 import sys
@@ -34,9 +34,9 @@ SCALED = SUFFIX != "_noscale"
 
 SIM, OBS, CORR = r"^{\mathrm{sim}}", r"^{\mathrm{obs}}", r"^{\mathrm{corr}}"
 
-M, G, PAD = 0.16, 0.24, 0.10
-W1, W2, W3, W4 = 1.75, 1.75, 3.40, 1.75
-H, LEG_H = 3.15, 0.44
+M, G, PAD = 0.16, 0.18, 0.10
+W1, W2, W3, W4 = 1.55, 1.55, 3.05, 1.50
+H, LEG_H = 3.15, 0.66
 FIG_W = 2 * M + 3 * G + W1 + W2 + W3 + W4
 Y0 = PAD + LEG_H
 TOP = Y0 + H
@@ -158,7 +158,8 @@ def weights(ax, rect):
 
 
 def legend(ax):
-    """One centred line, only the symbols the boxes do not define themselves. r, w, delta and
+    """Two centred lines, gauges then symbols -- one line no longer fits the width. Only the
+    symbols the boxes do not define themselves. r, w, delta and
     q_corr are defined by an equation or a box title; p and lambda are left to the caption."""
     items = [(dict(marker="*", s=110, color=CORRECTED), "target gauge $i$"),
              (dict(marker="o", s=30, color=RAW), "donor gauge $j$ ($K$ nearest)"),
@@ -175,21 +176,22 @@ def legend(ax):
         return w
 
     gap, marker_w = 0.26, 0.20
-    widths = [(marker_w if isinstance(k, dict) else width(k, LEG_FS + 1) + 0.07)
-              + width(lab, LEG_FS) for k, lab in items]
-    x = (FIG_W - sum(widths) - gap * (len(items) - 1)) / 2
-    y = PAD + LEG_H / 2 - 0.06
-    for (key, label), w in zip(items, widths):
-        if isinstance(key, dict):
-            ax.scatter([x + 0.07], [y + 0.06], edgecolor="white", linewidth=0.6, zorder=5, **key)
-            lx = x + marker_w
-        else:
-            ax.text(x, y, key, fontsize=LEG_FS + 1, color=INK, va="baseline", zorder=4)
-            lx = x + width(key, LEG_FS + 1) + 0.07
-        ax.text(lx, y, label, fontsize=LEG_FS, color=MUTE, va="baseline", zorder=4)
-        x += w + gap
-    if x - gap > FIG_W - M:
-        print(f"  WARN legend runs {x - gap - FIG_W + M:.2f} past the right margin")
+    for row, y in ((items[:3], PAD + LEG_H / 2 + 0.07), (items[3:], PAD + LEG_H / 2 - 0.21)):
+        widths = [(marker_w if isinstance(k, dict) else width(k, LEG_FS + 1) + 0.07)
+                  + width(lab, LEG_FS) for k, lab in row]
+        x = (FIG_W - sum(widths) - gap * (len(row) - 1)) / 2
+        for (key, label), w in zip(row, widths):
+            if isinstance(key, dict):
+                ax.scatter([x + 0.07], [y + 0.06], edgecolor="white", linewidth=0.6, zorder=5,
+                           **key)
+                lx = x + marker_w
+            else:
+                ax.text(x, y, key, fontsize=LEG_FS + 1, color=INK, va="baseline", zorder=4)
+                lx = x + width(key, LEG_FS + 1) + 0.07
+            ax.text(lx, y, label, fontsize=LEG_FS, color=MUTE, va="baseline", zorder=4)
+            x += w + gap
+        if x - gap > FIG_W - M:
+            print(f"  WARN legend runs {x - gap - FIG_W + M:.2f} past the right margin")
 
 
 def hydrograph(ax, rect):
@@ -268,7 +270,7 @@ def main():
     # Step 3, one box: IDW above, the MLP below, both ending in the same delta_i.
     box(ax, X3, W3, "Daily correction", "3")
     mid = Y0 + 0.44 * H
-    eq_x, eq_hi = X3 + 0.88, X3 + 1.72
+    eq_x, eq_hi = X3 + 0.80, X3 + 1.40
     text(ax, X3 + 0.14, TOP - 0.50, "IDW", X3 + 0.05, eq_hi, size=SUB_FS, ha="left",
          fontweight="bold")
     text(ax, eq_x, TOP - 0.92, r"$w_{ij}=\dfrac{d_{ij}^{-p}}{\sum_{j'} d_{ij'}^{-p}}$",

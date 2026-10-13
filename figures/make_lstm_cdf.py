@@ -29,7 +29,7 @@ CELL_LABEL = {"ungauged": "ungauged basins", "gauged": "discontinued gauges"}
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(3.6, 3.3))
+    fig, ax = plt.subplots(figsize=(4.5, 3.8))
     handles = []
     for cell, ls in CELLS.items():
         data = series(cell)

@@ -2,7 +2,7 @@
 
     python figures/make_lstm_gain_distance.py   # -> lstm/figS2_gain_distance.{png,svg}
 
-One panel per cell, ungauged on top, each dot a basin. Ungauged donors are the training basins
+One panel per cell side by side, ungauged on the left, each dot a basin. Ungauged donors are the training basins
 of the target's fold; discontinued-gauge donors are all other basins.
 """
 import os
@@ -33,7 +33,7 @@ def main():
     dist = distance_matrix()
     np.fill_diagonal(dist, np.inf)
     ids = basin_ids()
-    fig, axes = plt.subplots(2, 1, figsize=(3.5, 4.4), sharex=True)
+    fig, axes = plt.subplots(1, 2, figsize=(7.1, 3.0), sharey=True)
     for letter, (ax, (cell, title)) in enumerate(zip(axes, CELLS.items())):
         data = series(cell)
         lstm, idw = data["LSTM"].loc[ids], data["LSTM + IDW"].loc[ids]
@@ -46,15 +46,15 @@ def main():
         ax.axhline(0, color=MUTE, lw=0.7, ls=(0, (2, 2)), zorder=3)
         ax.set_xlim(0, XMAX)
         ax.set_ylim(*YLIM)
-        ax.set_ylabel("change in NSE after IDW", color=INK, fontsize=FS)
         ax.set_title(f"{panel_letter(letter)} {title}", color=INK, fontsize=FS + 0.5, loc="left",
                      pad=3)
         style(ax)
         ax.tick_params(labelsize=FS - 1)
+        ax.set_xlabel("distance to nearest donor gauge (km)", color=INK, fontsize=FS)
         print(f"  {cell:<9} {(gain < YLIM[0]).sum()} basins drawn at the lower limit")
-    axes[-1].set_xlabel("distance to nearest donor gauge (km)", color=INK, fontsize=FS)
+    axes[0].set_ylabel("change in NSE after IDW", color=INK, fontsize=FS)
 
-    fig.tight_layout(pad=0.3, h_pad=0.8)
+    fig.tight_layout(pad=0.3, w_pad=1.5)
     os.makedirs(f"{HERE}/{OUT_DIR}", exist_ok=True)
     stem = f"{HERE}/{OUT_DIR}/figS2_gain_distance"
     for ext in ("png", "svg"):
