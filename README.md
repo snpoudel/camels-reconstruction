@@ -1,113 +1,74 @@
-# Reconstructing streamflow with a neighbour-residual correction
+# camels-reconstruction
 
-A post-processing step that improves daily streamflow predictions by asking the nearest gauges
-how wrong the model was today. It trains nothing, costs milliseconds, and works on any model's
-output — the LSTM in `src/models/lstm/` is just the one that produced the predictions here.
-
-> Ask the nearest gauges how wrong the model was today. If they agree it ran low, assume this
-> basin did too, and believe most of it.
-
-Over the K nearest donor basins *j* that reported that day:
+A regional LSTM predicts daily streamflow at every CAMELS-US basin. At a basin whose gauge is
+missing, its prediction is corrected using the same day's errors at the K nearest gauges, each
+scaled by that gauge's standard deviation of predicted flow (s):
 
 ```
-w_j = (1/d_j^p) / sum(1/d^p)                              d = great-circle km
-R   = sum_j w_j * [ log(q_sim_j + eps) - log(q_obs_j + eps) ]
-q_corrected = (q_sim + eps) * exp(-lambda * R) - eps
+r_k     = (q_sim_k - q_obs_k) / s_k
+delta_i = lambda * sum_k w_ik * r_k          w_ik = d_ik^-p / sum_k' d_ik'^-p
+q_corr  = max(0, q_sim_i - s_i * delta_i)
 ```
 
-K, λ and p are cross-validated per fold, never on a basin they will go on to correct. The
-target basin's own discharge is never read. `manuscript.md` is the paper: method, evaluation and
-results.
+K, lambda and p are chosen by cross-validation on NSE\*, never on the basin being corrected.
+A small MLP that predicts delta_i from the same donors is the learned alternative.
 
-## Two cells
-
-| | what is missing | donors |
-|---|---|---|
-| **ungauged** | the basin was never in training — out of sample in space and time | that fold's 455 training basins |
-| **gauged** | the basin's gauge stops reporting for the test years — out of sample in time | all 530 other basins, self masked |
-
-Ungauged, 531 CAMELS-US basins, 7 folds, 5 seeds: **median KGE 0.70 → 0.71**, median NSE
-0.69 → 0.75. The published benchmark for this setting is median NSE 0.693 (Kratzert et al.
-2019, WRR 55, 11344 — same 531 gauge IDs, same train/test windows, a 10-member ensemble).
-Gauged, the same basins with 5 seeds: **median KGE 0.79 → 0.83**, median NSE 0.76 → 0.82.
-
-Both cells also carry a parameter-free reference — the single nearest gauge's error applied in
-full, K = 1 and λ = 1, nothing selected. It scores *below* the uncorrected model in both cells
-(ungauged KGE 0.68, gauged 0.78), which is what separates "the neighbours know something"
-from "the correction works".
-
-K, λ and p are selected by cross-validation on three possible objectives -- KGE (default), NSE,
-or NSE* (the basin-normalised loss the LSTM itself was trained on, `--select-on nse_star`),
-measured against each other rather than assumed; see manuscript.md 2.6.
+There are two settings:
+- **Ungauged:** the basin was never used in training (7-fold split).
+- **Partially gauged:** the basin was used in training, but its gauge stops reporting in the test years.
 
 ## Layout
 
-| path | contents |
+| Path | Contents |
 |---|---|
-| `src/shared.py` | what every correction method shares: basins, folds, distances, observations, scores, save format |
-| `src/corrections/idw/correction.py` | the correction itself |
-| `src/corrections/idw/tuning.py` | the K x lambda x p search: three selection objectives (KGE, NSE, NSE*) |
-| `src/corrections/idw/01_gauged.py` | correct the gauged cell → `runs/<model>/idw/gauged/` |
-| `src/corrections/idw/02_ungauged.py` | correct the ungauged cell → `runs/<model>/idw/ungauged/` |
-| `src/corrections/mlp/` | a learned alternative: an MLP predicts each day's correction from the K nearest donors' errors, the season and the target's own simulated flow (LSTM, both cells) |
-| `src/models/lstm/common.py` | the LSTM: cache, folds, model, training, prediction |
-| `src/models/lstm/01_lstm_gauged.py` | train on every basin, one run per seed |
-| `src/models/lstm/02_lstm_ungauged.py` | train one run per (fold, seed) |
-| `src/models/{hbv,hybrid}/prepare.py` | drop another model's published predictions into `runs/<model>/` |
-| `figures/evaluate.py` | score a correction method into the CSVs the figures read |
-| `figures/make_*.py` | one script per figure; `palette.py` holds the shared style |
-| `figures/lstm/` | the tech note's figures, named by figure number: `fig01`–`fig04` (method, error structure, NSE CDF, NSE maps) and `figS1`–`figS2` (boxplots of both settings, gain vs donor distance); PNG + SVG |
-| `data/` | `camels531.csv`, fold assignment, US state outlines for the map figures (tracked); `raw/`, `cache/` (gitignored) |
-| `runs/<model>/` | predictions (`<cell>/`) and their corrections (`<method>/<cell>/`), per model family (gitignored) |
+| `src/shared.py` | Basins, folds, distances, observations and the saved-correction format |
+| `src/models/lstm/` | The LSTM: data cache, training per seed (`01_lstm_gauged.py`) and per fold and seed (`02_lstm_ungauged.py`) |
+| `src/corrections/idw/` | IDW correction (`correction.py`), cross-validated grid search (`tuning.py`), pipelines for each setting |
+| `src/corrections/mlp/` | MLP correction (`model.py`) and pipelines for each setting |
+| `figures/evaluate.py` | Scores the corrections and writes the CSVs the figures read |
+| `figures/make_lstm_*.py` | One script per figure; `palette.py` holds the shared style |
 
-Everything is run as `python <path>.py` — no packages, no `-m`. `src/models/` produces
-predictions and `src/corrections/<method>/` fixes them. A correction never imports from
-`src/models/`: it reads finished hydrographs off disk, so another model's predictions drop into
-`runs/<model>/` and the same scripts correct them.
+## Data
 
-## Running it
+Included in `data/`:
+- `camels531.csv`: gauge ID, location, elevation, slope and area of the 531 CAMELS-US basins.
+- `us_states_conus.geojson`: state outlines for the maps.
+
+Not included: `data/raw/input_<gauge_id>.csv`, one file per basin with daily Daymet forcings,
+static attributes and observed flow (`qobs(mm/day)`) for 1980–2014. Build these from CAMELS-US
+(Newman et al., 2015; Addor et al., 2017). The inputs are listed in Table A1 of the paper.
+
+## Running
+
+Everything runs as `python <path>.py` from the repository root.
 
 ```bash
-# once: build the cache from data/raw/
-python -c "import sys; sys.path.insert(0,'src/models/lstm'); import common; common.build_cache()"
+pip install -r requirements.txt
 
-# train (GPU) -- already done: runs/lstm/<cell>/ holds the final predictions, so this is a
-# record of how they were made, not a step to repeat. Each writes runs/lstm/<cell>/..., then
-# the seed-mean the correction reads. --fold/--seed run one at a time.
-python src/models/lstm/02_lstm_ungauged.py
+# Build the cache and the fold assignment from data/raw/
+python -c "import sys; sys.path.insert(0, 'src/models/lstm'); import common; common.build_cache()"
+
+# Train the LSTM (GPU): 5 seeds, and 7 folds x 5 seeds for the ungauged setting
 python src/models/lstm/01_lstm_gauged.py
+python src/models/lstm/02_lstm_ungauged.py
 
-# correct (CPU, minutes) -> runs/lstm/idw/<cell>/
-python src/corrections/idw/02_ungauged.py
+# Correct (IDW: minutes on CPU; MLP: about an hour per setting)
 python src/corrections/idw/01_gauged.py
-
-# the learned alternative (GPU if available, ~45 min per cell) -> runs/lstm/mlp/<cell>/
-python src/corrections/mlp/02_ungauged.py
+python src/corrections/idw/02_ungauged.py
 python src/corrections/mlp/01_gauged.py
+python src/corrections/mlp/02_ungauged.py
 
-# score and plot (CPU) -> figures/*.csv, figures/*.png
-python figures/evaluate.py              # --method idw by default
+# Score, then draw the figures into figures/lstm/
+python figures/evaluate.py --method idw
 python figures/evaluate.py --method mlp
-python figures/make_cdf.py              # gauged + ungauged, one figure -> figures/cdf_lstm.png
-python figures/make_boxplot.py          # -> figures/metrics_boxplots_lstm.png
-python figures/make_hyperparam.py       # -> figures/hyperparameters_lstm.png
-python figures/make_change_map.py       # -> figures/change_map_lstm.png
-python figures/make_donor_map.py        # ungauged only, by design
-python figures/make_error_structure.py  # the premise, before any correction -- needs
-                                         # evaluate.py run for --model lstm, hybrid and hbv
-python figures/make_lstm_method.py          # Fig. 1, the method diagram -> figures/lstm/fig01_method.*
-python figures/make_lstm_error_structure.py # Fig. 2 -> figures/lstm/fig02_error_structure.*
-python figures/make_lstm_cdf.py             # Fig. 3 (NSE) -> figures/lstm/fig03_cdf.*
-python figures/make_lstm_nse_map.py         # Fig. 4 -> figures/lstm/fig04_nse_maps.*
-python figures/make_lstm_boxplots.py        # Fig. S1 -> figures/lstm/figS1_boxplots.*
-python figures/make_lstm_gain_distance.py   # Fig. S2 -> figures/lstm/figS2_gain_distance.*
+python figures/make_lstm_method.py           # Fig. 1
+python figures/make_lstm_error_structure.py  # Fig. 2
+python figures/make_lstm_cdf.py              # Fig. 3
+python figures/make_lstm_nse_map.py          # Fig. 4
+python figures/make_lstm_boxplots.py         # Fig. B1
+python figures/make_lstm_gain_distance.py    # Fig. B2
 ```
 
-The four combined figures take `--model` (default `lstm`) and auto-detect which cells that
-model has -- HBV has no ungauged run, so `--model hbv` produces a gauged-only figure instead of
-a two-row one. `--cell gauged`/`--cell ungauged` forces a single cell even for a model that has
-both, for one-off inspection; that always writes a `gauged_`/`ungauged_`-prefixed file so it
-never overwrites the combined one.
+Table 1 gives the per-variant medians from `figures/metrics_<setting>_lstm_<method>.csv`.
 
-Only training needed a GPU, and it is finished. Everything downstream runs on any machine: the correction is a few
-minutes of grid search, and the correction itself is milliseconds.
+Note: This repo is developed with help of Claude Code (Anthropic, Opus 5.5).

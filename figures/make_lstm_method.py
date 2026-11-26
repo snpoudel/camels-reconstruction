@@ -26,7 +26,7 @@ from matplotlib.patches import Circle, FancyBboxPatch  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from palette import CORRECTED, GRID, INK, MUTE, RAW  # noqa: E402
+from palette import CORRECTED, INK, MUTE, RAW  # noqa: E402
 from palette import figure_variant  # noqa: E402
 
 SUFFIX, OUT_DIR = figure_variant()
@@ -35,7 +35,7 @@ SCALED = SUFFIX != "_noscale"
 SIM, OBS, CORR = r"^{\mathrm{sim}}", r"^{\mathrm{obs}}", r"^{\mathrm{corr}}"
 
 M, G, PAD = 0.16, 0.18, 0.10
-W1, W2, W3, W4 = 1.55, 1.55, 3.05, 1.50
+W1, W2, W3, W4 = 1.45, 1.45, 2.90, 1.85
 H, LEG_H = 3.15, 0.66
 FIG_W = 2 * M + 3 * G + W1 + W2 + W3 + W4
 Y0 = PAD + LEG_H
@@ -49,12 +49,11 @@ X4 = X3 + W3 + G
 TITLE_FS, EQ_FS, SUB_FS, LEG_FS, LAB_FS = 10.0, 11.0, 9.5, 9.5, 9.0
 SKETCH_TOP = TOP - 1.18
 
-# One neighbourhood in unit coordinates, drawn in every sketch. Every donor is nearer the target
-# than every other gauge, no two donors are collinear with it, and their distances differ enough
-# that step 3's weight lines come out visibly unequal.
+# One neighbourhood in unit coordinates, drawn in every sketch. No two donors are collinear with
+# the target, and their distances differ enough that step 3's weight lines come out visibly
+# unequal.
 TARGET = (0.44, 0.46)
 DONORS = ((0.22, 0.70), (0.56, 0.62), (0.78, 0.40))
-OTHERS = ((0.06, 0.14), (0.94, 0.84), (0.32, 0.06))
 # Per-donor label offset and alignment, fixed so labels stay put across sketches.
 OFF = (((0.00, 0.10), "center", "bottom"),
        ((0.07, 0.05), "left", "bottom"),
@@ -86,16 +85,8 @@ def pt(rect, u, v):
     return x0 + u * w, y0 + v * h
 
 
-def panel(ax, rect):
-    # Above the step box's own white fill (zorder 2), or it is painted over and vanishes.
-    ax.add_patch(FancyBboxPatch(rect[:2], *rect[2:], boxstyle="round,pad=0,rounding_size=0.06",
-                                linewidth=0, facecolor=GRID, alpha=0.75, zorder=2.5))
-
-
 def basins(ax, rect):
-    """Three donors, three farther gauges and the target; returns the target's position."""
-    for u, v in OTHERS:
-        ax.scatter(*pt(rect, u, v), s=15, color=RAW, alpha=0.28, linewidths=0, zorder=4)
+    """The three donors and the target; returns the target's position."""
     for u, v in DONORS:
         ax.scatter(*pt(rect, u, v), s=38, color=RAW, edgecolor="white", linewidth=0.7, zorder=5)
     tx, ty = pt(rect, *TARGET)
@@ -112,7 +103,7 @@ def donor_weights():
 
 def box(ax, x, w, title, badge):
     ax.add_patch(FancyBboxPatch((x, Y0), w, H, boxstyle="round,pad=0,rounding_size=0.07",
-                                linewidth=1.0, edgecolor=MUTE, facecolor="white", zorder=2))
+                                linewidth=0.7, edgecolor=(MUTE, 0.5), facecolor="white", zorder=2))
     track(ax.text(x + w / 2, TOP - 0.16, title, ha="center", va="top", fontsize=TITLE_FS,
                       color=INK, fontweight="bold", zorder=4), x + 0.05, x + w - 0.05)
     ax.add_patch(Circle((x + 0.02, TOP - 0.02), 0.14, facecolor=INK, edgecolor="white",
@@ -134,7 +125,6 @@ def sketch_rect(x, w, top):
 
 def neighbourhood(ax, rect, labels, target_label=None):
     """Steps 1 and 2: the neighbourhood with each donor labelled, and optionally the target."""
-    panel(ax, rect)
     basins(ax, rect)
     for (u, v), lab, (off, ha, va) in zip(DONORS, labels, OFF):
         ax.text(*pt(rect, u + off[0], v + off[1]), lab, fontsize=LAB_FS, color=INK,
@@ -145,28 +135,28 @@ def neighbourhood(ax, rect, labels, target_label=None):
 
 
 def weights(ax, rect):
-    """Step 3's neighbourhood: one line per donor, thicker the larger its weight. Only donor j's
+    """Step 3's neighbourhood: one line per donor, thicker the larger its weight. Only donor K's
     line is labelled; labels on all three hid the shortest line at this size."""
-    panel(ax, rect)
     tx, ty = basins(ax, rect)
-    for (u, v), wj in zip(DONORS, donor_weights()):
+    for (u, v), wk in zip(DONORS, donor_weights()):
         ax.plot([tx, pt(rect, u, v)[0]], [ty, pt(rect, u, v)[1]], color=MUTE,
-                lw=0.6 + 4.5 * wj, alpha=0.7, solid_capstyle="round", zorder=3)
+                lw=0.6 + 4.5 * wk, alpha=0.7, solid_capstyle="round", zorder=3)
     u, v = DONORS[2]
-    ax.text(*pt(rect, (TARGET[0] + u) / 2, (TARGET[1] + v) / 2 - 0.07), r"$w_{ij}$",
+    ax.text(*pt(rect, (TARGET[0] + u) / 2, (TARGET[1] + v) / 2 - 0.07), r"$w_{iK}$",
             fontsize=LAB_FS, color=INK, ha="center", va="top", zorder=7)
 
 
 def legend(ax):
-    """Two centred lines, gauges then symbols -- one line no longer fits the width. Only the
-    symbols the boxes do not define themselves. r, w, delta and
-    q_corr are defined by an equation or a box title; p and lambda are left to the caption."""
+    """Two centred lines, every symbol in the order a reader meets it: gauges and flows, then
+    the scale and IDW's quantities. Only the symbols the boxes do not define themselves; r, w,
+    delta and q_corr are each defined by an equation."""
     items = [(dict(marker="*", s=110, color=CORRECTED), "target gauge $i$"),
-             (dict(marker="o", s=30, color=RAW), "donor gauge $j$ ($K$ nearest)"),
-             (dict(marker="o", s=30, color=RAW, alpha=0.28), "other gauge"),
+             (dict(marker="o", s=30, color=RAW), "donor gauge $k$ ($K$ nearest)"),
              (f"$q{SIM},\\ q{OBS}$", "predicted, observed flow")]
     if SCALED:
         items.append((r"$s$", f"standard deviation of $q{SIM}$"))
+    items += [(r"$d_{ik}$", "distance between gauges $i$ and $k$"),
+              (r"$p$", "distance exponent"), (r"$\lambda$", "shrinkage factor")]
     rend, inv = ax.figure.canvas.get_renderer(), ax.transData.inverted()
 
     def width(s, size):
@@ -195,23 +185,29 @@ def legend(ax):
 
 
 def hydrograph(ax, rect):
-    """Step 4: a schematic storm hydrograph, before and after a downward correction."""
+    """Step 4: a schematic storm hydrograph. The LSTM overshoots the observation; the correction
+    moves it most of the way back, not all of it, so the sketch does not overclaim."""
     x0, y0, w, h = rect
     px0, px1 = x0 + 0.10 * w, x0 + 0.96 * w
-    py0, py1 = y0 + 0.16 * h, y0 + 0.72 * h
+    py0, py1 = y0 + 0.14 * h, y0 + 0.70 * h
     t = np.linspace(0, 1, 240)
-    q = (0.18 * np.exp(-2.6 * t) + np.exp(-((t - 0.40) / 0.085) ** 2)
-         + 0.42 * np.exp(-((t - 0.72) / 0.14) ** 2) + 0.10)
-    q /= q.max()
+    obs = (0.10 * np.exp(-2.6 * t) + 0.55 * np.exp(-((t - 0.40) / 0.085) ** 2)
+           + 0.22 * np.exp(-((t - 0.72) / 0.14) ** 2) + 0.02)
+    sim = (0.18 * np.exp(-2.6 * t) + np.exp(-((t - 0.40) / 0.085) ** 2)
+           + 0.42 * np.exp(-((t - 0.72) / 0.14) ** 2) + 0.12)
+    obs, sim = obs / sim.max(), sim / sim.max()
+    cor = sim - 0.65 * (sim - obs)
     x = px0 + t * (px1 - px0)
-    raw, cor = py0 + q * (py1 - py0), py0 + 0.66 * q * (py1 - py0)
-    ax.fill_between(x, cor, raw, color=CORRECTED, alpha=0.14, linewidth=0, zorder=4)
-    ax.plot(x, raw, color=RAW, lw=1.3, zorder=5)
-    ax.plot(x, cor, color=CORRECTED, lw=1.3, zorder=6)
+    y = lambda q: py0 + q * (py1 - py0)
+    ax.fill_between(x, y(cor), y(sim), color=CORRECTED, alpha=0.14, linewidth=0, zorder=4)
+    ax.plot(x, y(sim), color=RAW, lw=1.3, zorder=5)
+    ax.plot(x, y(cor), color=CORRECTED, lw=1.3, zorder=6)
+    ax.plot(x, y(obs), color=INK, lw=1.0, zorder=7)
     ax.plot([px0, px1], [py0, py0], color=MUTE, lw=0.6, alpha=0.6, zorder=3)
     # A mini legend rather than in-place labels, which would need leader lines at this size.
-    for n, (lab, col) in enumerate(((f"$q{SIM}_i$", RAW), (f"$q{CORR}_i$", CORRECTED))):
-        ly = y0 + (0.94 - 0.13 * n) * h
+    for n, (lab, col) in enumerate(((f"$q{OBS}_i$", INK), (f"$q{SIM}_i$", RAW),
+                                    (f"$q{CORR}_i$", CORRECTED))):
+        ly = y0 + (0.98 - 0.10 * n) * h
         ax.plot([x0 + 0.08 * w, x0 + 0.20 * w], [ly, ly], color=col, lw=1.3, zorder=7)
         ax.text(x0 + 0.24 * w, ly, lab, fontsize=LAB_FS, color=col, ha="left", va="center",
                 zorder=7)
@@ -222,7 +218,6 @@ def hydrograph(ax, rect):
 def network(ax, rect):
     """Inputs named by symbol, two hidden layers, one output: the day's correction."""
     x0, y0, w, h = rect
-    panel(ax, rect)
     inputs = (r"$r_1,\dots,r_K$", r"$d_{i1},\dots,d_{iK}$", "day of year",
               f"$q{SIM}_i/s_i$" if SCALED else f"$q{SIM}_i$")
     layers = [[(0.40, v) for v in (0.86, 0.62, 0.38, 0.14)],
@@ -257,15 +252,15 @@ def main():
     legend(ax)
 
     box(ax, X1, W1, "LSTM prediction", "1")
-    text(ax, X1 + W1 / 2, TOP - 0.72, rf"$\mathrm{{LSTM}}\rightarrow q{SIM}_i,\, q{SIM}_j$",
+    text(ax, X1 + W1 / 2, TOP - 0.72, rf"$\mathrm{{LSTM}}\rightarrow q{SIM}_i,\, q{SIM}_k$",
          X1 + 0.05, X1 + W1 - 0.05, size=10.0)
     neighbourhood(ax, sketch_rect(X1, W1, SKETCH_TOP),
-                  [f"$q{SIM}_{n}$" for n in ("1", "2", "j")], f"$q{SIM}_i$")
+                  [f"$q{SIM}_{n}$" for n in ("1", "2", "K")], f"$q{SIM}_i$")
 
     box(ax, X2, W2, "Donor errors", "2")
-    text(ax, X2 + W2 / 2, TOP - 0.72, rf"$r_j=\dfrac{{q{SIM}_j-q{OBS}_j}}{{s_j}}$" if SCALED
-         else f"$r_j=q{SIM}_j-q{OBS}_j$", X2 + 0.05, X2 + W2 - 0.05)
-    neighbourhood(ax, sketch_rect(X2, W2, SKETCH_TOP), (r"$r_1$", r"$r_2$", r"$r_j$"))
+    text(ax, X2 + W2 / 2, TOP - 0.72, rf"$r_k=\dfrac{{q{SIM}_k-q{OBS}_k}}{{s_k}}$" if SCALED
+         else f"$r_k=q{SIM}_k-q{OBS}_k$", X2 + 0.05, X2 + W2 - 0.05)
+    neighbourhood(ax, sketch_rect(X2, W2, SKETCH_TOP), (r"$r_1$", r"$r_2$", r"$r_K$"))
 
     # Step 3, one box: IDW above, the MLP below, both ending in the same delta_i.
     box(ax, X3, W3, "Daily correction", "3")
@@ -273,9 +268,9 @@ def main():
     eq_x, eq_hi = X3 + 0.80, X3 + 1.40
     text(ax, X3 + 0.14, TOP - 0.50, "IDW", X3 + 0.05, eq_hi, size=SUB_FS, ha="left",
          fontweight="bold")
-    text(ax, eq_x, TOP - 0.92, r"$w_{ij}=\dfrac{d_{ij}^{-p}}{\sum_{j'} d_{ij'}^{-p}}$",
+    text(ax, eq_x, TOP - 0.92, r"$w_{ik}=\dfrac{d_{ik}^{-p}}{\sum_{k'} d_{ik'}^{-p}}$",
          X3 + 0.05, eq_hi)
-    text(ax, eq_x, mid + 0.20, r"$\delta_i=\lambda\sum_j w_{ij}\,r_j$", X3 + 0.05, eq_hi)
+    text(ax, eq_x, mid + 0.20, r"$\delta_i=\lambda\sum_k w_{ik}\,r_k$", X3 + 0.05, eq_hi)
     side = TOP - 0.42 - mid - 0.06
     weights(ax, ((eq_hi + X3 + W3 - 0.1 - side) / 2, mid + 0.06, side, side))
     text(ax, X3 + 0.14, mid - 0.12, "MLP", X3 + 0.05, eq_hi, size=SUB_FS, ha="left",
@@ -283,10 +278,8 @@ def main():
     network(ax, (X3 + 0.1, Y0 + 0.1, W3 - 0.2, mid - 0.30 - Y0 - 0.1))
 
     box(ax, X4, W4, "Corrected flow", "4")
-    text(ax, X4 + W4 / 2, TOP - 0.60, f"$q{CORR}_i=\\max(0,$", X4 + 0.05, X4 + W4 - 0.05,
-         size=10.0)
-    text(ax, X4 + W4 / 2, TOP - 0.92, f"$q{SIM}_i-s_i\\,\\delta_i)$" if SCALED
-         else f"$q{SIM}_i-\\delta_i)$", X4 + 0.05, X4 + W4 - 0.05, size=10.0)
+    text(ax, X4 + W4 / 2, TOP - 0.72, f"$q{CORR}_i=\\max(0,\\,q{SIM}_i-s_i\\,\\delta_i)$" if SCALED
+         else f"$q{CORR}_i=\\max(0,\\,q{SIM}_i-\\delta_i)$", X4 + 0.05, X4 + W4 - 0.05, size=10.0)
     hydrograph(ax, sketch_rect(X4, W4, SKETCH_TOP))
 
     bad = check_fit(fig, ax)

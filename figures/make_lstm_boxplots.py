@@ -2,7 +2,7 @@
 
     python figures/make_lstm_boxplots.py   # -> lstm/figS1_boxplots.{png,svg}
 
-Two groups of three boxes per panel, ungauged then discontinued gauges: the uncorrected LSTM,
+Two groups of three boxes per panel, ungauged then partially gauged basins: the uncorrected LSTM,
 after the IDW correction, and after the learned MLP correction, over the same basins. The bias bands are cut on the observed flow (Yilmaz et al.,
 2008). Each y axis is scaled to the whiskers because percent bias on near-zero-flow streams runs
 to five figures; the red count under a box is how many of its basins fall outside the shown range.
@@ -34,7 +34,7 @@ PANELS = [
     ("bias_low", "low-flow bias (%)", True),
 ]
 SERIES = {"LSTM": RAW, "LSTM + IDW": CORRECTED, "LSTM + MLP": LEARNED}
-CELLS = {"ungauged": "Ungauged", "gauged": "Discontinued"}
+CELLS = {"ungauged": "Ungauged", "gauged": "Partially gauged"}
 STEP, GROUP_GAP, WIDTH = 0.56, 1.0, 0.50
 OFF_COUNT_COLOR = "#c1272d"
 

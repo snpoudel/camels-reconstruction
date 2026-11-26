@@ -3,8 +3,8 @@
     python figures/make_lstm_cdf.py   # -> lstm/fig03_cdf.{png,svg}
 
 Colour is the method (uncorrected, IDW, MLP) and line type the cell (dashed ungauged, solid
-gauged, labelled "discontinued" as in the manuscript); the legend lists the ungauged three, then
-the discontinued three, with their medians. KGE and the biases are in Table 1 and Fig. S1.
+gauged, labelled "partially gauged"); the legend lists the ungauged three, then the partially
+gauged three, with their medians. KGE and the biases are in Table 1 and Fig. S1.
 """
 import os
 import sys
@@ -25,7 +25,7 @@ SUFFIX, OUT_DIR = figure_variant()
 
 
 CELLS = {"ungauged": (0, (4, 2)), "gauged": "-"}
-CELL_LABEL = {"ungauged": "ungauged basins", "gauged": "discontinued gauges"}
+CELL_LABEL = {"ungauged": "ungauged basins", "gauged": "partially gauged basins"}
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
         for name, color in SERIES.items():
             v = np.sort(data[name]["nse"].dropna().to_numpy())
             handles += ax.plot(v, np.arange(1, len(v) + 1) / len(v), color=color, lw=1.6, ls=ls,
-                               zorder=3, label=f"{name}  {np.median(v):.2f}")
+                               zorder=3, label=f"{name}  ({np.median(v):.2f})")
     ax.set_xlim(0, 1.0)
     ax.set_ylim(0, 1)
     ax.set_xlabel("Nash–Sutcliffe efficiency (NSE)", color=INK, fontsize=LABEL - 1)

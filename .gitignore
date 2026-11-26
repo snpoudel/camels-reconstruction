@@ -1,20 +1,15 @@
 __pycache__/
 *.pyc
 .DS_Store
-venv-cpu/
+venv*/
 
-# Large inputs and derived artefacts -- restored from backup / regenerated, not tracked.
-# data/camels531.csv and data/basin_list_with_folds*.csv ARE tracked: the fold assignment(s)
-# define the experiment and must be versioned with the results.
-data/raw/
-data/cache/
+# Data (except the basin list and state outlines), model output and generated figures stay out.
+data/*
+!data/camels531.csv
+!data/us_states_conus.geojson
 runs/
 logs/
 *.log
-
-# The hybrid model's raw per-basin prediction CSVs (149 MB, one model's dropped-in output) --
-# same treatment as data/raw/. src/models/hybrid/prepare.py regenerates runs/hybrid/ from this.
-/hybrid/
-
-# The manuscript and its notes live outside the repo.
-doc/
+figures/*.csv
+figures/*.json
+figures/lstm/
