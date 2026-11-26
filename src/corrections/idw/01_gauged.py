@@ -1,33 +1,13 @@
-"""Correct the gauged-basin predictions: every basin reconstructed as if its own gauge went dark.
+"""IDW correction, gauged cell: each basin is corrected as if its own gauge stopped reporting.
 
-    python src/corrections/idw/01_gauged.py
-    python src/corrections/idw/01_gauged.py --model hybrid
+    python src/corrections/idw/01_gauged.py [--model lstm] [--select-on nse_star|kge|nse] [--no-scale]
 
-This model was trained on all 531 basins, so every basin's test-period prediction is
-out-of-sample in time only -- the discontinued-gauge case. Each basin is corrected using all 530
-others as donors, its own record masked out by an infinite distance to itself, which is the
-network a real gone-dark gauge still has around it.
-
-The scenario is one gauge dark at a time, not a whole region going dark together: a basin's
-neighbours -- including the ones in its own fold group -- are live gauges and legitimate donors.
-What is never read is the basin's own record. Both halves of that were audited: destroying a
-basin's discharge leaves its own corrected hydrograph bit-identical while moving its neighbours'
-(it is still a donor to them), and destroying a whole group's discharge leaves that group's
-selected (K, lambda, p) unchanged.
-
-K, lambda and p are cross-validated with the target gauge absent from the process entirely. The
-basins keep their fold labels, and when group g is being corrected the search runs on the other
-six groups only -- group g is neither a cross-validation target nor a cross-validation donor, so
-no basin's own record can reach the settings applied to it. Within those six groups the search
-is self-masked leave-one-out, matching the dense donor network the correction is then applied
-under.
+Each basin is corrected from all other basins as donors, never itself. The settings for group g
+are selected on the other groups only, so no basin's own record reaches the settings applied to it.
 
     reads   runs/<model>/gauged/_mean/predictions.npz
     writes  runs/<model>/idw/gauged/{predictions.npz, params.csv, tuning.csv}
-
---select-on picks what the search maximises: nse_star (default) -- the basin-normalised loss
-the LSTM itself was trained on -- kge, or nse. A non-default objective
-writes to idw/gauged_<objective>/ so both can sit side by side.
+            (idw_noscale/ with --no-scale, gauged_<objective>/ for a non-default --select-on)
 """
 import argparse
 import os
@@ -65,7 +45,7 @@ def main():
     groups = sorted(set(labels))
     print(f"{len(pred)} basins, {n_seeds} seeds, {len(test_t)} test days")
 
-    # Group g is dropped from its own search: it appears neither as a CV target nor as a donor.
+    # Group g is left out of its own search, as a target and as a donor.
     surfaces = run_jobs([make_job(g, pred, obs, sigma, dist, np.flatnonzero(labels != g),
                                   objective=a.select_on, scaled=not a.no_scale)
                          for g in groups], workers=a.workers)
@@ -74,13 +54,12 @@ def main():
     obj = SCORERS[a.select_on]
 
     def report(sim, o, rows):
-        """The objective's own number for a set of basins, in the direction it is read: a loss
-        is reported positive and falling, not as the negated score the search maximises."""
+        """The objective's aggregate over `rows`, with a loss reported as a positive number."""
         v = obj.aggregate(obj.score(sim, o, None if sigma is None else sigma[rows]))
         return -v if obj.is_loss else v
 
     raw = pred.copy()
-    corrected = np.full(pred.shape, np.nan)  # float64: what the correction's arithmetic returns
+    corrected = np.full(pred.shape, np.nan)
     nearest = np.full(pred.shape, np.nan)
     params = []
     for g in groups:
@@ -89,8 +68,7 @@ def main():
         d = dist[target].copy()
         d[np.arange(len(target)), target] = np.inf  # a basin can never be its own donor
         corrected[target] = correct(pred[target], pred, obs, d, k, lam, p, not a.no_scale)
-        # The parameter-free reference: one donor, all of its error. p is irrelevant at K=1,
-        # since the single surviving weight normalises to 1 whatever the exponent.
+        # Nearest-gauge reference; p has no effect at K=1.
         nearest[target] = correct(pred[target], pred, obs, d, 1, 1.0, 1.0, not a.no_scale)
         before = report(raw[target], obs[target], target)
         after = report(corrected[target], obs[target], target)

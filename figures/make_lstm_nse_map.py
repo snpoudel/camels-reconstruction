@@ -1,12 +1,6 @@
-"""Maps of the LSTM's NSE and how much the IDW correction changes it, both cells.
+"""Fig. 4: maps of the LSTM's NSE and its change after the IDW correction, both settings.
 
-    python figures/make_lstm_nse_map.py   # -> lstm/fig04_nse_maps.{png,svg}
-
-One row per cell (ungauged, gauged -- labelled "partially gauged"). Column 1 is the uncorrected LSTM's NSE on the bins of
-make_nse_map.py, in purple; column 2 is the change in NSE after the IDW correction, on one
-binned diverging scale shared by both rows. Its bins split exactly at 0, so
-every orange dot counts toward the panel's "% improved". No lat/lon axes: the state outlines
-are the reference.
+    python figures/make_lstm_nse_map.py   # -> figures/lstm/fig04_nse_maps.{png,svg}
 """
 import os
 import sys
@@ -50,8 +44,7 @@ def main():
     nse = {cell: data[cell]["LSTM"].nse.dropna() for cell in CELLS}
     gains = {cell: (data[cell][CORRECTION].nse - nse[cell]).dropna() for cell in CELLS}
     change_bounds = [-0.20, -0.10, -0.05, 0, 0.05, 0.10, 0.20]
-    # DIVERGING's poles barely change lightness near the ends, so the outer bins go past them to
-    # darker steps of the same hues; the two bins beside 0 are tinted, not grey.
+    # Outer bins go darker than DIVERGING's poles, which barely change lightness at the ends.
     change_cmap = mcolors.ListedColormap([
         "#003d63", BLUE, "#5a9bc6", "#a7bdcc", "#d2b9a6", "#e8925a", ORANGE, "#8c3a00"])
     change_norm = mcolors.BoundaryNorm(change_bounds, change_cmap.N, extend="both")
@@ -79,7 +72,7 @@ def main():
                 ax.text(-0.04, 0.5, ROW_LABEL[cell], transform=ax.transAxes, rotation=90,
                         ha="right", va="center", color=INK, fontsize=LABEL - 1)
             else:
-                order = np.argsort(np.abs(v))  # biggest changes drawn on top
+                order = np.argsort(np.abs(v))
                 change_sc = ax.scatter(lon[order], lat[order], c=v[order], cmap=change_cmap,
                                        norm=change_norm, s=5, edgecolor=MUTE, linewidth=0.15,
                                        zorder=3)
@@ -88,8 +81,7 @@ def main():
                          fontsize=PANEL - 2, loc="left", pad=2)
             ax.set_axis_off()
 
-    # Margins in inches, set by hand: tight_layout sizes the slots before the fixed map aspect
-    # shrinks them (as in make_change_map.py).
+    # Margins set by hand: tight_layout sizes the slots before the map aspect shrinks them.
     fig.subplots_adjust(left=0.05, right=0.99, top=1 - 0.2 / HEIGHT, bottom=0.75 / HEIGHT,
                         wspace=0.06, hspace=0.12)
     for ax in axes[1]:

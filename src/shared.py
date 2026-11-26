@@ -1,9 +1,7 @@
-"""What every correction method shares: the basins, folds, distances and observations on disk,
-the per-basin scores, and the one format a finished correction is saved in.
+"""Shared by every correction method: basins, folds, distances, observations, scores, save format.
 
-A correction method (src/corrections/<method>/) reads a model's seed-mean predictions with
-`load_mean`, corrects them, and writes them with `save_corrected`, so figures/evaluate.py scores
-every method the same way.
+A method reads seed-mean predictions with `load_mean` and writes its correction with
+`save_corrected`, so figures/evaluate.py scores every method the same way.
 """
 import numpy as np
 import pandas as pd
@@ -15,33 +13,28 @@ def great_circle_km(lat, lon):
     return 2 * 6371.0 * np.arcsin(np.sqrt(np.clip(h, 0, 1)))
 
 
-# mm/day. Floors each basin's scale so a near-dry basin's tiny SD cannot blow its residuals up.
+# mm/day; keeps a near-dry basin's tiny SD from blowing up its residuals.
 SCALE_FLOOR = 0.1
 
 
 def flow_scale(sim, scaled=True):
-    """[n] each basin's error scale: the SD of its *predicted* flow over the period, plus a
-    floor. Read from the model's output, never from observations, so an ungauged target's own
-    gauge is never touched. `scaled=False` is the unscaled comparison (--no-scale): every s is
-    1, so errors move between basins in plain mm/day."""
+    """[n] SD of each basin's predicted (never observed) flow plus a floor; ones if not `scaled`."""
     if not scaled:
         return np.ones(len(sim))
     return np.nanstd(np.clip(sim, 0, None), axis=1) + SCALE_FLOOR
 
 
 def nearest_gauge(sim_target, sim_donor, obs_donor, dist_km, scaled=True):
-    """The parameter-free reference every method is reported against: the single nearest
-    donor's scaled error, applied in full (IDW at K=1, lambda=1). No correction on a day that
-    donor did not report."""
+    """Reference correction: the nearest donor's scaled error applied in full (IDW at K=1, lambda=1)."""
     j = np.argmin(dist_km, axis=1)
     sd = flow_scale(sim_donor[j], scaled)
-    # float64, as IDW's arithmetic is, so this matches its K=1, lambda=1 output bit for bit.
+    # float64 so this matches IDW at K=1, lambda=1 bit for bit.
     R = np.nan_to_num((np.clip(sim_donor[j], 0, None) - obs_donor[j]) / sd[:, None]).astype(np.float64)
     return np.clip(np.clip(sim_target, 0, None) - flow_scale(sim_target, scaled)[:, None] * R, 0, None)
 
 
 def nse_per_basin(sim, obs):
-    """[n] Nash-Sutcliffe efficiency, vectorised over basins."""
+    """[n] Nash-Sutcliffe efficiency per basin."""
     sim = np.clip(sim, 0, None)
     m = np.isfinite(obs)
     o, s, n = np.where(m, obs, 0.0), np.where(m, sim, 0.0), m.sum(1)
@@ -52,13 +45,7 @@ def nse_per_basin(sim, obs):
 
 
 def kge_per_basin(sim, obs):
-    """[n] Kling-Gupta efficiency, vectorised over basins -- selection calls this thousands of
-    times, so it cannot be a Python loop.
-
-    r, alpha and beta are each a ratio of sums over the reported days, so the 1/n that would
-    normally turn a sum into a mean or a variance cancels in every one of the three ratios
-    except beta -- only beta needs an actual mean.
-    """
+    """[n] Kling-Gupta efficiency per basin."""
     sim = np.clip(sim, 0, None)
     m = np.isfinite(obs)
     o, s, n = np.where(m, obs, 0.0), np.where(m, sim, 0.0), m.sum(1)
@@ -72,29 +59,25 @@ def kge_per_basin(sim, obs):
     return np.where(ok, 1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2), np.nan)
 
 
-# --------------------------------------------------------------------------- inputs on disk
-
 BASINS_CSV = "data/camels531.csv"
 FOLDS_CSV = "data/basin_list_with_folds.csv"
 CACHE_DIR = "data/cache"
 
-# Everything below is keyed to this one order -- sorted gauge IDs, which is also the order the
-# cache and every predictions.npz is written in.
-
 
 def basin_ids(list_csv=BASINS_CSV):
+    """Sorted gauge IDs: the row order of the cache and of every predictions.npz."""
     return sorted(pd.read_csv(list_csv, dtype={"gauge_id": str})["gauge_id"])
 
 
 def fold_labels(folds_csv=FOLDS_CSV, list_csv=BASINS_CSV):
-    """[n] fold label per basin. Tracked in git: the assignment defines the experiment."""
+    """[n] fold label per basin."""
     df = pd.read_csv(folds_csv, dtype={"basin": str})
     assert list(df.basin) == basin_ids(list_csv), f"{folds_csv} is not in sorted gauge-ID order"
     return df.fold.to_numpy()
 
 
 def distance_matrix(list_csv=BASINS_CSV):
-    """[n, n] great-circle km between every pair of gauges. Coordinates only -- no discharge."""
+    """[n, n] great-circle km between gauges."""
     loc = pd.read_csv(list_csv, dtype={"gauge_id": str}).set_index("gauge_id")
     ids = basin_ids(list_csv)
     return great_circle_km(loc.loc[ids, "gauge_lat"].to_numpy(),
@@ -102,24 +85,20 @@ def distance_matrix(list_csv=BASINS_CSV):
 
 
 def observed(test_t, cache_dir=CACHE_DIR):
-    """[n, len(test_t)] observed flow, mm/day, NaN where the gauge did not report."""
+    """[n, T] observed flow, mm/day, NaN where the gauge did not report."""
     Q = np.load(f"{cache_dir}/Q.npy")
     assert len(Q) == len(basin_ids()), "cache and basin list disagree on the basin count"
     return Q[:, test_t]
 
 
 def load_mean(npz_path):
-    """The seed-mean hydrographs one cell's correction runs on: (pred, test_t, n_seeds)."""
+    """Seed-mean predictions: (pred, test_t, n_seeds)."""
     p = np.load(npz_path, allow_pickle=True)
     return p["pred"], p["test_t"], int(p["n_seeds"])
 
 
 def train_sigma(npz_path):
-    """[n] training-period flow std, the denominator of the model's own training loss.
-
-    Published by whatever produced the predictions, not recomputed here: a model trained on a
-    different window normalises by a different sigma, and only it knows which.
-    """
+    """[n] training-period flow SD (NSE* denominator), as published with the predictions."""
     p = np.load(npz_path, allow_pickle=True)
     if "sigma" not in p:
         raise SystemExit(f"{npz_path} predates the sigma it needs for NSE* selection -- "
@@ -134,8 +113,7 @@ def test_period_label(test_t, cache_dir=CACHE_DIR):
 
 
 def save_corrected(out_dir, raw, corrected, nearest, test_t, params, tuning):
-    """One cell's finished correction: hydrographs before and after, the parameter-free
-    nearest-gauge reference, the chosen settings, and the surface they were chosen on."""
+    """Write raw, corrected and nearest-gauge hydrographs, chosen settings and tuning surface."""
     import os
     os.makedirs(out_dir, exist_ok=True)
     np.savez_compressed(f"{out_dir}/predictions.npz", raw=raw, corrected=corrected,

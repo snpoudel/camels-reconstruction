@@ -1,17 +1,13 @@
-"""Correct the gauged-basin predictions with the learned MLP correction: every basin reconstructed
-as if its own gauge went dark.
+"""MLP correction, gauged cell: each basin is corrected as if its own gauge stopped reporting.
 
-    python src/corrections/mlp/01_gauged.py
+    python src/corrections/mlp/01_gauged.py [--no-scale]
     python src/corrections/mlp/01_gauged.py --group 0 --k 10 --seeds 1   # quick check
 
-The same cell and the same donors as src/corrections/idw/01_gauged.py. The LSTM was trained on
-all 531 basins, so every basin is out of sample in time only. When group g is corrected, the
-network trains on the other six groups only -- group g is neither a training target nor a
-training donor -- and each basin of group g is then corrected from all 530 others, its own
-record masked out, the network a real gone-dark gauge still has around it.
+For group g the network trains on the other groups only; each basin of g is then corrected from
+all other basins, never itself.
 
     reads   runs/lstm/gauged/_mean/predictions.npz
-    writes  runs/lstm/mlp/gauged/{predictions.npz, params.csv, tuning.csv}
+    writes  runs/lstm/mlp/gauged/{predictions.npz, params.csv, tuning.csv}  (mlp_noscale/ with --no-scale)
 """
 import argparse
 import os

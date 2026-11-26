@@ -1,11 +1,6 @@
-"""Fig. S1: the LSTM before and after each correction in both cells: NSE, KGE and percent bias.
+"""Fig. B1: NSE, KGE and percent biases of the LSTM before and after each correction, both settings.
 
-    python figures/make_lstm_boxplots.py   # -> lstm/figS1_boxplots.{png,svg}
-
-Two groups of three boxes per panel, ungauged then partially gauged basins: the uncorrected LSTM,
-after the IDW correction, and after the learned MLP correction, over the same basins. The bias bands are cut on the observed flow (Yilmaz et al.,
-2008). Each y axis is scaled to the whiskers because percent bias on near-zero-flow streams runs
-to five figures; the red count under a box is how many of its basins fall outside the shown range.
+    python figures/make_lstm_boxplots.py   # -> figures/lstm/figS1_boxplots.{png,svg}
 """
 import os
 import sys
@@ -40,7 +35,7 @@ OFF_COUNT_COLOR = "#c1272d"
 
 
 def series(cell):
-    """{series name: per-basin metrics}, all three on the same basins."""
+    """{series name: per-basin metrics}, all scored on the same basins."""
     idw, mlp = read_metrics(cell, "lstm", f"idw{SUFFIX}"), read_metrics(cell, "lstm", f"mlp{SUFFIX}")
     pick = lambda df, v: df[df.variant == v].set_index("basin")  # noqa: E731
     out = {"LSTM": pick(idw, "LSTM"), "LSTM + IDW": pick(idw, "LSTM + correction"),
@@ -54,7 +49,7 @@ def main():
     boxes = [(cell, name) for cell in CELLS for name in SERIES]
     pos = [g * (2 * STEP + GROUP_GAP) + k * STEP for g in range(len(CELLS)) for k in range(len(SERIES))]
     colors = list(SERIES.values()) * len(CELLS)
-    rng = np.random.default_rng(0)  # reproducible jitter
+    rng = np.random.default_rng(0)
     fig, axes = plt.subplots(3, 2, figsize=(7.1, 7.2))
     for letter, (ax, (col, title, centred)) in enumerate(zip(axes.flat, PANELS)):
         vals = [data[cell][name][col].dropna().to_numpy() for cell, name in boxes]
@@ -76,7 +71,8 @@ def main():
                      loc="left", pad=4)
         style(ax)
         ax.grid(False, axis="x")
-        wy = np.concatenate([w.get_ydata() for w in bp["whiskers"]])
+        # Scaled to the whiskers: percent bias on near-zero-flow streams runs to five figures.
+        wy =np.concatenate([w.get_ydata() for w in bp["whiskers"]])
         lo, hi = (min(wy.min(), 0.0), max(wy.max(), 0.0)) if centred else (wy.min(), wy.max())
         pad = (hi - lo) * 0.16 + 1e-9
         ax.set_ylim(lo - pad, hi + pad)

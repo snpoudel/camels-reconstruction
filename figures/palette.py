@@ -1,13 +1,7 @@
-"""The shared palette and figure style. Import from here rather than re-deciding per figure.
+"""Shared colours and figure style for every figure script.
 
-Series colours are the Okabe-Ito colourblind-safe palette (Okabe & Ito, 2008), in fixed slots:
-
-    slot 0  #0072B2  blue        the uncorrected model
-    slot 1  #D55E00  vermillion  the same model after the correction
-    slot 2  #949494  grey        the nearest-gauge-only reference (CDF figure only)
-    slot 3  #009E73  green       the same model after the learned MLP correction
-
-Text uses ink, not series colour: INK #16191c, MUTE #5d6a73, GRID #dfe3e6.
+Series colours are Okabe-Ito (Okabe & Ito, 2008): blue for the uncorrected model, vermillion
+after the IDW correction, green after the MLP correction, grey for the nearest-gauge reference.
 """
 import json
 import os
@@ -18,31 +12,24 @@ import numpy as np
 BLUE, ORANGE, NEUTRAL = "#0072B2", "#D55E00", "#949494"
 INK, MUTE, GRID = "#16191c", "#5d6a73", "#dfe3e6"
 
-# Signed change on a map. The zero is a visible grey, not GRID: a near-white marker reads as
-# "missing" rather than "unchanged".
+# Zero is a visible grey, since a near-white marker reads as "missing" rather than "unchanged".
 DIVERGE_ZERO = "#b6bec4"
 DIVERGING = mcolors.LinearSegmentedColormap.from_list("diverging", [BLUE, DIVERGE_ZERO, ORANGE])
-# DIVERGING saturates at this percentile of |change|, so the typical basin reaches full colour
-# instead of the ramp being spent on a few extreme near-zero-flow basins.
+# Saturate at this percentile of |change| so a few extreme basins do not use up the ramp.
 CAP_PERCENTILE = 85
 
-# Unsigned skill on a map, darker = better. Stepped at equal OKLCH lightness in the series
-# blue's hue; stock "Blues" bunches its dark end, which made NSE 0.7-0.9 look identical.
+# Equal OKLCH lightness steps in the series blue's hue, darker = better.
 SEQUENTIAL = mcolors.LinearSegmentedColormap.from_list("sequential", [
     "#d4ebff", "#acd9ff", "#81c7ff", "#4eb3ff", "#239ff0", "#038bd8",
     "#0278bb", "#00659f", "#005383", "#004169", "#0a314b"])
-# The same steps in purple (OKLCH hue 305), for skill shown beside a DIVERGING panel, where blue
-# already means "got worse".
+# The same steps in purple, for skill beside a DIVERGING panel where blue means "got worse".
 SEQUENTIAL_ALT = mcolors.LinearSegmentedColormap.from_list("sequential_alt", [
     "#ede2fb", "#dccaf4", "#ccb2ec", "#bb99e3", "#aa82d8", "#996bca",
     "#8757b7", "#7446a1", "#603787", "#4c2b6b", "#38204f"])
 
 RAW, CORRECTED = BLUE, ORANGE
-# Checked against RAW and CORRECTED under simulated protan/deutan/tritan vision: every pair stays
-# >= 8.6 apart (OKLab delta E x 100), the closest being RAW vs LEARNED under tritan.
 LEARNED = "#009E73"
 
-# Display names for runs/<model>/; anything missing falls back to the capitalised key.
 MODEL_LABEL = {"lstm": "LSTM", "hbv": "HBV"}
 
 BENCHMARK = "nearest gauge only"
@@ -51,17 +38,13 @@ CELL_TITLE = {"gauged": "Gauged basins", "ungauged": "Ungauged basins"}
 
 TITLE, PANEL, LABEL, TICK = 11.5, 10.5, 10, 9
 
-# CONUS + DC state outlines, trimmed from a public-domain GeoJSON (PublicaMundi/MappingAPI) and
-# tracked in data/ so no figure needs network access.
+# CONUS state outlines from a public-domain GeoJSON (PublicaMundi/MappingAPI).
 US_STATES_GEOJSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                  "data", "us_states_conus.geojson")
 
 
 def figure_variant():
-    """(method suffix, output folder) for an LSTM figure run: ("", "lstm") for the reported
-    method, ("_noscale", "lstm_noscale") with --variant noscale -- the comparison whose residuals
-    are not divided by each basin's flow scale. Read from the command line, so every module a
-    figure script imports agrees on it."""
+    """(method suffix, output folder), ("_noscale", "lstm_noscale") under --variant noscale."""
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", choices=["noscale"])
@@ -74,8 +57,7 @@ def model_label(model):
 
 
 def series_pair(model="lstm"):
-    """{name: colour} for the raw and corrected series, in that order. The names are the
-    `variant` values in figures/metrics_*.csv."""
+    """{variant name in metrics_*.csv: colour} for the raw and corrected series."""
     name = model_label(model)
     return {name: RAW, f"{name} + correction": CORRECTED}
 
@@ -87,7 +69,7 @@ def series_cdf(model="lstm"):
 
 
 def available_cells(model, method="idw"):
-    """The cells this model has metrics for, gauged first. HBV has no ungauged run."""
+    """The cells this model has metrics for, gauged first."""
     here = os.path.dirname(os.path.abspath(__file__))
     return [c for c in ("gauged", "ungauged")
             if os.path.exists(f"{here}/metrics_{c}_{model}_{method}.csv")]
@@ -99,8 +81,7 @@ def panel_letter(i):
 
 def style(ax, grid=True):
     """Recessive axes; `grid=False` for maps, where gridlines compete with the state outlines."""
-    # Two calls, not `ax.grid(grid, ...)`: matplotlib turns the grid back on whenever a
-    # line-property kwarg is passed, even alongside visible=False.
+    # Not ax.grid(grid, ...): matplotlib re-enables the grid whenever line kwargs are passed.
     if grid:
         ax.grid(True, color=GRID, lw=0.6, alpha=0.6, zorder=0)
     else:
@@ -115,7 +96,7 @@ def style(ax, grid=True):
 
 
 def draw_us_outline(ax, color=GRID, lw=0.7, zorder=1):
-    """State boundaries behind the data, read with the standard library (no geopandas)."""
+    """State boundaries drawn behind the data."""
     states = json.load(open(US_STATES_GEOJSON))
     for feature in states["features"]:
         geom = feature["geometry"]

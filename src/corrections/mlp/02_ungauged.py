@@ -1,15 +1,12 @@
-"""Correct the ungauged-basin predictions with the learned MLP correction, one fold at a time.
+"""MLP correction, ungauged cell: each fold's held-out basins are corrected from its training basins.
 
-    python src/corrections/mlp/02_ungauged.py
+    python src/corrections/mlp/02_ungauged.py [--no-scale]
     python src/corrections/mlp/02_ungauged.py --fold 0 --k 10 --seeds 1   # quick check
 
-The same cell and the same donors as src/corrections/idw/02_ungauged.py: a fold's held-out
-basins are corrected from its 455 training basins, using that fold's own LSTM. The network is
-trained inside those 455 only, and no held-out basin's observations are read until it is
-scored. See model.py for how K is chosen.
+Each fold uses its own LSTM's predictions, and the network trains on the fold's training basins only.
 
     reads   runs/lstm/ungauged/_mean/fold{f}.npz
-    writes  runs/lstm/mlp/ungauged/{predictions.npz, params.csv, tuning.csv}
+    writes  runs/lstm/mlp/ungauged/{predictions.npz, params.csv, tuning.csv}  (mlp_noscale/ with --no-scale)
 """
 import argparse
 import os
@@ -57,7 +54,7 @@ def main():
             scaled=not a.no_scale)
         tuning += rows
 
-        # The held-out basins' observations are read from here on, and only to score.
+        # Held-out observations are read only from here on, and only to score.
         held, pool = np.flatnonzero(labels == f), np.flatnonzero(labels != f)
         raw[held], corrected[held] = sim[held], held_mean
         nearest[held] = nearest_gauge(sim[held], sim[pool], obs[pool], dist[np.ix_(held, pool)],

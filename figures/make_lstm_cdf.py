@@ -1,10 +1,6 @@
-"""Fig. 3: CDF of NSE across basins for the LSTM before and after each correction, both cells.
+"""Fig. 3: CDFs of NSE across basins for the LSTM before and after each correction, both settings.
 
-    python figures/make_lstm_cdf.py   # -> lstm/fig03_cdf.{png,svg}
-
-Colour is the method (uncorrected, IDW, MLP) and line type the cell (dashed ungauged, solid
-gauged, labelled "partially gauged"); the legend lists the ungauged three, then the partially
-gauged three, with their medians. KGE and the biases are in Table 1 and Fig. S1.
+    python figures/make_lstm_cdf.py   # -> figures/lstm/fig03_cdf.{png,svg}
 """
 import os
 import sys
@@ -33,7 +29,6 @@ def main():
     handles = []
     for cell, ls in CELLS.items():
         data = series(cell)
-        # A blank-handled entry as each group's header.
         handles.append(Line2D([], [], color="none", label=f"{CELL_LABEL[cell]} (median)"))
         for name, color in SERIES.items():
             v = np.sort(data[name]["nse"].dropna().to_numpy())

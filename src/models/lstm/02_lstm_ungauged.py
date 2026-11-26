@@ -1,18 +1,12 @@
 """Train the LSTM once per (fold, seed), each fold holding out a seventh of the basins.
 
-    python src/models/lstm/02_lstm_ungauged.py                    # the whole grid, then the means
+    python src/models/lstm/02_lstm_ungauged.py                    # every run, then the means
     python src/models/lstm/02_lstm_ungauged.py --fold 0 --seed 3  # one run
     python src/models/lstm/02_lstm_ungauged.py --mean-only        # rebuild _mean from finished runs
 
-A held-out basin is out-of-sample in SPACE as well as time -- the prediction-in-ungauged-basins
-case. Every run still predicts all 531 basins: the fold's gauged basins are the donor pool the
-correction borrows residuals from.
-
-    runs/lstm/ungauged/fold{f}_seed{s}/predictions.npz
-    runs/lstm/ungauged/_mean/fold{f}.npz     <- what the correction reads, one per fold
-
-The mean is per fold, not global: a fold's held-out basins and its donors have to come from the
-same model, or the residuals being borrowed are another model's.
+Reads data/cache/. Writes runs/lstm/ungauged/fold{f}_seed{s}/predictions.npz and one seed mean
+per fold, runs/lstm/ungauged/_mean/fold{f}.npz, which the correction reads. Each run predicts all
+basins, and the mean is per fold so a held-out basin and its donors come from the same model.
 """
 import argparse
 import os

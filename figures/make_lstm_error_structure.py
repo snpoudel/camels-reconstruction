@@ -1,9 +1,6 @@
 """Fig. 2: correlation of the LSTM's daily residuals between basin pairs against gauge distance.
 
-    python figures/make_lstm_error_structure.py   # -> lstm/fig02_error_structure.{png,svg}
-
-The LSTM panel of make_error_structure.py, compact: gauged (discontinued-gauge) cell, every pair
-within 1000 km, with the LOESS fit through them.
+    python figures/make_lstm_error_structure.py   # -> figures/lstm/fig02_error_structure.{png,svg}
 """
 import os
 import sys
@@ -33,7 +30,7 @@ def main():
             label="daily residuals (LOESS fitted)")
     ax.axhline(0, color=MUTE, lw=0.7, ls=(0, (2, 2)), zorder=3)
     ax.set_xlim(0, 1000)
-    # Cut above the cloud's true floor so the decay stays legible; only a handful of pairs fall below.
+    # Cut above the cloud's floor so the decay stays legible; only a few pairs fall below.
     ax.set_ylim(-0.4, 1)
     ax.set_xlabel("distance between gauges (km)", color=INK, fontsize=FS)
     ax.set_ylabel("residual correlation", color=INK, fontsize=FS)

@@ -1,9 +1,6 @@
-"""Fig. S2: NSE gain from the IDW correction against distance to the nearest donor gauge.
+"""Fig. B2: NSE gain from the IDW correction against distance to the nearest donor, both settings.
 
-    python figures/make_lstm_gain_distance.py   # -> lstm/figS2_gain_distance.{png,svg}
-
-One panel per cell side by side, ungauged on the left, each dot a basin. Ungauged donors are the training basins
-of the target's fold; discontinued-gauge donors are all other basins.
+    python figures/make_lstm_gain_distance.py   # -> figures/lstm/figS2_gain_distance.{png,svg}
 """
 import os
 import sys
@@ -39,6 +36,7 @@ def main():
         lstm, idw = data["LSTM"].loc[ids], data["LSTM + IDW"].loc[ids]
         gain = (idw.nse - lstm.nse).to_numpy()
         fold = lstm.fold.to_numpy()
+        # An ungauged target's donors are only the basins its fold's LSTM was trained on.
         allowed = fold[None, :] != fold[:, None] if cell == "ungauged" else np.ones_like(dist, bool)
         near = np.where(allowed, dist, np.inf).min(1)
         ax.scatter(near, np.clip(gain, *YLIM), s=5, color=NEUTRAL, alpha=0.5, linewidths=0,

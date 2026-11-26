@@ -1,22 +1,13 @@
-"""Correct the ungauged-basin predictions: one fold at a time, donors from that fold's gauges.
+"""IDW correction, ungauged cell: each fold's held-out basins are corrected from its training basins.
 
-    python src/corrections/idw/02_ungauged.py
-    python src/corrections/idw/02_ungauged.py --model hybrid
+    python src/corrections/idw/02_ungauged.py [--model lstm] [--select-on nse_star|kge|nse] [--no-scale]
 
-Each fold held a seventh of the basins out of training, so those basins are ungauged in space as
-well as in time -- the prediction-in-ungauged-basins case. They are corrected using that fold's
-other 455 basins, whose gauges the model did see, as donors.
-
-K, lambda and p are cross-validated inside those 455 training basins only, self-masked
-leave-one-out: each is scored using the other 454 as donors, the same donor network a held-out
-basin has. No held-out basin is read during selection, as a target or as a donor.
+Each fold uses its own model's predictions. K, lambda and p are selected on the fold's training
+basins only; no held-out basin is read during selection.
 
     reads   runs/<model>/ungauged/_mean/fold{f}.npz
     writes  runs/<model>/idw/ungauged/{predictions.npz, params.csv, tuning.csv}
-
---select-on picks what the search maximises: nse_star (default) -- the basin-normalised loss
-the LSTM itself was trained on -- kge, or nse. A non-default objective
-writes to idw/ungauged_<objective>/ so both can sit side by side.
+            (idw_noscale/ with --no-scale, ungauged_<objective>/ for a non-default --select-on)
 """
 import argparse
 import os
@@ -54,8 +45,6 @@ def main():
         raise SystemExit(f"no fold*.npz under {mean_dir}/ -- "
                          f"run src/models/lstm/02_lstm_ungauged.py")
 
-    # Each fold has its own model, so a fold's donors and its held-out basins must both be
-    # predicted by that same model -- hence one matrix per fold rather than one global one.
     pred, n_seeds, test_t, sigma = {}, {}, None, None
     for f in folds:
         pred[f], t, n_seeds[f] = load_mean(f"{mean_dir}/fold{f}.npz")
@@ -75,13 +64,12 @@ def main():
     obj = SCORERS[a.select_on]
 
     def report(sim, o, rows):
-        """The objective's own number for a set of basins, in the direction it is read: a loss
-        is reported positive and falling, not as the negated score the search maximises."""
+        """The objective's aggregate over `rows`, with a loss reported as a positive number."""
         v = obj.aggregate(obj.score(sim, o, None if sigma is None else sigma[rows]))
         return -v if obj.is_loss else v
 
     raw = np.full((len(basin_ids()), len(test_t)), np.nan, np.float32)
-    corrected = np.full(raw.shape, np.nan)  # float64: what the correction's arithmetic returns
+    corrected = np.full(raw.shape, np.nan)
     nearest = np.full(raw.shape, np.nan)
     params = []
     for f in folds:
@@ -91,8 +79,7 @@ def main():
         d = dist[np.ix_(held, pool[f])]
         corrected[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, k, lam, p,
                                   not a.no_scale)
-        # The parameter-free reference: one donor, all of its error. p is irrelevant at K=1,
-        # since the single surviving weight normalises to 1 whatever the exponent.
+        # Nearest-gauge reference; p has no effect at K=1.
         nearest[held] = correct(pred[f][held], pred[f][pool[f]], obs[pool[f]], d, 1, 1.0, 1.0,
                                 not a.no_scale)
         before = report(raw[held], obs[held], held)

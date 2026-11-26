@@ -1,15 +1,11 @@
-"""Train the LSTM on every basin, one run per seed.
+"""Train the LSTM on every basin, one run per seed, then average the seeds (the gauged setting).
 
-    python src/models/lstm/01_lstm_gauged.py              # every seed, then the ensemble mean
-    python src/models/lstm/01_lstm_gauged.py --seed 3     # one run
+    python src/models/lstm/01_lstm_gauged.py              # every seed, then the seed mean
+    python src/models/lstm/01_lstm_gauged.py --seed 3     # one seed
     python src/models/lstm/01_lstm_gauged.py --mean-only  # rebuild _mean from finished runs
 
-No basin is held out, so every basin's test-period prediction is out-of-sample in TIME only.
-That is the "gauged" cell: the model knew these gauges during training, and the correction
-later reconstructs each one as if its gauge had gone dark for the test years.
-
-    runs/lstm/gauged/seed{s}/predictions.npz
-    runs/lstm/gauged/_mean/predictions.npz     <- what the correction reads
+Reads data/cache/. Writes runs/lstm/gauged/seed{s}/predictions.npz and the seed mean the
+correction reads, runs/lstm/gauged/_mean/predictions.npz.
 """
 import argparse
 import os

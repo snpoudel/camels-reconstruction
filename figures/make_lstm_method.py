@@ -1,19 +1,6 @@
-"""Fig. 1: the spatial residual correction in four numbered steps, IDW and the MLP sharing step 3.
+"""Fig. 1: the residual correction in four steps, with IDW and the MLP as the two forms of step 3.
 
-    python figures/make_lstm_method.py   # -> lstm/fig01_method.{png,svg}
-
-Steps 1, 2 and 4 are common to both corrections. Step 3 turns the donors' scaled errors into one
-daily correction delta, in the target's own units, either as an inverse-distance-weighted mean
-scaled by lambda (IDW) or with an MLP, so step 4 is a single formula. A one-line legend below
-defines the symbols the boxes do not. Kept to two series colours, blue for the model and donors
-and orange for the target and its correction. Every sketch shows the same neighbourhood, so the
-eye follows one target and its donors across the steps.
-
-`check_fit` prints a WARN for any string that overflows its box, since nothing else would catch
-it. Keep the run clean.
-
-Descriptive superscripts (sim, obs, corr) are upright, as Copernicus style requires. 8.5 in wide;
-printed at 17.8 cm the smallest text (9 here) comes out at about 7.4 pt.
+    python figures/make_lstm_method.py   # -> figures/lstm/fig01_method.{png,svg}
 """
 import os
 import sys
@@ -40,7 +27,7 @@ H, LEG_H = 3.15, 0.66
 FIG_W = 2 * M + 3 * G + W1 + W2 + W3 + W4
 Y0 = PAD + LEG_H
 TOP = Y0 + H
-FIG_H = TOP + 0.18                # room for the badges, which sit on the box corners
+FIG_H = TOP + 0.18                # room for the badges on the box corners
 X1 = M
 X2 = X1 + W1 + G
 X3 = X2 + W2 + G
@@ -49,17 +36,13 @@ X4 = X3 + W3 + G
 TITLE_FS, EQ_FS, SUB_FS, LEG_FS, LAB_FS = 10.0, 11.0, 9.5, 9.5, 9.0
 SKETCH_TOP = TOP - 1.18
 
-# One neighbourhood in unit coordinates, drawn in every sketch. No two donors are collinear with
-# the target, and their distances differ enough that step 3's weight lines come out visibly
-# unequal.
 TARGET = (0.44, 0.46)
 DONORS = ((0.22, 0.70), (0.56, 0.62), (0.78, 0.40))
-# Per-donor label offset and alignment, fixed so labels stay put across sketches.
 OFF = (((0.00, 0.10), "center", "bottom"),
        ((0.07, 0.05), "left", "bottom"),
        ((0.08, 0.00), "left", "center"))
 
-_fit = []          # (artist, x_lo, x_hi) -- checked once at the end, see check_fit
+_fit = []
 
 
 def track(artist, x_lo, x_hi):
@@ -86,7 +69,7 @@ def pt(rect, u, v):
 
 
 def basins(ax, rect):
-    """The three donors and the target; returns the target's position."""
+    """Draw the donors and the target; return the target's position."""
     for u, v in DONORS:
         ax.scatter(*pt(rect, u, v), s=38, color=RAW, edgecolor="white", linewidth=0.7, zorder=5)
     tx, ty = pt(rect, *TARGET)
@@ -96,7 +79,7 @@ def basins(ax, rect):
 
 
 def donor_weights():
-    """The sketch's weights from the drawn geometry -- p = 1, normalised."""
+    """Normalised inverse-distance weights (p = 1) of the sketched donors."""
     inv = np.array([1.0 / np.hypot(u - TARGET[0], v - TARGET[1]) for u, v in DONORS])
     return inv / inv.sum()
 
@@ -118,13 +101,13 @@ def text(ax, x, y, s, lo, hi, size=EQ_FS, color=INK, **kw):
 
 
 def sketch_rect(x, w, top):
-    """A square sketch area centred in the space between the box bottom and `top`."""
+    """A square sketch area centred between the box bottom and `top`."""
     side = min(w - 0.2, top - Y0 - 0.14)
     return (x + (w - side) / 2, Y0 + 0.1 + (top - Y0 - 0.14 - side) / 2, side, side)
 
 
 def neighbourhood(ax, rect, labels, target_label=None):
-    """Steps 1 and 2: the neighbourhood with each donor labelled, and optionally the target."""
+    """Steps 1 and 2: the basins with each donor labelled, and optionally the target."""
     basins(ax, rect)
     for (u, v), lab, (off, ha, va) in zip(DONORS, labels, OFF):
         ax.text(*pt(rect, u + off[0], v + off[1]), lab, fontsize=LAB_FS, color=INK,
@@ -135,8 +118,7 @@ def neighbourhood(ax, rect, labels, target_label=None):
 
 
 def weights(ax, rect):
-    """Step 3's neighbourhood: one line per donor, thicker the larger its weight. Only donor K's
-    line is labelled; labels on all three hid the shortest line at this size."""
+    """Step 3's IDW sketch: one line per donor, thicker the larger its weight."""
     tx, ty = basins(ax, rect)
     for (u, v), wk in zip(DONORS, donor_weights()):
         ax.plot([tx, pt(rect, u, v)[0]], [ty, pt(rect, u, v)[1]], color=MUTE,
@@ -147,9 +129,7 @@ def weights(ax, rect):
 
 
 def legend(ax):
-    """Two centred lines, every symbol in the order a reader meets it: gauges and flows, then
-    the scale and IDW's quantities. Only the symbols the boxes do not define themselves; r, w,
-    delta and q_corr are each defined by an equation."""
+    """Two centred lines defining the symbols the boxes do not."""
     items = [(dict(marker="*", s=110, color=CORRECTED), "target gauge $i$"),
              (dict(marker="o", s=30, color=RAW), "donor gauge $k$ ($K$ nearest)"),
              (f"$q{SIM},\\ q{OBS}$", "predicted, observed flow")]
@@ -185,8 +165,7 @@ def legend(ax):
 
 
 def hydrograph(ax, rect):
-    """Step 4: a schematic storm hydrograph. The LSTM overshoots the observation; the correction
-    moves it most of the way back, not all of it, so the sketch does not overclaim."""
+    """Step 4: a schematic hydrograph of the observed, predicted and corrected flow."""
     x0, y0, w, h = rect
     px0, px1 = x0 + 0.10 * w, x0 + 0.96 * w
     py0, py1 = y0 + 0.14 * h, y0 + 0.70 * h
@@ -204,7 +183,6 @@ def hydrograph(ax, rect):
     ax.plot(x, y(cor), color=CORRECTED, lw=1.3, zorder=6)
     ax.plot(x, y(obs), color=INK, lw=1.0, zorder=7)
     ax.plot([px0, px1], [py0, py0], color=MUTE, lw=0.6, alpha=0.6, zorder=3)
-    # A mini legend rather than in-place labels, which would need leader lines at this size.
     for n, (lab, col) in enumerate(((f"$q{OBS}_i$", INK), (f"$q{SIM}_i$", RAW),
                                     (f"$q{CORR}_i$", CORRECTED))):
         ly = y0 + (0.98 - 0.10 * n) * h
@@ -216,7 +194,7 @@ def hydrograph(ax, rect):
 
 
 def network(ax, rect):
-    """Inputs named by symbol, two hidden layers, one output: the day's correction."""
+    """Step 3's MLP sketch: inputs, two hidden layers, and the correction as output."""
     x0, y0, w, h = rect
     inputs = (r"$r_1,\dots,r_K$", r"$d_{i1},\dots,d_{iK}$", "day of year",
               f"$q{SIM}_i/s_i$" if SCALED else f"$q{SIM}_i$")
@@ -262,7 +240,6 @@ def main():
          else f"$r_k=q{SIM}_k-q{OBS}_k$", X2 + 0.05, X2 + W2 - 0.05)
     neighbourhood(ax, sketch_rect(X2, W2, SKETCH_TOP), (r"$r_1$", r"$r_2$", r"$r_K$"))
 
-    # Step 3, one box: IDW above, the MLP below, both ending in the same delta_i.
     box(ax, X3, W3, "Daily correction", "3")
     mid = Y0 + 0.44 * H
     eq_x, eq_hi = X3 + 0.80, X3 + 1.40

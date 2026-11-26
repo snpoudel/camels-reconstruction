@@ -1,12 +1,7 @@
-"""The LSTM: data cache, fold split, model, training, prediction.
+"""The LSTM shared by the two training scripts: data cache, fold split, model, training, prediction.
 
-Everything the two driver scripts in this folder share. Nothing outside `src/models/lstm/`
-imports this -- the corrections in `src/corrections/` read finished predictions off disk, so
-they work just as well on hydrographs produced by somebody else's model.
-
-Hyperparameters follow Kratzert et al. (2019, WRR 55, 11344) where the paper specifies a value
-and NeuralHydrology defaults otherwise. Nothing here is tuned: the model has to stay the one
-the literature already uses for the comparison to mean anything.
+Hyperparameters follow Kratzert et al. (2019, WRR 55, 11344), with NeuralHydrology defaults where
+the paper gives no value.
 """
 import json
 import os
@@ -22,49 +17,45 @@ import torch.nn as nn
 TRAIN_PERIOD = ("1980-10-01", "1995-09-30")
 TEST_PERIOD = ("1995-10-01", "2010-09-30")
 
-# Static attributes with missing values (root_depth_50 in 13 basins, geol_porostiy in 3).
+# Static attributes with missing values in some basins.
 DROP_COLS = ("root_depth_50", "geol_porostiy")
 
 LR_SCHEDULE = {0: 1e-3, 10: 5e-4, 20: 1e-4}  # NeuralHydrology default, keyed by epoch
 
-N_FEAT = 36     # 6 daily forcings + 30 static attributes, after DROP_COLS
-N_DAYS = 12784  # 1980-01-01 to 2014-12-31, no gaps
+N_FEAT = 36
+N_DAYS = 12784
 
 
 @dataclass(frozen=True)
 class Cfg:
-    """One training run. Only `fold` and `seed` are meant to vary."""
+    """One training run; `fold` is the held-out fold (None trains on every basin)."""
 
-    fold: int | None = 0  # which of n_folds is held out as ungauged; None trains on every basin
+    fold: int | None = 0
     seed: int = 0
 
     # Kratzert et al. 2019
     hidden: int = 256
     layers: int = 1
     dropout: float = 0.4
-    seq_len: int = 365  # 364 preceding days + the target day
+    seq_len: int = 365
     forget_bias: float = 5.0
     epochs: int = 30
     clip_norm: float = 1.0
 
-    # Fixed-size batches of independently sampled (basin, date-window) pairs. Kratzert used
-    # 2000, the NeuralHydrology default is 256; 512 sits between them.
+    # Between Kratzert's 2000 and the NeuralHydrology default of 256.
     batch_size: int = 512
 
     n_folds: int = 7
     cache_dir: str = "data/cache"
 
 
-# --------------------------------------------------------------------------- data
-
 def build_cache(raw_dir="data/raw", list_csv="data/camels531.csv", cache_dir="data/cache",
                 folds_csv="data/basin_list_with_folds.csv"):
-    """Read the per-basin CSVs once into dense arrays and cache them as .npy."""
+    """Read the per-basin CSVs once and cache them as dense .npy arrays."""
     basins = sorted(pd.read_csv(list_csv, dtype={"gauge_id": str})["gauge_id"])
     header = pd.read_csv(f"{raw_dir}/input_{basins[0]}.csv", nrows=0).columns.tolist()
     feat_cols = [c for c in header if c not in ("Year", "Mnth", "Day", "qobs(mm/day)", *DROP_COLS)]
-    # Asserted by name, not position: if the target survived the drop, NSE would be ~0.99 and
-    # the result would look like a triumph.
+    # Leak guard: the target must never be a feature.
     assert "qobs(mm/day)" not in feat_cols, "target leaked into the features"
     assert len(feat_cols) == N_FEAT, f"expected {N_FEAT} features, got {len(feat_cols)}"
 
@@ -95,7 +86,7 @@ def build_cache(raw_dir="data/raw", list_csv="data/camels531.csv", cache_dir="da
 
 
 def assign_folds(n_basins, n_folds, seed=42, out_csv=None, basins=None):
-    """Balanced random fold labels. Deterministic in `seed`, independent of the run seed."""
+    """Balanced random fold labels, fixed by `seed` and independent of the run seed."""
     perm = np.random.default_rng(seed).permutation(n_basins)
     folds = np.empty(n_basins, int)
     folds[perm] = np.arange(n_basins) % n_folds
@@ -106,30 +97,25 @@ def assign_folds(n_basins, n_folds, seed=42, out_csv=None, basins=None):
 
 @dataclass
 class Data:
-    """Tensors on the compute device, basins reordered as [gauged..., ungauged...].
+    """Tensors on the device, rows ordered [gauged..., ungauged...]; `basins` maps rows to IDs."""
 
-    Position therefore encodes fold membership by construction -- `basins` is the only mapping
-    back to gauge IDs, and every output is keyed through it rather than by index.
-    """
-
-    X: torch.Tensor      # [N, T, 36] standardised features
-    Q: torch.Tensor      # [N, T] observed flow, mm/day, NaN where missing
-    sigma: torch.Tensor  # [N] train-period flow std, denominator of the NSE loss
+    X: torch.Tensor
+    Q: torch.Tensor
+    sigma: torch.Tensor
     basins: list
     n_gauged: int
-    train_t: np.ndarray  # target date indices
+    train_t: np.ndarray
     test_t: np.ndarray
 
 
 def prepare(cfg: Cfg, device) -> Data:
-    """Load the cache, split by fold, and fit every statistic on gauged x train only."""
+    """Load the cache, split by fold, and fit every statistic on gauged basins in training only."""
     X = np.load(f"{cfg.cache_dir}/X.npy")
     Q = np.load(f"{cfg.cache_dir}/Q.npy")
     dates = np.load(f"{cfg.cache_dir}/dates.npy")
     meta = json.load(open(f"{cfg.cache_dir}/meta.json"))
     basins, feat_cols = meta["basins"], meta["feat_cols"]
-    # Re-checked here and not merely in build_cache: a stale cache of the right width would
-    # otherwise pass silently on a machine that only ever received data/cache/.
+    # Leak guard repeated here in case the cache was built elsewhere.
     assert "qobs(mm/day)" not in feat_cols, "target leaked into the cached features"
     assert meta.get("drop_cols") == list(DROP_COLS), "cache built with different DROP_COLS"
     assert X.shape == (len(basins), N_DAYS, N_FEAT), f"unexpected cache shape {X.shape}"
@@ -141,10 +127,6 @@ def prepare(cfg: Cfg, device) -> Data:
 
     tr0, tr1 = bounds(TRAIN_PERIOD)
     te0, te1 = bounds(TEST_PERIOD)
-    # A target day needs `seq_len - 1` days of history behind it, and the cache begins on
-    # 1980-01-01 while the training window opens at day 274. Move the first target forward to
-    # the earliest day with full history rather than quietly running short windows -- and say
-    # so, loudly, because it is a change to the training period.
     if tr0 < cfg.seq_len - 1:
         lost = cfg.seq_len - 1 - tr0
         tr0 = cfg.seq_len - 1
@@ -168,9 +150,8 @@ def prepare(cfg: Cfg, device) -> Data:
 
     sigma = np.nanstd(Q[:, tr0:tr1], axis=1)
 
-    # Feature scaler: gauged basins, training period. Nothing else is in scope.
     mean = X[:n_gauged, tr0:tr1].mean(axis=(0, 1))
-    std = np.maximum(X[:n_gauged, tr0:tr1].std(axis=(0, 1)), 1e-3)  # some statics near-constant
+    std = np.maximum(X[:n_gauged, tr0:tr1].std(axis=(0, 1)), 1e-3)  # some statics are near-constant
     X = (X - mean) / std
     assert np.isfinite(X).all()
 
@@ -180,8 +161,7 @@ def prepare(cfg: Cfg, device) -> Data:
 
 
 def sample_batch(data: Data, rng, batch_size, seq_len):
-    """One batch: independently sampled (basin, date-window) pairs, each row its own basin and
-    its own end date. Only gauged basins are sampled -- held-out basins have no loss term."""
+    """Random (basin, end date) windows from gauged basins only, so held-out basins add no loss."""
     basin_idx = rng.integers(0, data.n_gauged, batch_size)
     date_idx = rng.choice(data.train_t, batch_size)
     day_idx = date_idx[:, None] - seq_len + 1 + np.arange(seq_len)[None, :]
@@ -193,17 +173,12 @@ def sample_batch(data: Data, rng, batch_size, seq_len):
     return data.X[b[:, None], days], data.Q[b, dates], data.sigma[b]
 
 
-# --------------------------------------------------------------------------- model
-
 class LSTMModel(nn.Module):
-    """LSTM encoder over a `seq_len` window, one flow value per window."""
-
     def __init__(self, cfg: Cfg):
         super().__init__()
         h = cfg.hidden
         self.lstm = nn.LSTM(N_FEAT, h, cfg.layers, batch_first=True)
-        # Forget-gate bias init. PyTorch gate order is (i, f, g, o) and both bias vectors are
-        # summed, so the whole value goes in one and the other is zeroed.
+        # PyTorch gate order is (i, f, g, o) and the two bias vectors are summed.
         for layer in range(cfg.layers):
             getattr(self.lstm, f"bias_ih_l{layer}").data[h:2 * h] = cfg.forget_bias
             getattr(self.lstm, f"bias_hh_l{layer}").data[h:2 * h] = 0.0
@@ -211,19 +186,12 @@ class LSTMModel(nn.Module):
         self.head = nn.Linear(h, 1)
 
     def forward(self, x):
-        """x: [batch, seq_len, N_FEAT] -> [batch] predicted flow in mm/day."""
+        """[batch, seq_len, N_FEAT] -> [batch] flow in mm/day."""
         return self.head(self.dropout(self.lstm(x)[0][:, -1])).squeeze(-1)
 
 
-# --------------------------------------------------------------------------- training
-
 def nse_loss(pred, obs, sigma, eps=0.1):
-    """Basin-normalised squared error (Kratzert et al. 2019 NSE*).
-
-    Dividing by each basin's own training-period flow std stops wet, large basins from
-    dominating the gradient. `sigma` is a training-period statistic of the query basin, used
-    only to weight the loss -- it never touches the prediction itself.
-    """
+    """NSE* (Kratzert et al., 2019): squared error scaled by each basin's training flow std."""
     m = ~torch.isnan(obs)
     return (((pred[m] - obs[m]) / (sigma[m] + eps)) ** 2).mean()
 
@@ -262,7 +230,7 @@ def train(cfg: Cfg, data):
 
 @torch.no_grad()
 def predict(cfg: Cfg, model, data, t_idx, chunk=256):
-    """[n_basins, len(t_idx)] flow in mm/day. Every basin is queried, held out or not."""
+    """[n_basins, len(t_idx)] flow in mm/day for every basin, held out or not."""
     model.eval()
     n = len(data.basins)
     out = np.empty((n, len(t_idx)), np.float32)
@@ -280,7 +248,7 @@ def device():
 
 
 def run_one(cfg: Cfg, out_dir):
-    """Train one (fold, seed) and write predictions.npz, model.pt and config.json."""
+    """Train one (fold, seed) run and write predictions.npz, model.pt and config.json."""
     data = prepare(cfg, device())
     print(f"{out_dir} | train {TRAIN_PERIOD[0]}..{TRAIN_PERIOD[1]}, "
           f"test {TEST_PERIOD[0]}..{TEST_PERIOD[1]}", flush=True)
@@ -293,8 +261,6 @@ def run_one(cfg: Cfg, out_dir):
     torch.save(model.state_dict(), f"{out_dir}/model.pt")
     json.dump({**vars(cfg), "commit": os.popen("git rev-parse --short HEAD").read().strip()},
               open(f"{out_dir}/config.json", "w"), indent=1)
-    # Only the test period: nothing downstream reads the training period, and it is 60% of the
-    # inference cost. Basins stay in fold order here; `seed_mean` keys them back by gauge ID.
     np.savez_compressed(f"{out_dir}/predictions.npz",
                         test=predict(cfg, model, data, data.test_t), test_t=data.test_t,
                         basins=np.array(data.basins), n_gauged=data.n_gauged)
@@ -302,13 +268,7 @@ def run_one(cfg: Cfg, out_dir):
 
 
 def seed_mean(run_dirs, out_npz, cache_dir="data/cache"):
-    """Average the seeds' test hydrographs, in cache-basin order, and write one .npz.
-
-    Averaging the hydrographs and scoring once is the convention the literature reports
-    (Kratzert's 0.693 is a 10-member ensemble mean); averaging per-seed metrics instead reads
-    lower and is not comparable. Rows are keyed by gauge ID, never by position, so a fold
-    reordering cannot silently pair the wrong basin with the wrong prediction.
-    """
+    """Average the seeds' test hydrographs, matched by gauge ID in cache order, into one .npz."""
     basins = list(json.load(open(f"{cache_dir}/meta.json"))["basins"])
     idx = {b: i for i, b in enumerate(basins)}
     mats, test_t = [], None
@@ -318,11 +278,7 @@ def seed_mean(run_dirs, out_npz, cache_dir="data/cache"):
         m[[idx[b] for b in list(p["basins"])]] = p["test"]
         mats.append(m)
         test_t = p["test_t"]
-    # The training-period flow std this model's loss normalised by, published alongside the
-    # predictions so the post-processing can select on the same objective without importing
-    # anything from here -- and so a model trained elsewhere can state its own. It must be the
-    # sigma `prepare` actually built, warm-up trim included, or it is a different constant than
-    # the one the loss divided by.
+    # The sigma the loss used (warm-up trim included), published for the corrections' NSE*.
     seq_len = json.load(open(f"{run_dirs[0]}/config.json"))["seq_len"]
     Q = np.load(f"{cache_dir}/Q.npy")
     dates = np.load(f"{cache_dir}/dates.npy")

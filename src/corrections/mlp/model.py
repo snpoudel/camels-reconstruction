@@ -1,23 +1,13 @@
-"""The learned neighbour-residual correction: a small MLP reads the K nearest gauges' errors
-today, their distances, the season, and where the target's flow sits in its own range, and
-predicts today's correction.
+"""Learned neighbour-residual correction: an MLP predicts each day's correction for a target basin
+from its K nearest donors.
 
     r_j(t)     = (q_sim_j(t) - q_obs_j(t)) / s_j                  s = flow_scale, SD of predicted flow
     delta_i(t) = f( r_1..r_K(t), missing_1..K(t), d_1..K, q_sim_i(t) / s_i, sin/cos doy(t) )
     q_i(t)     = max(0, q_sim_i(t) - s_i * delta_i(t))
 
-r_j is donor j's scaled residual and the output is applied exactly as in IDW, which is the special
-case delta = lam * sum_j w_j r_j with weights fixed by distance alone; here the rule can change
-with the season and the flow. Trained on NSE*, the objective IDW's settings are selected on. K is
-the only setting searched; everything else below is fixed in advance and never tuned.
-
-Each fold (ungauged) or group (gauged) is handled like IDW's search: the network trains only on
-the pool -- the basins outside the fold -- each pool basin drawing on every other pool basin as
-a donor, itself excluded. One pool group is kept back to choose K. The fold's basins are then
-corrected from the pool (ungauged), or from every other basin (gauged: one gauge dark at a time).
-
-`scaled=False` (the pipelines' --no-scale) sets every s to 1: residuals, the target-flow input
-and delta are then all in plain mm/day.
+IDW is the special case delta = lam * sum_j w_j r_j. The network is trained on NSE* using only the
+basins outside the fold (ungauged) or group (gauged), one of whose groups is held back to choose K,
+the only setting searched. `scaled=False` (--no-scale) sets every s to 1.
 """
 import numpy as np
 import torch
@@ -32,17 +22,12 @@ DROPOUT = 0.2
 LR = 1e-3
 CLIP_NORM = 1.0
 BATCH_BASINS = 16
-# A fixed number of passes over the training basins, the learning rate decaying to zero along a
-# cosine, rather than stopping at the validation group's best pass: validation KGE jumps by
-# ~0.01 from one pass to the next, so its best pass is mostly noise. Chosen once on validation
-# basins (20, 40 and 80 compared), then frozen.
 EPOCHS = 40
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def splits(labels, dist, fold, k, cell):
-    """{train, val, held}: (targets, donors, standardised distance) on DEVICE, donors nearest
-    first. Distances are standardised on the training split's own donor distances."""
+    """({train, val, held}: (targets, donors nearest first, standardised distances), val_group)."""
     pool = labels != fold
     val_group = (fold + 1) % len(set(labels))
     rows = {"train": np.flatnonzero(pool & (labels != val_group)),
@@ -65,9 +50,7 @@ def splits(labels, dist, fold, k, cell):
 
 
 def context(sim, obs, readable, pool, doy, scaled=True):
-    """The tensors every K shares: donor scaled residuals for `readable` rows only and every
-    basin's flow in its own units, both standardised on the pool; the season; and each basin's
-    scale s."""
+    """Tensors shared by every K: residuals of `readable` rows, own scaled flow, season, and s."""
     s = flow_scale(sim, scaled)
     res = np.full(sim.shape, np.nan)
     res[readable] = (np.clip(sim[readable], 0, None) - obs[readable]) / s[readable, None]
@@ -82,9 +65,9 @@ def context(sim, obs, readable, pool, doy, scaled=True):
 
 
 def features(ctx, targets, donors, dist):
-    """[B, T, 3K+3] inputs for a batch of targets, gathered on the fly."""
+    """[B, T, 3K+3] inputs for a batch of targets."""
     res, own, season, _ = ctx
-    r = res[donors]                                   # [B, K, T]
+    r = res[donors]
     missing = torch.isnan(r)
     B, K, T = r.shape
     x = torch.cat([torch.nan_to_num(r), missing.float(), dist[:, :, None].expand(B, K, T),
@@ -98,7 +81,7 @@ class MLP(nn.Module):
         self.net = nn.Sequential(nn.Linear(3 * k + 3, HIDDEN), nn.ReLU(), nn.Dropout(DROPOUT),
                                  nn.Linear(HIDDEN, HIDDEN), nn.ReLU(), nn.Dropout(DROPOUT),
                                  nn.Linear(HIDDEN, 1))
-        # Zero output layer: training starts from no correction at all, IDW's lambda = 0.
+        # Start from no correction, IDW's lambda = 0.
         nn.init.zeros_(self.net[-1].weight)
         nn.init.zeros_(self.net[-1].bias)
 
@@ -109,8 +92,7 @@ class MLP(nn.Module):
 
 
 def nse_star(sim, obs, sigma):
-    """[B] NSE* loss per basin over its reported days -- tuning._nse_star, in torch. `sigma` is
-    each basin's training-period flow SD, read only for training-pool basins."""
+    """[B] NSE* loss per basin over its reported days."""
     m = ~torch.isnan(obs)
     err = torch.where(m, ((sim - torch.nan_to_num(obs)) / (sigma[:, None] + SCALE_FLOOR)) ** 2, 0.0)
     return err.sum(1) / m.sum(1)
@@ -129,7 +111,7 @@ def correct(model, sim, ctx, split, chunk=64):
 
 
 def train(seed, sim, obs, sigma, ctx, split, epochs=EPOCHS):
-    """One seed, `epochs` passes over the training basins, learning rate cosine-decayed to 0."""
+    """One seed's model, the learning rate cosine-decayed to 0 over `epochs` passes."""
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     model = MLP(split[1].shape[1]).to(DEVICE)
@@ -153,11 +135,10 @@ def train(seed, sim, obs, sigma, ctx, split, epochs=EPOCHS):
 
 def run_fold(sim, obs, sigma, labels, dist, fold, cell, doy, k_grid, seeds, epochs=EPOCHS,
              scaled=True, log=print):
-    """Train every K x seed for one fold, choose K on the validation group, and return the
-    held-out basins' corrected flow (the seeds' average at that K) with the bookkeeping.
+    """Train every K x seed for one fold, choose K on validation, return the held-out correction.
 
-    The fold's observations are read only where `cell` allows: never in the ungauged cell, and
-    in the gauged cell only as donor inputs for their neighbours once training is done.
+    The fold's observations are never read in the ungauged cell, and in the gauged cell only as
+    donor inputs to their neighbours after training.
     """
     pool = labels != fold
     ctx = context(sim, obs, pool if cell == "ungauged" else np.ones_like(pool), pool, doy, scaled)

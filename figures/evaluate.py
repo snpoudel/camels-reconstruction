@@ -1,18 +1,12 @@
-"""Score the corrected hydrographs once, so every figure just reads a CSV.
+"""Score the corrected predictions into the CSVs every figure reads.
 
-    python figures/evaluate.py --model lstm     # whichever cells have been corrected
+    python figures/evaluate.py                  # every corrected cell; --model lstm --method idw
     python figures/evaluate.py --cell ungauged
-    python figures/evaluate.py --method mlp     # a different correction method
+    python figures/evaluate.py --method mlp
 
-Reads runs/<model>/<method>/<cell>/ and writes, into this folder:
-
-    metrics_<cell>_<model>_<method>.csv        per basin x variant: NSE, KGE and components,
-                                               RMSE, bias by flow band
-    tuning_<cell>_<model>_<method>.csv         the cross-validation surface
-    run_info.json                              test window, seed and basin counts
-    error_structure[_fit]_gauged_<model>.csv   residual correlation against gauge distance
-
-No figure reads runs/, so a figure cannot disagree with these numbers.
+Reads runs/<model>/<method>/<cell>/ and writes, into figures/: metrics_<cell>_<model>_<method>.csv
+(per-basin scores), tuning_<cell>_<model>_<method>.csv (the cross-validation surface),
+run_info.json, and error_structure[_fit]_gauged_<model>.csv (residual correlation vs distance).
 """
 import argparse
 import json
@@ -42,52 +36,44 @@ def _suffix(model, method):
 
 
 def folds_csv_for(model):
-    """The fold assignment a model's ungauged correction used: the override its
-    02_ungauged.py --folds-csv run was given (see src/models/hybrid/prepare.py), if any.
-    The gauged correction always uses the LSTM split."""
+    """Fold assignment for a model's ungauged cell: its own override file if present."""
     override = f"{os.path.dirname(FOLDS_CSV)}/basin_list_with_folds_{model}.csv"
     return override if model != "lstm" and os.path.exists(override) else FOLDS_CSV
 
 
-# The error-structure analysis: pairs out to 1000 km, a 31-day circular window on the
-# day-of-year climatology that deseasonalising removes, and the LOESS bandwidth the trend
-# through the pair cloud is fitted with.
+# Error structure: max pair distance (km), climatology window (days), LOESS bandwidth (km).
 DIST_MAX_KM, CLIM_WINDOW, LOESS_KM = 1000, 31, 60
 
 
 def read_metrics(cell, model="lstm", method="idw"):
-    """The per-basin scores every figure draws from."""
     return pd.read_csv(f"{HERE}/metrics_{cell}{_suffix(model, method)}.csv",
                        dtype={"basin": str})
 
 
 def read_tuning(cell, model="lstm", method="idw"):
-    """The cross-validation surface the settings were chosen on."""
     return pd.read_csv(f"{HERE}/tuning_{cell}{_suffix(model, method)}.csv")
 
 
 def _es_suffix(model, cell):
-    """Cell is omitted for "ungauged" so that older file keeps its name."""
     parts = ([] if cell == "ungauged" else [cell]) + [model]
     return "_" + "_".join(parts)
 
 
 def read_error_structure(model="lstm", cell="gauged"):
-    """(one row per basin pair, the LOESS fit through them)."""
+    """(per-pair correlations, the LOESS fit through them)."""
     suffix = _es_suffix(model, cell)
     return (pd.read_csv(f"{HERE}/error_structure{suffix}.csv"),
             pd.read_csv(f"{HERE}/error_structure_fit{suffix}.csv"))
 
 
 def fold_settings(df, raw_label="LSTM"):
-    """[(fold, K, lambda, p)] as selected, one per fold, in fold order."""
+    """[(fold, K, lambda, p)] as selected, in fold order."""
     first = df[df.variant == raw_label].groupby("fold")[["k", "lam", "p"]].first()
     return [(int(f), int(r.k), float(r.lam), float(r.p)) for f, r in first.iterrows()]
 
 
 def flow_band_bias(sim, obs, lo, hi):
-    """Percent bias over the observed-flow band between the `lo` and `hi` quantiles. Cut on
-    observed flow (Yilmaz et al., 2008): high-flow bias is the error on days that were high."""
+    """Percent bias over the [lo, hi] quantile band of observed flow (Yilmaz et al., 2008)."""
     m = np.isfinite(obs)
     if m.sum() < 10:
         return np.nan
@@ -99,7 +85,7 @@ def flow_band_bias(sim, obs, lo, hi):
 
 
 def metrics_row(sim, obs):
-    """Per-basin NSE, KGE and its components, RMSE, and bias by flow band."""
+    """NSE, KGE and its components, RMSE, and bias by flow band for one basin."""
     sim = np.clip(sim, 0, None)
     m = np.isfinite(obs)
     s, o = sim[m], obs[m]
@@ -108,8 +94,7 @@ def metrics_row(sim, obs):
                                     "bias_high", "bias_mid", "bias_low")}
     nse = 1 - ((s - o) ** 2).sum() / ((o - o.mean()) ** 2).sum()
     alpha, beta = s.std() / o.std(), s.mean() / o.mean()
-    # A constant prediction has no correlation, so r and KGE are undefined -- but NSE and RMSE
-    # are perfectly well defined and must still be scored.
+    # r and KGE are undefined for a constant prediction, but NSE and RMSE are still scored.
     r = np.corrcoef(s, o)[0, 1] if s.std() > 0 else np.nan
     return dict(nse=nse, kge=1 - np.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2),
                 r=r, alpha=alpha, beta=beta,
@@ -121,7 +106,7 @@ def metrics_row(sim, obs):
 
 
 def seed_spread(cell, model):
-    """Median KGE of each individual seed, as a sanity check on the ensemble mean."""
+    """Median KGE of each individual seed run, as a check on the seed mean."""
     root = f"runs/{model}/{cell}"
     runs = sorted(d for d in os.listdir(root) if not d.startswith("_"))
     labels, order, out = fold_labels(), {b: i for i, b in enumerate(basin_ids())}, []
@@ -129,7 +114,7 @@ def seed_spread(cell, model):
         p = np.load(f"{root}/{d}/predictions.npz", allow_pickle=True)
         rows = np.array([order[b] for b in list(p["basins"])])
         scored = kge_per_basin(p["test"], observed(p["test_t"])[rows])
-        if cell == "ungauged":  # only the basins this run held out
+        if cell == "ungauged":
             fold = int(d.split("fold")[1].split("_")[0])
             scored = scored[labels[rows] == fold]
         out.append((d, np.nanmedian(scored)))
@@ -150,7 +135,7 @@ def evaluate(cell, model, method):
     for key, variant in variants(model).items():
         frame = pd.DataFrame([metrics_row(p[key][i], obs[i]) for i in scored])
         frame["basin"], frame["fold"], frame["variant"] = ids[scored], labels[scored], variant
-        settings = [c for c in ("k", "lam", "p", "n_seeds") if c in params]  # MLP: no lam, p
+        settings = [c for c in ("k", "lam", "p", "n_seeds") if c in params]
         frames.append(frame.join(params[settings], on="fold"))
     df = pd.concat(frames, ignore_index=True)
     suffix = _suffix(model, method)
@@ -170,8 +155,7 @@ def evaluate(cell, model, method):
 
 
 def _deseason(x, doy):
-    """`x` minus its own day-of-year climatology, smoothed circularly over CLIM_WINDOW, so a
-    correlation reflects day-to-day agreement rather than the shared seasonal cycle."""
+    """`x` minus its circularly smoothed day-of-year climatology, removing the seasonal cycle."""
     m = np.isfinite(x)
     onehot = np.zeros((x.shape[1], 366))
     onehot[np.arange(x.shape[1]), doy] = 1.0
@@ -185,8 +169,7 @@ def _deseason(x, doy):
 
 
 def _corr_rows(x):
-    """[n, n] correlation between every pair of rows. Missing days (0.01%) count as the row's
-    mean: pairwise-complete correlation over 140k pairs costs minutes to move the 4th decimal."""
+    """[n, n] correlation between every pair of rows, missing days filled with the row mean."""
     m = np.isfinite(x)
     a = np.where(m, x - (np.where(m, x, 0.0).sum(1) / np.maximum(m.sum(1), 1))[:, None], 0.0)
     norm = np.sqrt((a ** 2).sum(1))
@@ -194,13 +177,7 @@ def _corr_rows(x):
 
 
 def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
-    """Robust locally weighted regression (Cleveland, 1979) evaluated on `grid`.
-
-    Fixed bandwidth in km, not a nearest-neighbour span: pairs are sparse at short range, where
-    an adaptive span would reach far out and flatten the drop. The robustness iterations matter:
-    pair correlations are left-skewed, and bisquare reweighting keeps the poorly correlated
-    minority from dragging the line below the bulk of the cloud.
-    """
+    """Robust LOESS (Cleveland, 1979) with a fixed bandwidth in km, evaluated on `grid`."""
     def fit(weights):
         out = np.empty(len(grid))
         for i, x0 in enumerate(grid):
@@ -218,7 +195,6 @@ def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
     robust, curve = np.ones(len(x)), None
     for _ in range(iterations + 1):
         curve = fit(robust)
-        # Residuals against the interpolated curve: fitting at all 39k points is quadratic.
         resid = y - np.interp(x, grid, curve)
         s = np.median(np.abs(resid))
         robust = np.clip(1 - (resid / (6 * s)) ** 2, 0, None) ** 2 if s > 0 else robust
@@ -226,14 +202,7 @@ def _loess(x, y, grid, bandwidth=LOESS_KM, iterations=2):
 
 
 def error_structure(model, cell="gauged"):
-    """Correlation of daily residuals (predicted minus observed flow, mm/day) between basin pairs
-    against gauge distance, raw and deseasonalised. These are the errors the correction transfers;
-    its per-basin scaling cannot change a correlation, so scaled residuals would give the same. Uses the gauged cell, every trained-on basin, for the densest picture.
-
-    Reads the model's own uncorrected predictions, so it is the same whichever correction
-    method is being evaluated. Restricted to basins the model scored: hybrid's 106 untrained
-    basins would otherwise be all-NaN rows that poison every correlation touching them.
-    """
+    """Correlation of uncorrected daily residuals between basin pairs against gauge distance."""
     pred, test_t, _ = load_mean(f"runs/{model}/{cell}/_mean/predictions.npz")
     scored = np.flatnonzero(np.isfinite(pred).any(1))
     obs = observed(test_t)[scored]
@@ -249,7 +218,7 @@ def error_structure(model, cell="gauged"):
     pd.DataFrame({"dist_km": d, "r": c, "r_deseason": cd}).to_csv(
         f"{HERE}/error_structure{suffix}.csv", index=False, float_format="%.5g")
 
-    # Start at 10 km: near the x = 0 boundary the local linear fit curls upward, an artefact.
+    # Starts at 10 km: the local linear fit curls upward near zero distance.
     grid = np.linspace(10, DIST_MAX_KM, 160)
     fit, fit_d = _loess(d, c, grid), _loess(d, cd, grid)
     pd.DataFrame({"dist_km": grid, "r_fit": fit, "r_fit_deseason": fit_d}).to_csv(
